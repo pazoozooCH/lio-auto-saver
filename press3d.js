@@ -3,10 +3,10 @@
 // Wird beim Start geladen; ohne Internet bleibt die Presse in 2D.
 import * as THREE from 'three';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
-import { buildCar, animateCar } from './cars3d.js';
+import { buildCar, animateCar, warmUp, makeQuality, mergeStatic } from './cars3d.js';
 
 let G = null;        // Spielkonstanten aus game.js
-let renderer, scene, camera, sun;
+let renderer, scene, camera, sun, quality, lastLayout, lastFrame = 0;
 const SX = 1 / 22, SY = 1 / 24;  // Pixel der 2D-Spielwelt → Meter
 const COIN_Z = 3.6;              // Münzen liegen vor der Fahrbahn
 const CAM = new THREE.Vector3(0, 7.5, 46), LOOK = new THREE.Vector3(0, 6.8, 0);
@@ -249,11 +249,12 @@ const LAMP_COLORS = { idle: 0x2ecc71, rise: 0xf39c12, ice: 0xd9f7ff, water: 0x3b
 const OFF_TINT = { ice: 0x6fc7e8, water: 0x1d4f9a, fire: 0xff6a00, firework: 0x7c3aed, time: 0x0e7490, lift: 0x000000 };
 
 function updatePresses(presses, t) {
-  while (pressViews.length < presses.length) pressViews.push(buildPress(G.tex));
   pressViews.forEach((v, i) => {
     const p = presses[i];
-    v.g.visible = !!p;
-    if (!p) return;
+    // Unbenutzte Pressen nur verstecken (unter den Boden), nicht ausblenden: so bleibt die Zahl
+    // der Lichter gleich und die Grafikkarte muss nichts neu übersetzen
+    for (const ch of v.g.children) if (!ch.isLight) ch.visible = !!p;
+    if (!p) { v.light.intensity = 0; return; }
     v.g.position.set(X(p.x + G.PRESS_W / 2), 0, 0);
     const bottom = Y(p.y), plateH = G.PLATE_H * SY;
     v.plate.position.y = bottom + plateH / 2;
@@ -296,8 +297,7 @@ function updateCars(cars, t) {
   }
   for (const [c, m] of carViews) {
     if (cars.includes(c)) continue;
-    scene.remove(m);
-    m.traverse(o => o.geometry && o.geometry.dispose());
+    scene.remove(m); // Formen gehören der Vorlage in cars3d.js: nicht freigeben
     carViews.delete(c);
   }
 }
@@ -356,7 +356,7 @@ export function init(consts) {
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
   renderer.toneMappingExposure = 1.2;
   renderer.shadowMap.enabled = true;
-  renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+  renderer.shadowMap.type = THREE.PCFShadowMap;
   const el = renderer.domElement;
   el.style.position = 'absolute';
   el.style.transformOrigin = 'center center';
@@ -377,7 +377,7 @@ export function init(consts) {
   sun = new THREE.DirectionalLight(0xfff1dc, 2.6);
   sun.position.set(-18, 34, 26);
   sun.castShadow = true;
-  sun.shadow.mapSize.set(2048, 2048);
+  sun.shadow.mapSize.set(1024, 1024);
   Object.assign(sun.shadow.camera, { left: -32, right: 32, top: 24, bottom: -18, near: 1, far: 120 });
   sun.shadow.camera.updateProjectionMatrix();
   sun.shadow.bias = -0.0004;
@@ -385,12 +385,41 @@ export function init(consts) {
 
   G.tex = makeTextures();
   buildHall(G.tex);
+  const hall = new THREE.Group(); // die ganze Halle ist unbewegt: zu wenigen Stücken verschmelzen
+  for (const o of [...scene.children]) if (o.isMesh) hall.add(o);
+  scene.add(hall);
+  mergeStatic(hall);
   coinGeo = new THREE.CylinderGeometry(0.45, 0.45, 0.09, 28);
   coinMat = new THREE.MeshStandardMaterial({ color: 0xffd34d, metalness: 1, roughness: 0.22, emissive: 0x5a3d00, emissiveIntensity: 0.4 });
+  quality = makeQuality(renderer, () => lastLayout && layout(...lastLayout));
+  // Halle, Pressen, Münze und Wrack vorab an die Grafikkarte schicken
+  const extras = [new THREE.Mesh(coinGeo, coinMat), new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), new THREE.MeshStandardMaterial({ transparent: true }))];
+  extras.forEach(m => { m.position.y = -20; scene.add(m); });
+  for (let i = 0; i < 3; i++) { // höchstens drei Pressen: alle gleich bauen
+    const v = buildPress(G.tex);
+    v.g.position.y = -100;
+    pressViews.push(v);
+  }
+  warmUp(renderer, scene, camera);
+  extras.forEach(m => scene.remove(m));
+}
+
+// Vor einer Runde: die Fahrzeuge dieser Runde schon einmal bauen und an die Grafikkarte schicken,
+// damit es beim Erscheinen nicht ruckelt
+export function prepare(vehicles) {
+  const tmp = vehicles.map(v => {
+    const m = buildCar({ kind: v.kind, color: v.color, special: v.special }, G.KINDS, 24);
+    m.position.y = -20;
+    scene.add(m);
+    return m;
+  });
+  warmUp(renderer, scene, camera);
+  tmp.forEach(m => scene.remove(m));
 }
 
 // Lage und Grösse wie der 2D-Canvas (inklusive Drehung im Hochformat)
 export function layout(cssW, cssH, left, top, transform) {
+  lastLayout = [cssW, cssH, left, top, transform];
   const st = renderer.domElement.style;
   st.width = cssW + 'px'; st.height = cssH + 'px';
   st.left = left + 'px'; st.top = top + 'px';
@@ -403,6 +432,9 @@ export function setVisible(on) {
 }
 
 export function render({ cars, presses, wrecks, coins, time, shake }) {
+  const now = performance.now();
+  if (lastFrame) quality((now - lastFrame) / 1000);
+  lastFrame = now;
   setVisible(true);
   updatePresses(presses, time);
   updateCars(cars, time);

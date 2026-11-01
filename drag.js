@@ -3,7 +3,7 @@
 import * as THREE from 'three';
 import { Sky } from 'three/addons/objects/Sky.js';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
-import { buildCar, animateCar } from './cars3d.js';
+import { buildCar, animateCar, warmUp, makeQuality, mergeStatic } from './cars3d.js';
 
 const DIST = 402;                 // eine Viertelmeile
 const LANE = 3.2;                 // Abstand der Spurmitte von der Mittelmauer
@@ -39,22 +39,22 @@ function label(text, bg, fg, w = 512, h = 128, size = 70) {
 
 // ---------- Strecke und Landschaft ----------
 function buildWorld() {
-  const renderer = new THREE.WebGLRenderer({ antialias: true, logarithmicDepthBuffer: true });
+  const renderer = new THREE.WebGLRenderer({ antialias: true });
   renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.5));
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
   renderer.toneMappingExposure = 0.85;
   renderer.shadowMap.enabled = true;
-  renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+  renderer.shadowMap.type = THREE.PCFShadowMap;
   renderer.domElement.className = 'r3d';
 
   const scene = new THREE.Scene();
   scene.fog = new THREE.Fog(0xe9b98a, 300, 2200);
   scene.environment = new THREE.PMREMGenerator(renderer).fromScene(new RoomEnvironment(), 0.04).texture;
-  const camera = new THREE.PerspectiveCamera(60, 16 / 9, 0.3, 20000);
+  const camera = new THREE.PerspectiveCamera(60, 16 / 9, 0.5, 8000);
 
   // Abendhimmel mit tiefer Sonne
   const sky = new Sky();
-  sky.scale.setScalar(10000);
+  sky.scale.setScalar(5000);
   const su = sky.material.uniforms;
   su.turbidity.value = 9; su.rayleigh.value = 2.4; su.mieCoefficient.value = 0.006; su.mieDirectionalG.value = 0.85;
   su.sunPosition.value.setFromSphericalCoords(1, THREE.MathUtils.degToRad(83), THREE.MathUtils.degToRad(-60));
@@ -62,7 +62,7 @@ function buildWorld() {
   scene.add(new THREE.HemisphereLight(0xffd9b0, 0x8a6a4a, 0.9));
   const sun = new THREE.DirectionalLight(0xffc48a, 2.6);
   sun.castShadow = true;
-  sun.shadow.mapSize.set(2048, 2048);
+  sun.shadow.mapSize.set(1024, 1024);
   Object.assign(sun.shadow.camera, { left: -40, right: 40, top: 40, bottom: -40, near: 10, far: 400 });
   sun.shadow.camera.updateProjectionMatrix();
   sun.shadow.bias = -0.0005;
@@ -208,16 +208,17 @@ function buildWorld() {
     }
   }
   const lampMat = new THREE.MeshStandardMaterial({ color: 0xffffff, emissive: 0xfff2cc, emissiveIntensity: 1.5 });
-  for (let x = -40; x <= DIST + 300; x += 60) {
-    for (const z of [-30, 30]) {
-      const mast = new THREE.Mesh(new THREE.CylinderGeometry(0.2, 0.3, 18, 8), steel);
-      mast.position.set(x, 9, z);
-      scene.add(mast);
-      const lamp = new THREE.Mesh(new THREE.BoxGeometry(2.4, 1.2, 0.4), lampMat);
-      lamp.position.set(x, 18, z * 0.97);
-      scene.add(lamp);
-    }
-  }
+  // Lichtmasten und Kakteen als Instanzen: alle gleichen Teile in einem Rutsch zeichnen
+  const spots = [];
+  for (let x = -40; x <= DIST + 300; x += 60) for (const z of [-30, 30]) spots.push([x, z]);
+  const masts = new THREE.InstancedMesh(new THREE.CylinderGeometry(0.2, 0.3, 18, 8), steel, spots.length);
+  const lamps = new THREE.InstancedMesh(new THREE.BoxGeometry(2.4, 1.2, 0.4), lampMat, spots.length);
+  const mtx = new THREE.Matrix4();
+  spots.forEach(([x, z], i) => {
+    masts.setMatrixAt(i, mtx.makeTranslation(x, 9, z));
+    lamps.setMatrixAt(i, mtx.makeTranslation(x, 18, z * 0.97));
+  });
+  scene.add(masts, lamps);
 
   // Tafelberge und Kakteen in der Wüste
   const rock = new THREE.MeshStandardMaterial({ color: 0xa65a38, roughness: 1, flatShading: true });
@@ -228,22 +229,29 @@ function buildWorld() {
     scene.add(mesa);
   }
   const cactusMat = new THREE.MeshStandardMaterial({ color: 0x3f7d34, roughness: 0.8 });
+  const trunks = new THREE.InstancedMesh(new THREE.CapsuleGeometry(0.3, 1, 4, 8), cactusMat, 120);
+  const arms = new THREE.InstancedMesh(new THREE.CapsuleGeometry(0.2, 1, 4, 8), cactusMat, 240);
+  const pos = new THREE.Vector3(), quat = new THREE.Quaternion(), scl = new THREE.Vector3();
+  let nArms = 0;
   for (let i = 0; i < 120; i++) {
     const x = -300 + Math.random() * 1200, z = (Math.random() < 0.5 ? -1 : 1) * (40 + Math.random() * 300);
-    const c = new THREE.Group();
     const h = 2 + Math.random() * 3;
-    const trunk = new THREE.Mesh(new THREE.CapsuleGeometry(0.3, h, 4, 8), cactusMat);
-    trunk.position.y = h / 2 + 0.3;
-    c.add(trunk);
-    for (const s of [-1, 1]) if (Math.random() < 0.7) {
-      const arm = new THREE.Mesh(new THREE.CapsuleGeometry(0.2, h * 0.35, 4, 8), cactusMat);
-      arm.position.set(0, h * (0.4 + Math.random() * 0.3), s * 0.55);
-      c.add(arm);
+    trunks.setMatrixAt(i, mtx.compose(pos.set(x, h / 2 + 0.3, z), quat, scl.set(1, h, 1)));
+    for (const sgn of [-1, 1]) if (Math.random() < 0.7) {
+      arms.setMatrixAt(nArms++, mtx.compose(pos.set(x, h * (0.4 + Math.random() * 0.3), z + sgn * 0.55), quat, scl.set(1, h * 0.35, 1)));
     }
-    c.position.set(x, 0, z);
-    c.traverse(o => { o.castShadow = true; });
-    scene.add(c);
   }
+  arms.count = nArms;
+  trunks.castShadow = arms.castShadow = true;
+  scene.add(trunks, arms);
+  const lift = (m, by) => { m.polygonOffset = true; m.polygonOffsetFactor = m.polygonOffsetUnits = -by; };
+  lift(road.material, 1);
+  scene.traverse(o => { if (o.isMesh && o.position.y > 0.025 && o.position.y < 0.05 && o.material !== road.material) lift(o.material, 3); });
+  const decor = new THREE.Group(); // unbewegte Kulisse zu wenigen Stücken verschmelzen (Himmel ausgenommen)
+  for (const o of [...scene.children]) if ((o.isMesh || o.isGroup) && o !== sky) decor.add(o);
+  scene.add(decor);
+  mergeStatic(decor);
+  warmUp(renderer, scene, camera);
   return { renderer, scene, camera, sun, bulbs };
 }
 
@@ -335,6 +343,8 @@ export function startDrag({ player, opponent, skill, kinds, topSpeed, onFinish }
   });
   const me = mk(player, -LANE, false), opp = mk(opponent, LANE, true);
   for (const c of [me, opp]) { c.mesh.position.set(c.x, 0, c.z); W3.scene.add(c.mesh); }
+  warmUp(W3.renderer, W3.scene, W3.camera);
+  if (!W3.quality) W3.quality = makeQuality(W3.renderer, layout);
   drag = { me, opp, t: 0, phase: 'stage', greenAt: 0, onFinish, endT: 0, msgT: 0, last: performance.now(), lightStep: 0 };
   W3.ui.root.hidden = false;
   W3.ui.meName.textContent = 'Du · ' + kinds[player.kind].name + ' · ' + player.ps + ' PS';
@@ -421,6 +431,7 @@ function physics(c, dt) {
 function loop(now) {
   if (!drag) return;
   const dt = Math.min(0.05, (now - drag.last) / 1000);
+  W3.quality((now - drag.last) / 1000);
   drag.last = now;
   step(dt);
   if (!drag) return;
@@ -497,6 +508,7 @@ function updateHud() {
 }
 
 // ---------- Kamera ----------
+const camWant = new THREE.Vector3();
 function render(dt) {
   const { me, opp } = drag;
   for (const c of [me, opp]) {
@@ -506,7 +518,7 @@ function render(dt) {
     animateCar(c.mesh, drag.t, c.v.special);
   }
   const cam = W3.camera, speed = me.speed;
-  const want = new THREE.Vector3(me.x - 9 - speed * 0.02, 2.6 + speed * 0.006, me.z + 2.2);
+  const want = camWant.set(me.x - 9 - speed * 0.02, 2.6 + speed * 0.006, me.z + 2.2);
   cam.position.lerp(want, 1 - Math.exp(-dt * 5));
   if (speed > 30) cam.position.y += (Math.random() - 0.5) * speed * 0.0012; // Zittern bei Höchsttempo
   cam.lookAt(me.x + 10, 1.0, me.z + 1.2);
@@ -543,7 +555,7 @@ function endDrag(quit) {
   drag = null;
   stopEngine();
   window.removeEventListener('keydown', onKey);
-  for (const c of [d.me, d.opp]) { W3.scene.remove(c.mesh); c.mesh.traverse(o => o.geometry && o.geometry.dispose()); }
+  for (const c of [d.me, d.opp]) W3.scene.remove(c.mesh); // Formen gehören der Vorlage in cars3d.js
   W3.ui.root.hidden = true;
   if (quit) { d.onFinish({ quit: true }); return; }
   d.onFinish({ win: !!d.me.finish && (!d.opp.finish || d.me.finish <= d.opp.finish), myTime: d.me.finish, oppTime: d.opp.finish,

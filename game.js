@@ -19,7 +19,7 @@ let rotated = false; // Hochformat: das Spiel wird um 90° gedreht, damit es imm
 let press3d = null;  // 3D-Presse (press3d.js), sobald geladen; sonst wird in 2D gezeichnet
 
 function resize() {
-  dpr = window.devicePixelRatio || 1;
+  dpr = Math.min(window.devicePixelRatio || 1, 2); // mehr Pixel sieht man nicht, kostet aber Zeit
   const vw = window.innerWidth, vh = window.innerHeight;
   rotated = vh > vw;
   scale = rotated ? Math.min(vh / W, vw / H) : Math.min(vw / W, vh / H);
@@ -146,6 +146,7 @@ function start(entries) {
   reset();
   roster = entries.map(entry => ({ entry, state: 'pool' }));
   crushedOrder = [];
+  if (press3d) press3d.prepare(entries); // 3D-Autos vorab bauen, damit es beim Erscheinen nicht ruckelt
   state = 'play';
   audio();
 }

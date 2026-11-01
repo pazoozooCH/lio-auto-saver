@@ -2,6 +2,7 @@
 // Jedes Fahrzeug hat eine eigene Bauanleitung (BUILD), angelehnt an seine 2D-Zeichnung in game.js.
 // Koordinaten: Länge entlang +X (vorne), Höhe Y, Breite Z (rechte Seite = +Z), Meter.
 import * as THREE from 'three';
+import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 
 const PI = Math.PI;
 
@@ -71,6 +72,7 @@ function wheel(r, width, parent, x, z, rimMat) {
   }
   tyre.castShadow = true;
   g.position.set(x, r, z);
+  g.name = 'wheel';
   parent.add(g);
   return g;
 }
@@ -83,6 +85,7 @@ function kit(v, kinds, hDiv, spec) {
     v, k, M, L: k.w[1] / 22, H: k.h[1] / (hDiv || (tall ? 20 : 27)), W: spec.width || (PROFILE[spec.arch] || {}).width || 1.85,
     r: (k.wheel || 11) * 0.032, group: new THREE.Group(), body: new THREE.Group(), wheels: [], paint: paintMaterial(v),
   };
+  C.body.name = 'body';
   C.group.add(C.body);
   C.X = f => f * C.L - C.L / 2;
   C.add = (m, x = 0, y = 0, z = 0) => { m.position.set(x, y, z); m.castShadow = true; m.receiveShadow = true; C.body.add(m); return m; };
@@ -736,12 +739,81 @@ function bike(C) {
 }
 
 // Baut ein 3D-Fahrzeug. hDiv: Pixel der 2D-Höhe pro Meter (Standard: hohe Fahrzeuge 20, sonst 27)
+// Jedes Fahrzeug (Typ, Lack, Farbe) wird nur einmal gebaut und danach kopiert: Kopien teilen sich
+// Formen und Materialien, das spart beim Erscheinen eines Autos viel Zeit. Geteilte Formen nie freigeben!
+const templates = new Map();
 export function buildCar(v, kinds, hDiv) {
-  const builder = BUILD[v.kind] || BUILD.car;
-  const C = kit(v, kinds, hDiv, BUILD[v.kind] ? SPEC_HINT[v.kind] || {} : {});
-  builder(C);
-  C.group.userData = { wheels: C.wheels, paint: C.paint, body: C.body, radius: Math.max(1.2, Math.min(C.L, 4) / 2), length: C.L };
-  return C.group;
+  const key = [v.kind, v.special || '', v.color || '', hDiv || ''].join('|');
+  let t = templates.get(key);
+  if (!t) {
+    if (templates.size > 150) templates.clear();
+    const C = kit(v, kinds, hDiv, BUILD[v.kind] ? SPEC_HINT[v.kind] || {} : {});
+    (BUILD[v.kind] || BUILD.car)(C);
+    mergeStatic(C.body);
+    t = { group: C.group, paint: C.paint, radius: Math.max(1.2, Math.min(C.L, 4) / 2), length: C.L };
+    templates.set(key, t);
+  }
+  const g = t.group.clone();
+  g.userData = { wheels: g.getObjectsByProperty('name', 'wheel'), paint: t.paint, body: g.getObjectByName('body'), radius: t.radius, length: t.length };
+  return g;
+}
+
+// Verschmilzt alle unbewegten Teile mit gleichem Material zu einem einzigen Stück: die Grafikkarte
+// zeichnet dann ein Stück statt dutzender Einzelteile (bewegte Teile mit userData bleiben einzeln)
+export function mergeStatic(root) {
+  root.updateMatrixWorld(true);
+  const inv = new THREE.Matrix4().copy(root.matrixWorld).invert();
+  const byMat = new Map(), done = [];
+  root.traverse(o => {
+    if (!o.isMesh || o.isInstancedMesh || Array.isArray(o.material) || o.isSky) return;
+    for (let q = o; q && q !== root; q = q.parent) if (Object.keys(q.userData).length) return;
+    const g = o.geometry.index ? o.geometry.toNonIndexed() : o.geometry.clone();
+    if (!g.attributes.position || !g.attributes.normal || !g.attributes.uv) return;
+    for (const name of Object.keys(g.attributes)) if (!['position', 'normal', 'uv'].includes(name)) g.deleteAttribute(name);
+    g.applyMatrix4(new THREE.Matrix4().multiplyMatrices(inv, o.matrixWorld));
+    let e = byMat.get(o.material);
+    if (!e) byMat.set(o.material, e = { geos: [], cast: false, receive: false });
+    e.geos.push(g);
+    e.cast = e.cast || o.castShadow;
+    e.receive = e.receive || o.receiveShadow;
+    done.push(o);
+  });
+  for (const o of done) o.parent.remove(o);
+  for (const [material, e] of byMat) {
+    const geo = mergeGeometries(e.geos, false);
+    if (!geo) continue;
+    const m = new THREE.Mesh(geo, material);
+    m.castShadow = e.cast;
+    m.receiveShadow = e.receive;
+    root.add(m);
+  }
+}
+
+// Alles vorab an die Grafikkarte schicken (Materialien übersetzen, Bilder hochladen),
+// damit es nicht ruckelt, wenn etwas zum ersten Mal ins Bild kommt
+export function warmUp(renderer, scene, camera) {
+  renderer.compile(scene, camera);
+  scene.traverse(o => {
+    const mats = Array.isArray(o.material) ? o.material : o.material ? [o.material] : [];
+    for (const m of mats) for (const k of ['map', 'emissiveMap']) if (m[k]) renderer.initTexture(m[k]);
+  });
+}
+
+// Wird das Gerät zu langsam, rechnet es mit weniger Pixeln (onChange setzt dann die Grösse neu)
+export function makeQuality(renderer, onChange) {
+  let acc = 0, n = 0;
+  return dt => {
+    if (dt > 0.1) return; // Tab im Hintergrund o. ä.: nicht mitzählen
+    acc += dt; n++;
+    if (acc < 2) return;
+    const avg = acc / n;
+    acc = 0; n = 0;
+    const ratio = renderer.getPixelRatio();
+    if (avg > 1 / 45 && ratio > 0.6) {
+      renderer.setPixelRatio(Math.max(0.6, ratio - 0.2));
+      onChange();
+    }
+  };
 }
 // Hohe Fahrzeuge (Kastenwagen, Busse) werden mit anderem Höhenmassstab gebaut
 const SPEC_HINT = Object.fromEntries(

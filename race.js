@@ -2,7 +2,7 @@
 import * as THREE from 'three';
 import { Sky } from 'three/addons/objects/Sky.js';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
-import { buildCar, animateCar } from './cars3d.js';
+import { buildCar, animateCar, warmUp, makeQuality, mergeStatic } from './cars3d.js';
 
 const LAPS = 3;
 const TRACK_W = 14;          // Fahrbahnbreite in Metern
@@ -197,23 +197,23 @@ function billboardTexture(text, bg, fg) {
 
 // ---------- Szene aufbauen ----------
 function buildWorld() {
-  const renderer = new THREE.WebGLRenderer({ antialias: true, logarithmicDepthBuffer: true });
+  const renderer = new THREE.WebGLRenderer({ antialias: true });
   renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.5));
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
   renderer.toneMappingExposure = 0.9;
   renderer.shadowMap.enabled = true;
-  renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+  renderer.shadowMap.type = THREE.PCFShadowMap;
 
   const scene = new THREE.Scene();
   scene.fog = new THREE.Fog(0xbcd3e6, 250, 1500);
   const pmrem = new THREE.PMREMGenerator(renderer);
   scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
 
-  const camera = new THREE.PerspectiveCamera(62, 16 / 9, 0.3, 20000);
+  const camera = new THREE.PerspectiveCamera(62, 16 / 9, 0.5, 8000);
 
   // Himmel mit Sonne
   const sky = new Sky();
-  sky.scale.setScalar(10000);
+  sky.scale.setScalar(5000);
   const su = sky.material.uniforms;
   su.turbidity.value = 4; su.rayleigh.value = 1.2; su.mieCoefficient.value = 0.004; su.mieDirectionalG.value = 0.8;
   const sunDir = new THREE.Vector3().setFromSphericalCoords(1, THREE.MathUtils.degToRad(55), THREE.MathUtils.degToRad(140));
@@ -223,8 +223,8 @@ function buildWorld() {
   scene.add(new THREE.HemisphereLight(0xcfe6ff, 0x4a6b3a, 0.7));
   const sun = new THREE.DirectionalLight(0xfff1dc, 2.4);
   sun.castShadow = true;
-  sun.shadow.mapSize.set(2048, 2048);
-  Object.assign(sun.shadow.camera, { left: -45, right: 45, top: 45, bottom: -45, near: 10, far: 400 });
+  sun.shadow.mapSize.set(1024, 1024);
+  Object.assign(sun.shadow.camera, { left: -35, right: 35, top: 35, bottom: -35, near: 10, far: 400 });
   sun.shadow.bias = -0.0005;
   sun.shadow.camera.updateProjectionMatrix();
   scene.add(sun, sun.target);
@@ -314,6 +314,15 @@ function buildWorld() {
   buildTrees(scene, T);
   buildHills(scene);
 
+  // Flache Schichten (Wiese < Asphalt/Kies < Linien/Randsteine) sauber übereinander zeichnen
+  const lift = (m, by) => { m.polygonOffset = true; m.polygonOffsetFactor = m.polygonOffsetUnits = -by; };
+  scene.traverse(o => { if (o.material && (o.material.map === tex.asphalt || o.material.map === tex.gravel)) lift(o.material, 1); });
+  for (const m of [kerbMat, lineMat, finish.material]) lift(m, 3);
+  const decor = new THREE.Group(); // unbewegte Kulisse zu wenigen Stücken verschmelzen (Himmel ausgenommen)
+  for (const o of [...scene.children]) if ((o.isMesh || o.isGroup) && o !== sky) decor.add(o);
+  scene.add(decor);
+  mergeStatic(decor);
+  warmUp(renderer, scene, camera);
   return { renderer, scene, camera, sun, T, lights };
 }
 
@@ -567,6 +576,8 @@ export function startRace({ player, opponents, kinds, topSpeed, onFinish }) {
     mesh: buildCar(player, kinds), finished: null, wrongT: 0 };
   cars.push(me);
   for (const c of cars) R.scene.add(c.mesh);
+  warmUp(R.renderer, R.scene, R.camera);
+  if (!R.quality) R.quality = makeQuality(R.renderer, layout);
 
   window.__race = () => race; // für Tests im Browser
   race = { cars, me, T, t: 0, phase: 'lights', lightsOut: 3.4 + Math.random() * 0.8, clock: 0, input: {}, onFinish,
@@ -595,6 +606,7 @@ function showMsg(text, secs = 1.6) {
 function loop(now) {
   if (!race) return;
   const dt = Math.min(0.05, (now - race.last) / 1000);
+  R.quality((now - race.last) / 1000);
   race.last = now;
   step(dt);
   if (!race) return; // Rennen ist gerade zu Ende gegangen
@@ -692,12 +704,13 @@ function step(dt) {
     c.prog += c.speed * dt;
     if ((c.laneT -= dt) <= 0) { c.laneTarget = (Math.random() - 0.5) * 8; c.laneT = 3 + Math.random() * 4; }
     c.lat += Math.sign(c.laneTarget - c.lat) * Math.min(Math.abs(c.laneTarget - c.lat), 1.6 * dt);
+    c.wp = aiPos(c);
   }
 
   // Zusammenstoss mit Gegnern: wegschieben und abbremsen
   for (const c of race.cars) {
     if (!c.ai) continue;
-    const cp = aiPos(c);
+    const cp = c.wp;
     const dx = me.pos.x - cp.x, dz = me.pos.z - cp.z, dd = Math.hypot(dx, dz);
     const minD = (me.mesh.userData.radius + c.mesh.userData.radius) * 0.85;
     if (dd < minD && dd > 0.01) {
@@ -745,7 +758,7 @@ function placeCars() {
     const m = c.mesh;
     let x, z, heading;
     if (c.ai) {
-      const p = aiPos(c);
+      const p = c.wp || (c.wp = aiPos(c));
       x = p.x; z = p.z; heading = Math.atan2(p.t.z, p.t.x);
     } else {
       x = c.pos.x; z = c.pos.z; heading = c.heading;
@@ -779,7 +792,7 @@ function updateHud() {
 }
 
 // ---------- Kamera und Zeichnen ----------
-const camPos = new THREE.Vector3(), camLook = new THREE.Vector3();
+const camPos = new THREE.Vector3(), camLook = new THREE.Vector3(), camWant = new THREE.Vector3(), camAhead = new THREE.Vector3();
 function snapCamera() {
   const { me } = race;
   camPos.set(me.pos.x - Math.cos(me.heading) * 9, 3.4, me.pos.z - Math.sin(me.heading) * 9);
@@ -791,9 +804,9 @@ function render(dt) {
   const { me } = race;
   const fx = Math.cos(me.heading), fz = Math.sin(me.heading);
   const back = 8.5 + Math.abs(me.speed) * 0.03;
-  const want = new THREE.Vector3(me.pos.x - fx * back, 3.2 + Math.abs(me.speed) * 0.01, me.pos.z - fz * back);
+  const want = camWant.set(me.pos.x - fx * back, 3.2 + Math.abs(me.speed) * 0.01, me.pos.z - fz * back);
   R.camera.position.lerp(want, 1 - Math.exp(-dt * 6));
-  camLook.lerp(new THREE.Vector3(me.pos.x + fx * 6, 1.2, me.pos.z + fz * 6), 1 - Math.exp(-dt * 10));
+  camLook.lerp(camAhead.set(me.pos.x + fx * 6, 1.2, me.pos.z + fz * 6), 1 - Math.exp(-dt * 10));
   R.camera.lookAt(camLook);
   R.camera.fov = 62 + Math.min(18, Math.abs(me.speed) * 0.16);
   R.camera.updateProjectionMatrix();
@@ -831,7 +844,7 @@ function drawMinimapCars() {
   g.clearRect(0, 0, cvs.width, cvs.height);
   g.drawImage(mapInfo.base, 0, 0);
   for (const c of race.cars) {
-    const p = c.ai ? aiPos(c) : c.pos;
+    const p = c.ai ? c.wp : c.pos;
     const [x, y] = mapInfo.map(p.x, p.z);
     g.fillStyle = c.ai ? c.color : '#ffe066';
     g.strokeStyle = '#000';
@@ -876,8 +889,7 @@ function endRace(quit) {
   window.removeEventListener('keydown', onKey);
   window.removeEventListener('keyup', onKey);
   for (const c of r.cars) {
-    R.scene.remove(c.mesh);
-    c.mesh.traverse(o => { if (o.geometry) o.geometry.dispose(); });
+    R.scene.remove(c.mesh); // Formen gehören der Vorlage in cars3d.js: nicht freigeben
   }
   R.ui.root.hidden = true;
   if (quit) { r.onFinish({ quit: true }); return; }
