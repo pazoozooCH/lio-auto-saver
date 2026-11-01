@@ -1,6 +1,8 @@
 # Auto-Retter
 
-Browser-Spiel ohne Build: `index.html` + `game.js` (Canvas, alles in einer Datei), `serve.py` als Webserver.
+Browser-Spiel ohne Build: `index.html` + `game.js` (2D-Canvas: Menüs, Presse, Shop), `race.js` (3D-Rennstrecke mit
+three.js, als ES-Modul erst beim ersten Rennen per `import()` geladen; three.js kommt per Import-Map von jsDelivr),
+`serve.py` als Webserver.
 Texte im Spiel sind Deutsch (Schweizer Schreibweise, kein ß).
 
 ## Arbeitsweise
@@ -15,3 +17,5 @@ Texte im Spiel sind Deutsch (Schweizer Schreibweise, kein ß).
 - Tests nur auf Port **8124** (`auto-retter-test`, nur `127.0.0.1`). Anderer Port = eigener `localStorage`.
 - Prüfen: `node --check game.js`, dann im Browser auf 8124 ansehen; Spielzustand lässt sich per
   JavaScript setzen (`start(...)`, `openMenu('shop')`, `fleet`, `wallet` usw. sind globale Variablen).
+- Rennen testen: `startRaceMode()`, dann liefert `window.__race()` das laufende Rennen (`input`, `me`, `cars`, `T`).
+  Der Browser-Tab muss im Vordergrund sein, sonst läuft das Rennen kaum weiter.

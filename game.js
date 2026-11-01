@@ -96,7 +96,7 @@ function noise(dur, cutoff, vol) {
 }
 
 // ---------- Spielzustand ----------
-let state = 'title';   // title | select | play | over | shop | reveal | admin
+let state = 'title';   // title | select | play | over | shop | reveal | admin | racemenu | raceload | race | raceresult
 let cars, presses, wrecks, particles, floaters;
 // Fahrzeuge dieser Runde: { entry, state: 'pool' | 'road' | 'crushed' }
 let roster = [], crushedOrder = [];
@@ -290,11 +290,15 @@ function storeJSON(key, value) {
 let wallet = loadJSON('autoRetterCoins', 0);
 
 // Ein Fahrzeug im Fahrzeugpark: Typ, eigene Farbe und evtl. Gold-/Regenbogen-Lack
+// Start-PS eines Fahrzeugtyps: Seltenheit mal Tempo. In der Presse: retten +1 PS, zerquetscht −3 PS.
+const TIER_PS = { common: 40, uncommon: 55, rare: 70, epic: 85, legendary: 100 };
+function basePS(kind) { return Math.round(TIER_PS[KINDS[kind].tier] * (KINDS[kind].speed || 1)); }
+
 function makeVehicle(kind, special = null) {
   const k = KINDS[kind];
   return {
     id: Date.now().toString(36) + Math.random().toString(36).slice(2, 7),
-    kind, special,
+    kind, special, ps: basePS(kind),
     color: { gold: '#ffcf33', diamond: '#bfefff', obsidian: '#1d1030' }[special] || k.color || pick(COLORS),
   };
 }
@@ -309,6 +313,8 @@ if (!fleet) {
   try { localStorage.removeItem('autoRetterUnlocked'); } catch (e) { /* egal */ }
 }
 fleet = fleet.filter(v => KINDS[v.kind]);
+for (const v of fleet) if (typeof v.ps !== 'number') v.ps = basePS(v.kind); // ältere Spielstände ohne PS
+storeJSON('autoRetterFleet', fleet);
 const MAX_SELECTED = 4;      // so viele Fahrzeuge darf man in eine Runde mitnehmen
 let selectedIds = new Set(loadJSON('autoRetterSelected', fleet.slice(0, MAX_SELECTED).map(v => v.id)));
 
@@ -612,7 +618,9 @@ function saveCar(c) {
   const repairs = (k.heal || 0) + ({ gold: 1, rainbow: 3 }[c.special] || 0);
   saved += pts;
   c.slot.state = 'pool'; // fährt später nochmal
-  let text = '+' + pts;
+  c.slot.entry.ps += 1;
+  storeJSON('autoRetterFleet', fleet);
+  let text = '+' + pts + '  ⚡+1 PS';
   const repaired = revive(repairs);
   if (repaired.length) {
     floaters.push({ text: '🔧 ' + repaired.join(', ') + ' repariert!', x: W / 2, y: 175, t: 0, color: '#7dffb0', size: 26, long: true });
@@ -671,7 +679,9 @@ function crush(c) {
   }
   noise(0.5, 1800, 0.5);
   beep(90, 0.4, 'sawtooth', 0.1);
-  floaters.push({ text: 'KRACH!', x: c.x + c.w / 2, y: ROAD_Y - 120, t: 0, color: '#ff5d5d', size: 34 });
+  c.slot.entry.ps = Math.max(1, c.slot.entry.ps - 3);
+  storeJSON('autoRetterFleet', fleet);
+  floaters.push({ text: 'KRACH!  −3 PS', x: c.x + c.w / 2, y: ROAD_Y - 120, t: 0, color: '#ff5d5d', size: 32 });
   c.slot.state = 'crushed';
   crushedOrder.push(c.slot);
   if (vehiclesLeft() === 0) endRound();
@@ -2386,6 +2396,9 @@ function draw() {
   if (state === 'shop') { drawShop(); return; }
   if (state === 'reveal') { drawReveal(); return; }
   if (state === 'admin') { drawAdmin(); return; }
+  if (state === 'racemenu') { drawRaceMenu(); return; }
+  if (state === 'raceresult') { drawRaceResult(); return; }
+  if (state === 'raceload') { drawLoading(); return; }
   ctx.save();
   if (shake > 0) ctx.translate(rand(-shake, shake), rand(-shake, shake));
 
@@ -2414,13 +2427,12 @@ function draw() {
 
   if (state === 'title') {
     drawOverlay('AUTO-RETTER', [
-      'Die Presse will die Autos platt machen – rette sie!',
-      'Tippe ein Auto an, damit es anhält. Nochmal tippen: es fährt weiter.',
-      'Gerettete Autos fahren nochmal. Sind alle zerquetscht, ist die Runde vorbei.',
-      '🪙 Jedes geschaffte Level bringt Münzen – und manchmal regnet es welche!',
-      '🏪 Im Shop öffnest du Garagentore und bekommst neue Fahrzeuge.',
+      '🏁 Rennstrecke: lenken, Gas, Bremse – gewinne Pokale in vier Cups!',
+      '⚡ Je mehr PS dein Auto hat, desto schneller ist es im Rennen.',
+      '🏭 Presse: Autos antippen = anhalten. Gerettet +1 PS, zerquetscht −3 PS.',
+      '🪙 In der Presse sammelst du Münzen für neue Fahrzeuge im Shop.',
     ], null);
-    drawMenuButtons('▶ SPIELEN');
+    drawTitleButtons();
     drawVersion();
   } else if (state === 'over') {
     drawOverlay('RUNDE VORBEI!', [
@@ -2662,13 +2674,10 @@ function drawSelect() {
     ctx.font = 'bold 13px system-ui, sans-serif';
     ctx.fillText(armed ? 'Nochmal tippen = +' + vehicleValue(v) + ' 🪙'
       : TIERS[k.tier].label + (v.special ? '  ' + specialLabel(v) : ''), card.x + card.w / 2, card.y + 111);
-    if (on && !sellMode) {
-      ctx.fillStyle = '#2ecc71';
-      circle(card.x + card.w - 16, card.y + 16, 11);
-      ctx.fillStyle = '#fff';
-      ctx.font = 'bold 14px system-ui, sans-serif';
-      ctx.fillText('✓', card.x + card.w - 16, card.y + 17);
-    }
+    ctx.fillStyle = '#7dd3fc';
+    ctx.font = 'bold 14px system-ui, sans-serif';
+    ctx.textAlign = 'right';
+    ctx.fillText('⚡' + v.ps + ' PS', card.x + card.w - 10, card.y + 17);
   }
 
   drawButton(BACK_BTN, '← Zurück', '#444b5c');
@@ -2940,7 +2949,7 @@ function drawReveal() {
     ctx.fillStyle = tier.color;
     ctx.font = 'bold 20px system-ui, sans-serif';
     ctx.fillText(tier.label.toUpperCase() + (v.special ? '  ·  ' + specialLabel(v).toUpperCase() + '-LACK' : '')
-      + '  ·  WERT ' + vehicleValue(v) + ' 🪙', W / 2, 374);
+      + '  ·  ' + v.ps + ' PS  ·  WERT ' + vehicleValue(v) + ' 🪙', W / 2, 374);
     ctx.fillStyle = '#fff';
     ctx.font = 'bold 38px system-ui, sans-serif';
     ctx.fillText(k.name, W / 2, 410);
@@ -2963,6 +2972,229 @@ function drawReveal() {
     ctx.globalAlpha = 1;
   }
   drawParticles();
+}
+
+// --- Startbildschirm: Rennen, Presse, Shop ---
+const RACE_BTN = { x: 130, y: 420, w: 220, h: 62 };
+const PRESS_BTN = { x: 370, y: 420, w: 220, h: 62 };
+const TITLE_SHOP_BTN = { x: 610, y: 420, w: 220, h: 62 };
+
+function drawTitleButtons() {
+  const pulse = 1 + 0.03 * Math.sin(time * 4);
+  ctx.save();
+  ctx.translate(RACE_BTN.x + RACE_BTN.w / 2, RACE_BTN.y + RACE_BTN.h / 2);
+  ctx.scale(pulse, pulse);
+  ctx.translate(-(RACE_BTN.x + RACE_BTN.w / 2), -(RACE_BTN.y + RACE_BTN.h / 2));
+  drawButton(RACE_BTN, '🏁 RENNEN', '#c0392b');
+  ctx.restore();
+  drawButton(PRESS_BTN, '🏭 PRESSE', '#21a35b');
+  drawButton(TITLE_SHOP_BTN, '🏪 SHOP  🪙 ' + wallet, '#3657b8', 22);
+}
+
+// --- Rennstrecke: Cups, Fahrzeugwahl und Pokale ---
+// Höchstgeschwindigkeit auf der Rennstrecke in m/s: mehr PS = schneller (race.js benutzt dieselbe Formel)
+function raceTopSpeed(ps) { return 18 + ps * 0.32; }
+
+const CUPS = [
+  { id: 'anfaenger', name: 'Anfänger-Cup', ps: [30, 45], tiers: ['common'], color: '#cd7f32' },
+  { id: 'profi', name: 'Profi-Cup', ps: [55, 75], tiers: ['common', 'uncommon'], color: '#c0c7d2' },
+  { id: 'champion', name: 'Champion-Cup', ps: [85, 110], tiers: ['uncommon', 'rare'], color: '#ffd700' },
+  { id: 'wm', name: 'Weltmeister-Cup', ps: [120, 160], tiers: ['epic', 'legendary'], color: '#c084fc' },
+];
+const RACER_NAMES = ['Blitz-Bert', 'Turbo-Tina', 'Speedy Sam', 'Rakete Rosi', 'Donner-Dani', 'Flitz-Fritz',
+  'Kurven-Karla', 'Vollgas-Vreni', 'Brumm-Beni', 'Düsen-Dora'];
+let trophies = loadJSON('autoRetterTrophies', {});   // { cupId: { gold, silver, bronze } }
+let raceCup = 0, raceVehicleId = loadJSON('autoRetterRaceCar', null), raceResult = null;
+
+const CUP_CARDS = CUPS.map((cup, i) => ({ cup, i, x: 42 + i * 222, y: 76, w: 210, h: 166 }));
+const RACE_PREV_BTN = { x: 196, y: 300, w: 64, h: 80 };
+const RACE_NEXT_BTN = { x: 700, y: 300, w: 64, h: 80 };
+const RACE_GO_BTN = { x: W / 2 - 160, y: 470, w: 320, h: 54 };
+const RESULT_AGAIN_BTN = { x: W / 2 - 250, y: 462, w: 240, h: 56 };
+const RESULT_MENU_BTN = { x: W / 2 + 10, y: 462, w: 240, h: 56 };
+
+function cupTrophies(cup) { return trophies[cup.id] || { gold: 0, silver: 0, bronze: 0 }; }
+function cupUnlocked(i) { return i === 0 || cupTrophies(CUPS[i - 1]).gold > 0; }
+function fleetByPS() { return [...fleet].sort((a, b) => b.ps - a.ps); }
+function raceVehicle() { return fleet.find(v => v.id === raceVehicleId) || fleetByPS()[0]; }
+
+function drawRaceMenu() {
+  drawMenuBackdrop('🏁 RENNSTRECKE', true);
+  drawButton(BACK_BTN, '← Zurück', '#444b5c');
+
+  for (const card of CUP_CARDS) {
+    const { cup, i } = card, open = cupUnlocked(i), chosen = i === raceCup, t = cupTrophies(cup);
+    ctx.fillStyle = chosen ? 'rgba(255, 224, 102, 0.14)' : 'rgba(255, 255, 255, 0.06)';
+    rr(card.x, card.y, card.w, card.h, 12); ctx.fill();
+    ctx.strokeStyle = chosen ? '#ffe066' : '#4a4f5c';
+    ctx.lineWidth = chosen ? 3 : 2;
+    ctx.stroke();
+    ctx.globalAlpha = open ? 1 : 0.45;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillStyle = cup.color;
+    ctx.font = 'bold 34px system-ui, sans-serif';
+    ctx.fillText(open ? '🏆' : '🔒', card.x + card.w / 2, card.y + 34);
+    ctx.fillStyle = '#fff';
+    ctx.font = 'bold 19px system-ui, sans-serif';
+    ctx.fillText(cup.name, card.x + card.w / 2, card.y + 72);
+    ctx.fillStyle = 'rgba(255,255,255,0.75)';
+    ctx.font = '15px system-ui, sans-serif';
+    ctx.fillText('Gegner: ' + cup.ps[0] + '–' + cup.ps[1] + ' PS', card.x + card.w / 2, card.y + 98);
+    ctx.font = 'bold 17px system-ui, sans-serif';
+    ctx.fillText('🥇 ' + t.gold + '   🥈 ' + t.silver + '   🥉 ' + t.bronze, card.x + card.w / 2, card.y + 128);
+    if (!open) {
+      ctx.fillStyle = '#ffb4a8';
+      ctx.font = '13px system-ui, sans-serif';
+      ctx.fillText('Erst ' + CUPS[i - 1].name + ' gewinnen', card.x + card.w / 2, card.y + 152);
+    }
+    ctx.globalAlpha = 1;
+  }
+
+  // Gewählter Rennwagen
+  const v = raceVehicle(), k = KINDS[v.kind];
+  ctx.fillStyle = 'rgba(255, 255, 255, 0.06)';
+  rr(180, 256, 600, 180, 14); ctx.fill();
+  ctx.fillStyle = '#fff';
+  ctx.font = 'bold 20px system-ui, sans-serif';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText('Dein Rennwagen: ' + k.name + (v.special ? '  ' + specialLabel(v) : ''), W / 2, 278);
+  drawVehiclePreview(v, W / 2, 392, 260, 1.15);
+  ctx.fillStyle = '#7dd3fc';
+  ctx.font = 'bold 18px system-ui, sans-serif';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText('⚡ ' + v.ps + ' PS   ·   bis ' + Math.round(raceTopSpeed(v.ps) * 3.6) + ' km/h', W / 2, 418);
+  if (fleet.length > 1) {
+    drawButton(RACE_PREV_BTN, '◀', '#444b5c', 30);
+    drawButton(RACE_NEXT_BTN, '▶', '#444b5c', 30);
+  }
+
+  drawButton(RACE_GO_BTN, '🏁 RENNEN STARTEN', '#c0392b', 24);
+  drawMenuMsg('Mehr PS = schneller! PS trainierst du in der Presse: retten +1, zerquetscht −3.', 452);
+  drawParticles();
+}
+
+function raceMenuTap(px, py) {
+  if (inRect(px, py, BACK_BTN)) { openMenu('title'); return; }
+  for (const card of CUP_CARDS) {
+    if (!inRect(px, py, card)) continue;
+    if (cupUnlocked(card.i)) {
+      raceCup = card.i;
+      beep(660, 0.07, 'triangle', 0.06);
+    } else {
+      showMenuMsg('Gewinne zuerst den ' + CUPS[card.i - 1].name + ', dann ist dieser Cup frei!');
+      beep(200, 0.15, 'square', 0.05);
+    }
+    return;
+  }
+  const list = fleetByPS();
+  const step = inRect(px, py, RACE_PREV_BTN) ? -1 : inRect(px, py, RACE_NEXT_BTN) ? 1 : 0;
+  if (step && list.length > 1) {
+    const i = list.indexOf(raceVehicle());
+    raceVehicleId = list[(i + step + list.length) % list.length].id;
+    storeJSON('autoRetterRaceCar', raceVehicleId);
+    beep(520, 0.06, 'triangle', 0.05);
+    return;
+  }
+  if (inRect(px, py, RACE_GO_BTN)) startRaceMode();
+}
+
+// Lädt die 3D-Rennstrecke (race.js + three.js) erst beim ersten Rennen
+function startRaceMode() {
+  const cup = CUPS[raceCup], v = raceVehicle();
+  raceVehicleId = v.id;
+  storeJSON('autoRetterRaceCar', v.id);
+  const pool = Object.keys(KINDS).filter(kind => cup.tiers.includes(KINDS[kind].tier));
+  const names = [...RACER_NAMES].sort(() => Math.random() - 0.5).slice(0, 5);
+  const opponents = names.map(name => {
+    const paint = raceCup >= 2 && Math.random() < 0.3 ? pick(['gold', 'rainbow', 'diamond']) : null;
+    return { ...makeVehicle(pick(pool), paint), name, ps: Math.round(rand(cup.ps[0], cup.ps[1])) };
+  });
+  state = 'raceload';
+  import('./race.js')
+    .then(m => {
+      state = 'race';
+      m.startRace({ player: { ...v, name: 'Du' }, opponents, kinds: KINDS, topSpeed: raceTopSpeed, onFinish: finishRace });
+    })
+    .catch(err => {
+      console.error(err);
+      openMenu('racemenu');
+      showMenuMsg('Die 3D-Rennstrecke konnte nicht geladen werden – braucht Internet.');
+    });
+}
+
+function finishRace(res) {
+  if (res.quit) { openMenu('racemenu'); return; }
+  const cup = CUPS[raceCup];
+  const medal = ['gold', 'silver', 'bronze'][res.place - 1] || null;
+  const firstGold = medal === 'gold' && cupTrophies(cup).gold === 0;
+  if (medal) {
+    trophies[cup.id] = cupTrophies(cup);
+    trophies[cup.id][medal]++;
+    storeJSON('autoRetterTrophies', trophies);
+  }
+  raceResult = { ...res, medal, cup, newCup: firstGold && raceCup < CUPS.length - 1 ? CUPS[raceCup + 1] : null };
+  openMenu('raceresult');
+  if (medal) {
+    for (let i = 0; i < 70; i++) {
+      particles.push({
+        x: W / 2 + rand(-80, 80), y: 120, vx: rand(-380, 380), vy: rand(-420, -60),
+        life: 0, max: rand(1, 1.8), color: medal === 'gold' ? pick(['#ffd700', '#fff6c2', ...COLORS]) : pick(COLORS),
+        size: rand(3, 7), g: 500,
+      });
+    }
+    [523, 659, 784, 1047].forEach((f, i) => beep(f, i === 3 ? 0.4 : 0.12, 'triangle', 0.08, i * 0.13));
+  }
+}
+
+function drawLoading() {
+  drawMenuBackdrop('🏁 RENNSTRECKE', false);
+  ctx.fillStyle = '#fff';
+  ctx.font = 'bold 26px system-ui, sans-serif';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText('Lade 3D-Rennstrecke' + '.'.repeat(1 + Math.floor(time * 3) % 3), W / 2, H / 2);
+}
+
+function drawRaceResult() {
+  const r = raceResult;
+  const title = { gold: '🥇 SIEG!', silver: '🥈 2. PLATZ!', bronze: '🥉 3. PLATZ!' }[r.medal] || r.place + '. PLATZ';
+  drawMenuBackdrop(title, false);
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillStyle = 'rgba(255,255,255,0.75)';
+  ctx.font = '18px system-ui, sans-serif';
+  ctx.fillText(r.cup.name + (r.medal ? '  ·  Pokal gewonnen!' : '  ·  Mehr PS sammeln und nochmal versuchen!'), W / 2, 82);
+
+  r.order.forEach((car, i) => {
+    const y = 124 + i * 46;
+    ctx.fillStyle = car.isPlayer ? 'rgba(255, 224, 102, 0.2)' : 'rgba(255, 255, 255, 0.05)';
+    rr(W / 2 - 300, y - 19, 600, 38, 9); ctx.fill();
+    ctx.fillStyle = car.isPlayer ? '#ffe066' : '#fff';
+    ctx.font = (car.isPlayer ? 'bold ' : '') + '19px system-ui, sans-serif';
+    ctx.textAlign = 'left';
+    ctx.fillText((i + 1) + '.  ' + car.name, W / 2 - 280, y);
+    ctx.textAlign = 'right';
+    ctx.fillStyle = 'rgba(255,255,255,0.75)';
+    ctx.fillText(KINDS[car.kind].name + '  ·  ' + car.ps + ' PS' + (car.time ? '  ·  ' + car.time.toFixed(1) + ' s' : ''), W / 2 + 280, y);
+  });
+
+  if (r.newCup) {
+    ctx.fillStyle = '#7dffb0';
+    ctx.font = 'bold 20px system-ui, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText('🔓 Neu freigeschaltet: ' + r.newCup.name + '!', W / 2, 432);
+  }
+  drawButton(RESULT_AGAIN_BTN, '🔁 NOCHMAL', '#c0392b');
+  drawButton(RESULT_MENU_BTN, '🏁 RENNMENÜ', '#444b5c');
+  drawParticles();
+}
+
+function raceResultTap(px, py) {
+  if (inRect(px, py, RESULT_AGAIN_BTN)) startRaceMode();
+  else if (inRect(px, py, RESULT_MENU_BTN)) openMenu('racemenu');
 }
 
 // --- Verstecktes Admin-Menü: 5× schnell auf die Versionsnummer im Startbildschirm tippen ---
@@ -3059,12 +3291,21 @@ canvas.addEventListener('pointerdown', e => {
 
   if (state === 'title' || state === 'over') {
     if (state === 'over' && overTime < 0.8) return;
-    if (state === 'title' && inRect(px, py, VERSION_AREA)) { secretTap(); return; }
+    if (state === 'title') {
+      if (inRect(px, py, VERSION_AREA)) secretTap();
+      else if (inRect(px, py, RACE_BTN)) openMenu('racemenu');
+      else if (inRect(px, py, PRESS_BTN)) openMenu('select');
+      else if (inRect(px, py, TITLE_SHOP_BTN)) openMenu('shop');
+      return;
+    }
     openMenu(inRect(px, py, SHOP_BTN) ? 'shop' : 'select');
     return;
   }
   if (state === 'select') { selectTap(px, py); return; }
   if (state === 'admin') { adminTap(px, py); return; }
+  if (state === 'racemenu') { raceMenuTap(px, py); return; }
+  if (state === 'raceresult') { raceResultTap(px, py); return; }
+  if (state === 'race' || state === 'raceload') return;
   if (state === 'shop') { shopTap(px, py); return; }
   if (state === 'reveal') { if (reveal.t > REVEAL_AT + 0.2) openMenu('shop'); return; }
 
@@ -3079,7 +3320,7 @@ window.addEventListener('keydown', e => {
     if (state === 'title' || (state === 'over' && overTime > 0.8)) openMenu('select');
     else if (state === 'select') selectTap(GO_BTN.x + 1, GO_BTN.y + 1);
   }
-  if (e.code === 'Escape' && (state === 'select' || state === 'shop' || state === 'admin')) openMenu('title');
+  if (e.code === 'Escape' && ['select', 'shop', 'admin', 'racemenu', 'raceresult'].includes(state)) openMenu('title');
 });
 
 // ---------- Hauptschleife ----------
@@ -3087,8 +3328,10 @@ let lastTime = performance.now();
 function frame(now) {
   const dt = Math.min(0.05, (now - lastTime) / 1000);
   lastTime = now;
-  update(dt);
-  draw();
+  if (state !== 'race') { // im Rennen zeichnet race.js in 3D
+    update(dt);
+    draw();
+  }
   requestAnimationFrame(frame);
 }
 requestAnimationFrame(frame);
