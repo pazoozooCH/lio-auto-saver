@@ -6,6 +6,7 @@ Browser-Spiel ohne Build: `index.html` + `game.js` (Spiellogik, Menüs und 2D-Ze
   `press3d.project()` rechnet Positionen für Texte, Symbole und Antippen um. Ohne three.js (offline) zeichnet
   `game.js` die Presse wie früher in 2D.
 - `race.js`: 3D-Rennstrecke, erst beim ersten Rennen geladen.
+- `drag.js`: 3D-Dragster-Bahn (1 gegen 1, Startampel, selber schalten); Gewinner bekommt das Auto des Verlierers.
 - `cars3d.js`: 3D-Fahrzeuge für beide; jedes Fahrzeug hat in `BUILD` eine eigene Bauanleitung nach seiner 2D-Zeichnung.
 Texte im Spiel sind Deutsch (Schweizer Schreibweise, kein ß).
 
@@ -23,3 +24,4 @@ Texte im Spiel sind Deutsch (Schweizer Schreibweise, kein ß).
   JavaScript setzen (`start(...)`, `openMenu('shop')`, `fleet`, `wallet` usw. sind globale Variablen).
 - Rennen testen: `startRaceMode()`, dann liefert `window.__race()` das laufende Rennen (`input`, `me`, `cars`, `T`).
   Der Browser-Tab muss im Vordergrund sein, sonst läuft das Rennen kaum weiter.
+- Dragrace testen: `openDragMenu(); dragPick = 0; startDragMode()`, dann `window.__drag()`; Gas/Schalten per Leertaste.

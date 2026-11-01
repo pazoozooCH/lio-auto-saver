@@ -98,7 +98,7 @@ function noise(dur, cutoff, vol) {
 }
 
 // ---------- Spielzustand ----------
-let state = 'title';   // title | select | play | over | shop | reveal | admin | racemenu | raceload | race | raceresult
+let state = 'title';   // title | select | play | over | shop | reveal | admin | racemenu | raceload | race | raceresult | dragmenu | dragload | drag | dragresult
 let cars, presses, wrecks, particles, floaters;
 // Fahrzeuge dieser Runde: { entry, state: 'pool' | 'road' | 'crushed' }
 let roster = [], crushedOrder = [];
@@ -2434,7 +2434,10 @@ function draw() {
   if (state === 'admin') { drawAdmin(); return; }
   if (state === 'racemenu') { drawRaceMenu(); return; }
   if (state === 'raceresult') { drawRaceResult(); return; }
-  if (state === 'raceload') { drawLoading(); return; }
+  if (state === 'raceload') { drawLoading('🏁 RENNSTRECKE', 'Lade 3D-Rennstrecke'); return; }
+  if (state === 'dragmenu') { drawDragMenu(); return; }
+  if (state === 'dragresult') { drawDragResult(); return; }
+  if (state === 'dragload') { drawLoading('🔥 DRAGSTER-BAHN', 'Lade 3D-Dragster-Bahn'); return; }
   ctx.save();
   if (in3D()) {
     ctx.clearRect(0, 0, W, H); // durchsichtig: darunter liegt die 3D-Szene
@@ -2473,6 +2476,7 @@ function draw() {
       '⚡ Je mehr PS dein Auto hat, desto schneller ist es im Rennen.',
       '🏭 Presse: Autos antippen = anhalten. Gerettet +1 PS, zerquetscht −3 PS.',
       '🪙 In der Presse sammelst du Münzen für neue Fahrzeuge im Shop.',
+      '🔥 Dragster: 1 gegen 1 – wer gewinnt, bekommt das Auto des anderen!',
     ], null);
     drawTitleButtons();
     drawVersion();
@@ -3018,9 +3022,10 @@ function drawReveal() {
 }
 
 // --- Startbildschirm: Rennen, Presse, Shop ---
-const RACE_BTN = { x: 130, y: 420, w: 220, h: 62 };
-const PRESS_BTN = { x: 370, y: 420, w: 220, h: 62 };
-const TITLE_SHOP_BTN = { x: 610, y: 420, w: 220, h: 62 };
+const RACE_BTN = { x: 30, y: 420, w: 210, h: 62 };
+const DRAG_BTN = { x: 260, y: 420, w: 210, h: 62 };
+const PRESS_BTN = { x: 490, y: 420, w: 210, h: 62 };
+const TITLE_SHOP_BTN = { x: 720, y: 420, w: 210, h: 62 };
 
 function drawTitleButtons() {
   const pulse = 1 + 0.03 * Math.sin(time * 4);
@@ -3028,9 +3033,10 @@ function drawTitleButtons() {
   ctx.translate(RACE_BTN.x + RACE_BTN.w / 2, RACE_BTN.y + RACE_BTN.h / 2);
   ctx.scale(pulse, pulse);
   ctx.translate(-(RACE_BTN.x + RACE_BTN.w / 2), -(RACE_BTN.y + RACE_BTN.h / 2));
-  drawButton(RACE_BTN, '🏁 RENNEN', '#c0392b');
+  drawButton(RACE_BTN, '🏁 RENNEN', '#c0392b', 22);
   ctx.restore();
-  drawButton(PRESS_BTN, '🏭 PRESSE', '#21a35b');
+  drawButton(DRAG_BTN, '🔥 DRAGSTER', '#d35400', 22);
+  drawButton(PRESS_BTN, '🏭 PRESSE', '#21a35b', 22);
   drawButton(TITLE_SHOP_BTN, '🏪 SHOP  🪙 ' + wallet, '#3657b8', 22);
 }
 
@@ -3192,13 +3198,13 @@ function finishRace(res) {
   }
 }
 
-function drawLoading() {
-  drawMenuBackdrop('🏁 RENNSTRECKE', false);
+function drawLoading(title, text) {
+  drawMenuBackdrop(title, false);
   ctx.fillStyle = '#fff';
   ctx.font = 'bold 26px system-ui, sans-serif';
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
-  ctx.fillText('Lade 3D-Rennstrecke' + '.'.repeat(1 + Math.floor(time * 3) % 3), W / 2, H / 2);
+  ctx.fillText(text + '.'.repeat(1 + Math.floor(time * 3) % 3), W / 2, H / 2);
 }
 
 function drawRaceResult() {
@@ -3238,6 +3244,216 @@ function drawRaceResult() {
 function raceResultTap(px, py) {
   if (inRect(px, py, RESULT_AGAIN_BTN)) startRaceMode();
   else if (inRect(px, py, RESULT_MENU_BTN)) openMenu('racemenu');
+}
+
+// --- Dragster-Bahn: 1 gegen 1, der Gewinner bekommt das Auto des Verlierers ---
+const DRAG_LEVELS = [
+  { label: 'Leicht', color: '#4ade80', ps: [0.7, 0.85], tierShift: -1, skill: 0.8 },
+  { label: 'Mittel', color: '#ffd166', ps: [0.95, 1.08], tierShift: 0, skill: 0.9 },
+  { label: 'Schwer', color: '#f87171', ps: [1.15, 1.35], tierShift: 1, skill: 0.96 },
+];
+let dragVehicleId = loadJSON('autoRetterDragCar', null), dragOpponents = null, dragPick = null, dragResult = null;
+const DRAG_MINE = { x: 30, y: 76, w: 330, h: 340 };
+const DRAG_PREV_BTN = { x: 40, y: 190, w: 54, h: 70 };
+const DRAG_NEXT_BTN = { x: 296, y: 190, w: 54, h: 70 };
+const DRAG_CARDS = [0, 1, 2].map(i => ({ i, x: 380 + i * 190, y: 76, w: 180, h: 340 }));
+const DRAG_GO_BTN = { x: W / 2 - 170, y: 466, w: 340, h: 54 };
+const DRAG_NEW_BTN = { x: 760, y: 470, w: 180, h: 46 };
+const DRAG_AGAIN_BTN = { x: W / 2 - 250, y: 462, w: 240, h: 56 };
+const DRAG_MENU_BTN = { x: W / 2 + 10, y: 462, w: 240, h: 56 };
+
+function dragVehicle() { return fleet.find(v => v.id === dragVehicleId) || fleetByPS()[0]; }
+
+// Drei Gegner: leicht (schwächer, weniger wert), mittel, schwer (stärker, seltenes Auto)
+function makeDragOpponents() {
+  const mine = dragVehicle();
+  const tierIdx = TIER_ORDER.indexOf(KINDS[mine.kind].tier);
+  const names = [...RACER_NAMES].sort(() => Math.random() - 0.5);
+  dragOpponents = DRAG_LEVELS.map((lv, i) => {
+    const tier = TIER_ORDER[Math.max(0, Math.min(TIER_ORDER.length - 1, tierIdx + lv.tierShift))];
+    const kind = pick(Object.keys(KINDS).filter(kd => KINDS[kd].tier === tier));
+    const paint = lv.tierShift > 0 && Math.random() < 0.3 ? pick(['gold', 'rainbow', 'diamond']) : null;
+    const v = makeVehicle(kind, paint);
+    v.ps = Math.max(5, Math.round(mine.ps * rand(lv.ps[0], lv.ps[1])));
+    return { ...v, name: names[i], level: lv };
+  });
+  dragPick = null;
+}
+
+function openDragMenu() {
+  openMenu('dragmenu');
+  if (!dragOpponents) makeDragOpponents();
+}
+
+function drawDragMenu() {
+  drawMenuBackdrop('🔥 DRAGSTER-BAHN', true);
+  drawButton(BACK_BTN, '← Zurück', '#444b5c');
+  const mine = dragVehicle(), k = KINDS[mine.kind];
+
+  // Dein Einsatz
+  ctx.fillStyle = 'rgba(255, 224, 102, 0.1)';
+  rr(DRAG_MINE.x, DRAG_MINE.y, DRAG_MINE.w, DRAG_MINE.h, 14); ctx.fill();
+  ctx.strokeStyle = '#ffe066'; ctx.lineWidth = 2; ctx.stroke();
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillStyle = '#ffe066';
+  ctx.font = 'bold 20px system-ui, sans-serif';
+  ctx.fillText('Dein Einsatz', DRAG_MINE.x + DRAG_MINE.w / 2, 100);
+  drawVehiclePreview(mine, DRAG_MINE.x + DRAG_MINE.w / 2, 290, 190, 1.0);
+  dragCarInfo(mine, DRAG_MINE.x + DRAG_MINE.w / 2, 318);
+  if (fleet.length > 1) {
+    drawButton(DRAG_PREV_BTN, '◀', '#444b5c', 26);
+    drawButton(DRAG_NEXT_BTN, '▶', '#444b5c', 26);
+  }
+
+  // Gegner zur Auswahl
+  for (const card of DRAG_CARDS) {
+    const o = dragOpponents[card.i], chosen = dragPick === card.i;
+    ctx.fillStyle = chosen ? 'rgba(248, 113, 113, 0.18)' : 'rgba(255, 255, 255, 0.06)';
+    rr(card.x, card.y, card.w, card.h, 14); ctx.fill();
+    ctx.strokeStyle = chosen ? '#f87171' : '#4a4f5c'; ctx.lineWidth = chosen ? 3 : 2; ctx.stroke();
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillStyle = o.level.color;
+    ctx.font = 'bold 18px system-ui, sans-serif';
+    ctx.fillText(o.level.label, card.x + card.w / 2, 100);
+    ctx.fillStyle = '#fff';
+    ctx.font = 'bold 17px system-ui, sans-serif';
+    ctx.fillText(o.name, card.x + card.w / 2, 126);
+    drawVehiclePreview(o, card.x + card.w / 2, 290, 150, 0.85);
+    dragCarInfo(o, card.x + card.w / 2, 318);
+  }
+
+  if (menuMsgT > 0) drawMenuMsg('', 440);
+  else {
+    ctx.fillStyle = '#ffb4a8';
+    ctx.font = 'bold 17px system-ui, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText('⚠️ Wer verliert, muss sein Auto dem Gewinner geben!', W / 2, 440);
+  }
+  const o = dragPick !== null ? dragOpponents[dragPick] : null;
+  drawButton(DRAG_GO_BTN, o ? '🔥 GEGEN ' + o.name.toUpperCase() : 'Gegner antippen', o ? '#c0392b' : '#555a66', o ? 21 : 20);
+  drawButton(DRAG_NEW_BTN, '🎲 Neue Gegner', '#444b5c', 18);
+  drawParticles();
+}
+
+function dragCarInfo(v, cx, y) {
+  const k = KINDS[v.kind];
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillStyle = '#fff';
+  ctx.font = 'bold 18px system-ui, sans-serif';
+  ctx.fillText(k.name, cx, y);
+  ctx.fillStyle = TIERS[k.tier].color;
+  ctx.font = 'bold 14px system-ui, sans-serif';
+  ctx.fillText(TIERS[k.tier].label + (v.special ? '  ' + specialLabel(v) : ''), cx, y + 22);
+  ctx.fillStyle = '#7dd3fc';
+  ctx.font = 'bold 16px system-ui, sans-serif';
+  ctx.fillText('⚡ ' + v.ps + ' PS  ·  ' + Math.round(raceTopSpeed(v.ps) * 1.35 * 3.6) + ' km/h', cx, y + 46);
+  ctx.fillStyle = '#ffd700';
+  ctx.fillText('Wert 🪙 ' + vehicleValue(v), cx, y + 70);
+}
+
+function dragMenuTap(px, py) {
+  if (inRect(px, py, BACK_BTN)) { openMenu('title'); return; }
+  const list = fleetByPS();
+  const step = inRect(px, py, DRAG_PREV_BTN) ? -1 : inRect(px, py, DRAG_NEXT_BTN) ? 1 : 0;
+  if (step && list.length > 1) {
+    const i = list.indexOf(dragVehicle());
+    dragVehicleId = list[(i + step + list.length) % list.length].id;
+    storeJSON('autoRetterDragCar', dragVehicleId);
+    makeDragOpponents(); // Gegner passend zum neuen Auto
+    beep(520, 0.06, 'triangle', 0.05);
+    return;
+  }
+  for (const card of DRAG_CARDS) {
+    if (inRect(px, py, card)) { dragPick = card.i; beep(660, 0.07, 'triangle', 0.06); return; }
+  }
+  if (inRect(px, py, DRAG_NEW_BTN)) { makeDragOpponents(); beep(440, 0.07, 'triangle', 0.05); return; }
+  if (inRect(px, py, DRAG_GO_BTN)) {
+    if (dragPick === null) { showMenuMsg('Tippe zuerst einen Gegner an!'); return; }
+    if (fleet.length < 2) {
+      showMenuMsg('Du brauchst mindestens 2 Fahrzeuge – sonst hättest du beim Verlieren keins mehr!');
+      beep(200, 0.15, 'square', 0.05);
+      return;
+    }
+    startDragMode();
+  }
+}
+
+function startDragMode() {
+  const mine = dragVehicle(), opp = dragOpponents[dragPick];
+  dragVehicleId = mine.id;
+  storeJSON('autoRetterDragCar', mine.id);
+  state = 'dragload';
+  import('./drag.js')
+    .then(m => {
+      state = 'drag';
+      m.startDrag({ player: { ...mine, name: 'Du' }, opponent: opp, skill: opp.level.skill, kinds: KINDS, topSpeed: raceTopSpeed, onFinish: finishDrag });
+    })
+    .catch(err => {
+      console.error(err);
+      openMenu('dragmenu');
+      showMenuMsg('Die 3D-Dragster-Bahn konnte nicht geladen werden – braucht Internet.');
+    });
+}
+
+function finishDrag(res) {
+  if (res.quit) { openMenu('dragmenu'); return; }
+  const mine = dragVehicle(), opp = dragOpponents[dragPick];
+  if (res.win) {
+    // Das Gegnerauto gehört jetzt dir (mit seinen PS und seinem Lack)
+    const won = { id: makeVehicle(opp.kind).id, kind: opp.kind, special: opp.special, ps: opp.ps, color: opp.color };
+    fleet.push(won);
+    if (selectedIds.size < MAX_SELECTED) selectedIds.add(won.id);
+    dragResult = { win: true, car: won, opp, res };
+  } else {
+    // Dein Auto geht an den Gewinner
+    fleet = fleet.filter(v => v !== mine);
+    selectedIds.delete(mine.id);
+    if (raceVehicleId === mine.id) raceVehicleId = null;
+    dragVehicleId = null;
+    dragResult = { win: false, car: mine, opp, res };
+  }
+  storeJSON('autoRetterFleet', fleet);
+  saveSelection();
+  dragOpponents = null;
+  openMenu('dragresult');
+  if (res.win) {
+    for (let i = 0; i < 80; i++) {
+      particles.push({ x: W / 2 + rand(-80, 80), y: 140, vx: rand(-400, 400), vy: rand(-420, -60),
+        life: 0, max: rand(1, 1.8), color: pick(['#ffd700', '#fff6c2', ...COLORS]), size: rand(3, 7), g: 500 });
+    }
+    [523, 659, 784, 1047].forEach((f, i) => beep(f, i === 3 ? 0.4 : 0.12, 'triangle', 0.08, i * 0.13));
+  } else {
+    beep(330, 0.25, 'sawtooth', 0.06); beep(220, 0.45, 'sawtooth', 0.06, 0.25);
+  }
+}
+
+function drawDragResult() {
+  const r = dragResult, k = KINDS[r.car.kind];
+  drawMenuBackdrop(r.win ? '🏆 GEWONNEN!' : '😢 VERLOREN', true);
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillStyle = '#fff';
+  ctx.font = 'bold 22px system-ui, sans-serif';
+  ctx.fillText(r.win ? 'Der ' + k.name + ' von ' + r.opp.name + ' gehört jetzt dir!' : 'Dein ' + k.name + ' gehört jetzt ' + r.opp.name + '.', W / 2, 92);
+  drawVehiclePreview(r.car, W / 2, 300, 340, 1.8);
+  ctx.globalAlpha = 1;
+  dragCarInfo(r.car, W / 2, 330);
+  const t = s => (s ? s.toFixed(2) + ' s' : '–');
+  ctx.fillStyle = 'rgba(255,255,255,0.75)';
+  ctx.font = '17px system-ui, sans-serif';
+  ctx.fillText('Du: ' + t(r.res.myTime) + '   ·   ' + r.opp.name + ': ' + t(r.res.oppTime) +
+    (r.res.react !== null && r.res.react !== undefined ? '   ·   Reaktion ' + r.res.react.toFixed(3) + ' s' : ''), W / 2, 432);
+  drawButton(DRAG_AGAIN_BTN, '🔥 NOCHMAL', '#c0392b');
+  drawButton(DRAG_MENU_BTN, '🏠 MENÜ', '#444b5c');
+  drawParticles();
+}
+
+function dragResultTap(px, py) {
+  if (inRect(px, py, DRAG_AGAIN_BTN)) openDragMenu();
+  else if (inRect(px, py, DRAG_MENU_BTN)) openMenu('title');
 }
 
 // --- Verstecktes Admin-Menü: 5× schnell auf die Versionsnummer im Startbildschirm tippen ---
@@ -3337,6 +3553,7 @@ canvas.addEventListener('pointerdown', e => {
     if (state === 'title') {
       if (inRect(px, py, VERSION_AREA)) secretTap();
       else if (inRect(px, py, RACE_BTN)) openMenu('racemenu');
+      else if (inRect(px, py, DRAG_BTN)) openDragMenu();
       else if (inRect(px, py, PRESS_BTN)) openMenu('select');
       else if (inRect(px, py, TITLE_SHOP_BTN)) openMenu('shop');
       return;
@@ -3348,7 +3565,9 @@ canvas.addEventListener('pointerdown', e => {
   if (state === 'admin') { adminTap(px, py); return; }
   if (state === 'racemenu') { raceMenuTap(px, py); return; }
   if (state === 'raceresult') { raceResultTap(px, py); return; }
-  if (state === 'race' || state === 'raceload') return;
+  if (state === 'dragmenu') { dragMenuTap(px, py); return; }
+  if (state === 'dragresult') { dragResultTap(px, py); return; }
+  if (['race', 'raceload', 'drag', 'dragload'].includes(state)) return;
   if (state === 'shop') { shopTap(px, py); return; }
   if (state === 'reveal') { if (reveal.t > REVEAL_AT + 0.2) openMenu('shop'); return; }
 
@@ -3363,7 +3582,7 @@ window.addEventListener('keydown', e => {
     if (state === 'title' || (state === 'over' && overTime > 0.8)) openMenu('select');
     else if (state === 'select') selectTap(GO_BTN.x + 1, GO_BTN.y + 1);
   }
-  if (e.code === 'Escape' && ['select', 'shop', 'admin', 'racemenu', 'raceresult'].includes(state)) openMenu('title');
+  if (e.code === 'Escape' && ['select', 'shop', 'admin', 'racemenu', 'raceresult', 'dragmenu', 'dragresult'].includes(state)) openMenu('title');
 });
 
 // ---------- 3D-Presse laden; klappt das nicht (z.B. offline), bleibt alles in 2D ----------
@@ -3380,7 +3599,7 @@ let lastTime = performance.now();
 function frame(now) {
   const dt = Math.min(0.05, (now - lastTime) / 1000);
   lastTime = now;
-  if (state !== 'race') { // im Rennen zeichnet race.js in 3D
+  if (state !== 'race' && state !== 'drag') { // im Rennen zeichnen race.js bzw. drag.js in 3D
     update(dt);
     draw();
   }
