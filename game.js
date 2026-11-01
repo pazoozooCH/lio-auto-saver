@@ -3710,10 +3710,21 @@ function dragResultTap(px, py) {
 
 // --- Verstecktes Admin-Menü: 5× schnell auf die Versionsnummer im Startbildschirm tippen ---
 const VERSION_AREA = { x: W - 300, y: H - 34, w: 300, h: 34 };
-const ADMIN_COIN_BTNS = [10, 100, 1000, 10000].map((n, i) => ({ n, x: 110 + i * 190, y: 140, w: 170, h: 56 }));
-const ADMIN_ZERO_BTN = { x: W / 2 - 150, y: 222, w: 300, h: 50 };
-const ADMIN_RESET_BTN = { x: W / 2 - 230, y: 330, w: 460, h: 60 };
-let adminTaps = [], adminConfirm = false;
+const ADMIN_COIN_BTNS = [10, 100, 1000, 10000].map((n, i) => ({ n, x: 40 + i * 178, y: 118, w: 160, h: 50 }));
+const ADMIN_ZERO_BTN = { x: 40 + 4 * 178, y: 118, w: 160, h: 50 };
+// PS erhöhen: Fahrzeug mit ◀ ▶ wählen, dann +10 / +50 / +100, oder alle Fahrzeuge auf einmal
+const ADMIN_CAR_PREV = { x: 40, y: 214, w: 56, h: 50 };
+const ADMIN_CAR_NEXT = { x: 532, y: 214, w: 56, h: 50 };
+const ADMIN_PS_BTNS = [10, 50, 100].map((n, i) => ({ n, x: 604 + i * 108, y: 214, w: 100, h: 50 }));
+const ADMIN_ALL_PS_BTN = { x: W / 2 - 170, y: 276, w: 340, h: 44 };
+const ADMIN_RESET_BTN = { x: W / 2 - 230, y: 376, w: 460, h: 56 };
+const MAX_PS = 999;
+let adminTaps = [], adminConfirm = false, adminCarId = null;
+
+function adminCar() {
+  const list = fleetByPS();
+  return list.find(v => v.id === adminCarId) || list[0];
+}
 
 function secretTap() {
   adminTaps = adminTaps.filter(t => time - t < 3);
@@ -3744,17 +3755,31 @@ function drawAdmin() {
   ctx.font = '18px system-ui, sans-serif';
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
-  ctx.fillText('Münzen geben', W / 2, 112);
-  for (const b of ADMIN_COIN_BTNS) drawButton(b, '+' + b.n.toLocaleString('de-CH') + ' 🪙', '#a67c00', 22);
-  drawButton(ADMIN_ZERO_BTN, 'Münzen auf 0', '#444b5c', 20);
+  ctx.fillText('Münzen geben', W / 2, 98);
+  for (const b of ADMIN_COIN_BTNS) drawButton(b, '+' + b.n.toLocaleString('de-CH') + ' 🪙', '#a67c00', 20);
+  drawButton(ADMIN_ZERO_BTN, 'Münzen auf 0', '#444b5c', 18);
+  ctx.fillStyle = 'rgba(255,255,255,0.75)';
+  ctx.font = '18px system-ui, sans-serif';
+  ctx.fillText('PS erhöhen', W / 2, 194);
+  const car = adminCar();
+  drawButton(ADMIN_CAR_PREV, '◀', '#3657b8', 22);
+  drawButton(ADMIN_CAR_NEXT, '▶', '#3657b8', 22);
+  ctx.fillStyle = 'rgba(0,0,0,0.35)';
+  rr(104, 214, 420, 50, 12); ctx.fill();
+  ctx.fillStyle = '#fff';
+  ctx.font = 'bold 19px system-ui, sans-serif';
+  ctx.textAlign = 'center';
+  ctx.fillText(car ? KINDS[car.kind].name + (car.special ? ' ' + specialLabel(car) : '') + '  ·  ⚡ ' + car.ps + ' PS' : '–', 314, 240);
+  for (const b of ADMIN_PS_BTNS) drawButton(b, '+' + b.n + ' PS', '#b45309', 19);
+  drawButton(ADMIN_ALL_PS_BTN, '⚡ Alle Fahrzeuge +10 PS', '#7c2d12', 19);
   ctx.fillStyle = 'rgba(255,255,255,0.75)';
   ctx.font = '18px system-ui, sans-serif';
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
-  ctx.fillText('Fahrzeugpark: ' + fleet.length + ' Fahrzeuge   ·   Rekord: ' + best, W / 2, 304);
+  ctx.fillText('Fahrzeugpark: ' + fleet.length + ' Fahrzeuge   ·   Rekord: ' + best, W / 2, 352);
   drawButton(ADMIN_RESET_BTN, adminConfirm ? '⚠️ Wirklich alles löschen? Nochmal tippen!' : '🗑️ Spielstand zurücksetzen',
     adminConfirm ? '#b91c1c' : '#7f1d1d', 20);
-  drawMenuMsg('Zurücksetzen löscht Münzen, Rekord und Fahrzeugpark (danach wieder die 4 Startautos).', 420);
+  drawMenuMsg('Zurücksetzen löscht Münzen, Rekord und Fahrzeugpark (danach wieder die 4 Startautos).', 470);
   drawParticles();
 }
 
@@ -3768,6 +3793,34 @@ function adminTap(px, py) {
     showMenuMsg('+' + b.n.toLocaleString('de-CH') + ' Münzen – jetzt ' + wallet.toLocaleString('de-CH'));
     beep(1568, 0.07, 'square', 0.04);
     beep(2093, 0.12, 'square', 0.04, 0.07);
+    return;
+  }
+  const list = fleetByPS(), car = adminCar();
+  const step = inRect(px, py, ADMIN_CAR_PREV) ? -1 : inRect(px, py, ADMIN_CAR_NEXT) ? 1 : 0;
+  if (step && list.length) {
+    adminCarId = list[(list.indexOf(car) + step + list.length) % list.length].id;
+    adminConfirm = false;
+    beep(520, 0.06, 'triangle', 0.05);
+    return;
+  }
+  for (const b of ADMIN_PS_BTNS) {
+    if (!inRect(px, py, b) || !car) continue;
+    adminCarId = car.id; // bleibt ausgewählt, auch wenn es in der Liste nach oben rutscht
+    car.ps = Math.min(MAX_PS, car.ps + b.n);
+    storeJSON('autoRetterFleet', fleet);
+    adminConfirm = false;
+    showMenuMsg(KINDS[car.kind].name + ': jetzt ' + car.ps + ' PS ⚡');
+    beep(880, 0.08, 'square', 0.04);
+    beep(1320, 0.12, 'square', 0.04, 0.08);
+    return;
+  }
+  if (inRect(px, py, ADMIN_ALL_PS_BTN)) {
+    for (const v of fleet) v.ps = Math.min(MAX_PS, v.ps + 10);
+    storeJSON('autoRetterFleet', fleet);
+    adminConfirm = false;
+    showMenuMsg('Alle ' + fleet.length + ' Fahrzeuge haben +10 PS ⚡');
+    beep(880, 0.08, 'square', 0.04);
+    beep(1320, 0.12, 'square', 0.04, 0.08);
     return;
   }
   if (inRect(px, py, ADMIN_ZERO_BTN)) {
