@@ -653,24 +653,23 @@ function render(dt) {
 let snd = null;
 function startEngine() {
   if (snd) snd.stop();
-  const ps = drag.me.v.ps;
-  snd = createCarSound({ cyl: ps >= 110 ? 8 : ps >= 60 ? 6 : 4, level: 0.55 });
+  snd = createCarSound({ kind: drag.me.v.kind, level: 0.55 });
 }
 function engineSound(rpm, gear) {
   if (!snd) return;
   const d = drag, { me, opp } = d;
-  let r, throttle;
+  let frac, throttle;
   if (!me.started) { // an der Ampel: Motor brummt und wird hochgedreht
-    const rev = d.phase === 'tree' || d.phase === 'go' ? 0.55 + 0.1 * Math.sin(d.t * 9) : 0.2;
-    r = 1000 + rev * 5000; throttle = rev;
-  } else if (me.finish) { r = 1200 + Math.min(1, me.speed / me.maxV) * 3000; throttle = 0.05; }
-  else { r = 1000 + 6500 * Math.min(1, rpm); throttle = me.shiftT > 0 ? 0.1 : 1; }
+    const rev = d.phase === 'tree' || d.phase === 'go' ? 0.55 + 0.1 * Math.sin(d.t * 9) : 0.05;
+    frac = rev; throttle = rev;
+  } else if (me.finish) { frac = 0.1 + Math.min(1, me.speed / me.maxV) * 0.4; throttle = 0.05; }
+  else { frac = Math.min(1, rpm); throttle = me.shiftT > 0 ? 0.1 : 1; }
   const sinceStart = me.started && me.react !== null ? d.t - me.react : 9;
-  const oRpm = opp.started && !opp.finish ? 1000 + 6500 * Math.min(1, Math.max(0.2, rpmOf(opp))) : 1800;
+  const oFrac = opp.started && !opp.finish ? Math.min(1, Math.max(0.2, rpmOf(opp))) : 0.15;
   snd.update({
-    rpm: r, throttle, speed: me.speed, surface: 'asphalt',
+    frac, throttle, speed: me.speed, surface: 'asphalt',
     slip: sinceStart < 0.7 ? 0.9 * (1 - sinceStart / 0.7) : 0, // Reifen drehen beim Start durch
-    other: { dist: Math.hypot(opp.x - me.x, 2 * LANE), rpm: oRpm }, dt: 1 / 60,
+    other: { dist: Math.hypot(opp.x - me.x, 2 * LANE), frac: oFrac, kind: opp.v.kind }, dt: 1 / 60,
   });
 }
 function stopEngine() {

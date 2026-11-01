@@ -207,6 +207,7 @@ function buildWorld() {
   scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
 
   const camera = new THREE.PerspectiveCamera(62, 16 / 9, 0.5, 8000);
+  camera.layers.enable(1); // Ebene 1: ferne Kulisse (Bäume weit weg, Wolken), die der Rückspiegel weglässt
 
   // Himmel mit Sonne
   const sky = new Sky();
@@ -315,6 +316,7 @@ function buildWorld() {
   mergeStatic(decor);
   scene.add(land.mesh); // Gelände mit eigenen Farben: nicht mit den anderen Teilen verschmelzen
   const clouds = cloudDome({ radius: 3000, coverage: 0.5, shade: '#aebccd', seed: 3 });
+  clouds.layers.set(1);
   scene.add(clouds);
   warmUp(renderer, scene, camera);
   return { renderer, scene, camera, sun, T, lights, clouds };
@@ -512,6 +514,7 @@ function buildTrees(scene, land) {
     if (pine) put(set.pines, x, y + 3.0 * s, z, s, s * (1 + r() * 0.3), s, 0.31 + r() * 0.05, 0.4, 0.06 + r() * 0.04);
     else put(set.crowns, x, y + 5.2 * s, z, s, s * (0.9 + r() * 0.3), s, 0.22 + r() * 0.09, 0.5, 0.09 + r() * 0.06);
   }
+  for (const mesh of Object.values(far)) mesh.layers.set(1);
   for (const set of [near, far]) for (const mesh of Object.values(set)) {
     if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
     mesh.computeBoundingSphere();
@@ -529,6 +532,8 @@ const CSS = `
 #race .speed { position: absolute; bottom: 14px; left: 50%; transform: translateX(-50%); text-align: center;
   background: rgba(0,0,0,.55); border-radius: 14px; padding: 6px 16px; font-weight: 800; font-size: 26px; }
 #race .speed small { display: block; font-size: 13px; font-weight: 600; opacity: .8; }
+#race .mirror { position: absolute; top: 10px; border: 3px solid #15161a; border-radius: 10px; margin: -3px;
+  box-shadow: 0 2px 10px rgba(0,0,0,.5); pointer-events: none; }
 #race .minimap { position: absolute; top: 10px; right: 62px; background: rgba(0,0,0,.4); border-radius: 10px; }
 #race .quit { position: absolute; top: 10px; right: 12px; width: 42px; height: 42px; border-radius: 50%; border: none;
   background: rgba(0,0,0,.55); color: #fff; font-size: 20px; }
@@ -558,6 +563,7 @@ function buildDom() {
     <canvas class="minimap" width="170" height="120"></canvas>
     <button class="quit" title="Rennen beenden">✕</button>
     <div class="lights"><span></span><span></span><span></span><span></span><span></span></div>
+    <div class="mirror"></div>
     <div class="msg"></div>
     <div class="speed"><span class="kmh">0</span> km/h<small class="ps"></small></div>
     <div class="hint">⬅️ ➡️ lenken · ⬆️ Gas · ⬇️ Bremse</div>
@@ -569,7 +575,7 @@ function buildDom() {
   const $ = sel => root.querySelector(sel);
   const ui = {
     root, pos: $('.pos'), lap: $('.lap'), kmh: $('.kmh'), ps: $('.ps'), msg: $('.msg'), hint: $('.hint'),
-    lights: [...root.querySelectorAll('.lights span')], lightBox: $('.lights'), minimap: $('.minimap'), quit: $('.quit'),
+    lights: [...root.querySelectorAll('.lights span')], lightBox: $('.lights'), minimap: $('.minimap'), quit: $('.quit'), mirror: $('.mirror'),
     ctls: [...root.querySelectorAll('.ctl')],
   };
   const touch = matchMedia('(pointer: coarse)').matches || 'ontouchstart' in window;
@@ -647,7 +653,7 @@ export function startRace({ player, opponents, kinds, topSpeed, onFinish, net = 
   window.__race = () => race; // für Tests im Browser
   window.__raceR = () => R;
   race = { cars, me, T, t: 0, phase: 'lights', lightsOut: net ? 4 : 3.4 + Math.random() * 0.8, clock: 0, input: {}, onFinish,
-    lastLights: 0, msgT: 0, endT: 0, lastLap: 1, last: performance.now(), net, sendT: 0, bumpT: 0, waitT: 0, crashT: 0, gears: gearbox() };
+    lastLights: 0, msgT: 0, endT: 0, lastLap: 1, last: performance.now(), net, sendT: 0, bumpT: 0, waitT: 0, crashT: 0, gears: gearbox(player.kind) };
   R.ui.root.hidden = false;
   R.ui.lightBox.style.display = '';
   R.ui.lights.forEach(l => l.classList.remove('on'));
@@ -730,8 +736,11 @@ function step(dt) {
   // Für die Geräusche: Untergrund und wie stark die Reifen rutschen (Kurve am Limit oder Vollbremsung)
   const al = Math.abs(lat), curvyHere = T.curv[me.idx] > 0.012;
   me.surface = al <= TRACK_W / 2 ? 'asphalt' : curvyHere && al <= TRACK_W / 2 + 1.4 ? 'kerb' : curvyHere && al <= TRACK_W / 2 + 9 ? 'gravel' : 'grass';
+  // Randsteine: die Räder (0,9 m neben der Mitte) berühren sie schon, bevor das Auto ganz drauf ist
+  me.kerb = curvyHere && al > TRACK_W / 2 - 0.9 && al < TRACK_W / 2 + 2.3;
+  // In Kurven quietscht es erst ganz am Limit der Reifen (GRIP), beim Bremsen sofort
   const latA = Math.abs(me.steer) * yawMax * Math.abs(me.speed);
-  me.slip = Math.min(1, Math.max(0, (latA - 8.5) / 4.5)) * Math.min(1, Math.max(0, (Math.abs(me.speed) - 10) / 8));
+  me.slip = 0.7 * Math.min(1, Math.max(0, (latA - 11.8) / 1.2)) * Math.min(1, Math.max(0, (Math.abs(me.speed) - 18) / 8));
   if (brake && me.speed > 6) me.slip = Math.max(me.slip, 0.45 + 0.55 * Math.min(1, me.speed / 45));
   if (Math.abs(me.speed) > 0.3) me.heading += me.steer * yawMax * dt * Math.sign(me.speed);
   me.pos.x += Math.cos(me.heading) * me.speed * dt;
@@ -952,6 +961,46 @@ function render(dt) {
   R.sun.target.position.set(me.pos.x, 0, me.pos.z);
   R.clouds.position.set(R.camera.position.x, 0, R.camera.position.z);
   R.renderer.render(R.scene, R.camera);
+  renderMirror(me);
+}
+
+// ---------- Rückspiegel ----------
+// Kleines Bild nach hinten, oben in der Mitte: gespiegelt wie ein echter Spiegel, ohne ferne Kulisse,
+// mit kleiner Auflösung und nur jedes zweite Bild neu berechnet (spart Rechenzeit).
+const mirrorSize = new THREE.Vector2();
+function renderMirror(me) {
+  const r = R.renderer;
+  if (!R.mirror) {
+    const rt = new THREE.WebGLRenderTarget(360, 120, { type: THREE.HalfFloatType });
+    rt.texture.repeat.x = -1; rt.texture.offset.x = 1; // links und rechts tauschen = Spiegel
+    const scene = new THREE.Scene();
+    scene.add(new THREE.Mesh(new THREE.PlaneGeometry(2, 2), new THREE.MeshBasicMaterial({ map: rt.texture })));
+    const cam = new THREE.PerspectiveCamera(50, 3, 0.5, 6000); // nur Ebene 0: ohne ferne Bäume und Wolken
+    R.mirror = { rt, scene, cam, flat: new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1), frame: 0 };
+  }
+  const M = R.mirror;
+  if (M.frame++ % 2 === 0) {
+    const fx = Math.cos(me.heading), fz = Math.sin(me.heading);
+    M.cam.position.set(me.pos.x + fx * 0.4, 1.45, me.pos.z + fz * 0.4);
+    M.cam.lookAt(me.pos.x - fx * 40, 0.9, me.pos.z - fz * 40);
+    me.mesh.visible = false; // das eigene Auto nicht im Spiegel
+    r.shadowMap.autoUpdate = false;
+    r.setRenderTarget(M.rt);
+    r.render(R.scene, M.cam);
+    r.setRenderTarget(null);
+    r.shadowMap.autoUpdate = true;
+    me.mesh.visible = true;
+  }
+  r.getSize(mirrorSize);
+  const w = Math.round(Math.min(330, mirrorSize.x * 0.3)), h = Math.round(w / 3);
+  const x = Math.round((mirrorSize.x - w) / 2), y = mirrorSize.y - h - 10;
+  r.autoClear = false;
+  r.setViewport(x, y, w, h); r.setScissor(x, y, w, h); r.setScissorTest(true);
+  r.render(M.scene, M.flat);
+  r.setScissorTest(false); r.setViewport(0, 0, mirrorSize.x, mirrorSize.y);
+  r.autoClear = true;
+  const st = R.ui.mirror.style;
+  if (st.width !== w + 'px') Object.assign(st, { width: w + 'px', height: h + 'px', left: x + 'px' });
 }
 
 let mapInfo = null;
@@ -996,8 +1045,7 @@ function drawMinimapCars() {
 // Geräusche: eigener Motor mit Gängen, Reifen, Untergrund, Wind und der Motor des nächsten Gegners (sound.js)
 function startEngine() {
   if (R.snd) R.snd.stop();
-  const ps = race.me.v.ps;
-  R.snd = createCarSound({ cyl: ps >= 110 ? 8 : ps >= 60 ? 6 : 4 });
+  R.snd = createCarSound({ kind: race.me.v.kind });
 }
 function engineSound() {
   if (!R.snd) return;
@@ -1010,12 +1058,12 @@ function engineSound() {
     const d = Math.hypot(p.x - me.pos.x, p.z - me.pos.z);
     if (d < nd) { nd = d; near = c; }
   }
-  const otherRpm = near ? 1500 + 5500 * ((Math.abs(near.speed || 0) / ((near.maxV || 50) / 6)) % 1) : 1000;
+  const otherFrac = near ? 0.15 + 0.8 * ((Math.abs(near.speed || 0) / ((near.maxV || 50) / 6)) % 1) : 0.1;
   R.snd.update({
-    rpm: race.phase === 'lights' ? 1100 + (race.input.gas ? 3500 : 0) : g.rpm,
+    frac: race.phase === 'lights' ? 0.05 + (race.input.gas ? 0.5 : 0) : g.frac, kerb: race.phase === 'race' && !!me.kerb,
     throttle: race.input.gas && !me.finished ? 1 : 0.15,
     speed: me.speed, slip: race.phase === 'race' ? me.slip || 0 : 0, surface: me.surface || 'asphalt',
-    other: near ? { dist: nd, rpm: otherRpm } : null, dt: 1 / 60,
+    other: near ? { dist: nd, frac: otherFrac, kind: near.v.kind } : null, dt: 1 / 60,
   });
 }
 function stopEngine() {

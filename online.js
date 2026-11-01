@@ -10,7 +10,6 @@ const CONFIG = {
   appId: '1:377042518173:web:f1184f6da48e2c21509474',
 };
 const MAX_PLAYERS = { race: 6, drag: 2 };
-const WORDS = ['TURBO', 'RAKETE', 'DRACHE', 'BLITZ', 'KOMET', 'DONNER', 'FALKE', 'TIGER', 'PANTHER', 'HAI', 'PHOENIX', 'FLITZER'];
 const LS = { name: 'autoRetterOnlineName', key: 'autoRetterFriendKey', car: 'autoRetterOnlineCar' };
 
 let api = null;   // vom Spiel: kinds, fleet(), topSpeed, paintLabel(v), onClose()
@@ -57,7 +56,7 @@ const CSS = `
   padding: 11px 14px; margin: 4px 6px 4px 0; cursor: pointer; background: #3657b8; }
 #online button.race { background: #c0392b; } #online button.drag { background: #d35400; } #online button.go { background: #21a35b; font-size: 22px; padding: 14px 26px; }
 #online button.grey { background: #4b5563; } #online button:disabled { opacity: 0.45; cursor: default; }
-#online .code { font-size: 34px; letter-spacing: 2px; color: #ffd166; user-select: all; }
+#online .code { font-size: 40px; letter-spacing: 6px; color: #ffd166; user-select: all; }
 #online .players { list-style: none; padding: 0; margin: 0; }
 #online .players li { display: flex; justify-content: space-between; padding: 9px 4px; border-bottom: 1px solid rgba(255,255,255,0.08); font-size: 17px; }
 #online .players li.me { color: #ffd166; }
@@ -102,7 +101,7 @@ function showHome(msg = '') {
         <button class="drag" data-act="create" data-mode="drag">🔥 Dragster (1 gegen 1)</button>
       </div>
       <div class="box"><b>Raum beitreten</b>
-        <label>Raum-Code <input id="on-code" placeholder="z.B. TURBO-4821" autocomplete="off" style="text-transform:uppercase"></label>
+        <label>Raum-Code <input id="on-code" placeholder="z.B. 4821" autocomplete="off" inputmode="numeric" maxlength="4"></label>
         <button data-act="join">➜ Beitreten</button>
       </div>
     </div>
@@ -140,8 +139,8 @@ const ACTIONS = {
     try {
       await connect();
       const mode = b.dataset.mode;
-      for (let tries = 0; tries < 6; tries++) {
-        const code = WORDS[Math.floor(Math.random() * WORDS.length)] + '-' + (1000 + Math.floor(Math.random() * 9000));
+      for (let tries = 0; tries < 8; tries++) {
+        const code = String(1000 + Math.floor(Math.random() * 9000)); // vier Ziffern: schnell eingetippt
         if ((await fb.get(roomRef(code))).exists()) continue;
         await fb.set(roomRef(code), { host: fb.uid, key, created: fb.serverTimestamp(), mode, state: 'lobby', round: 0, players: { 0: { uid: fb.uid, ...me } } });
         await enterRoom(code, 0, true);
@@ -157,8 +156,8 @@ const ACTIONS = {
   async join() {
     const me = readForm();
     if (!me) return;
-    const code = ui.wrap.querySelector('#on-code').value.trim().toUpperCase().replace(/\s+/g, '');
-    if (!/^[A-Z]{3,8}-[0-9]{4}$/.test(code)) { status('Der Raum-Code sieht so aus: TURBO-4821'); return; }
+    const code = ui.wrap.querySelector('#on-code').value.replace(/\D/g, '');
+    if (!/^[0-9]{4}$/.test(code)) { status('Der Raum-Code hat 4 Ziffern, z.B. 4821'); return; }
     busy(true); status('Verbinde …');
     try {
       await connect();

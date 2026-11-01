@@ -9,8 +9,9 @@ und nochmals, damit es weiterfährt – so kommen alle heil zum Ausgang.
 - Fahrzeugpark mit 60 Fahrzeugen in fünf Seltenheitsstufen, viele mit Spezialkräften
 - Shop mit Garagentoren (Holz bis Obsidian), Spezial-Lacke (Gold, Regenbogen, Diamant, Obsidian)
 - Münzen sammeln, Fahrzeuge verkaufen, Level werden schnell schwieriger
-- Echte Geräusche aus dem Synthesizer: Motor mit Gängen, quietschende Reifen, Gras, Kies, Randsteine, Wind und Crashs
-- Online mit Freunden: Rennen (2–6 Spieler, mit Remplern) und Dragster 1 gegen 1 über einen Raum-Code
+- Echte Geräusche aus dem Synthesizer: jedes Fahrzeug klingt nach seinem Antrieb (Diesel, V8, Rennmotor, Elektro, Düse …),
+  dazu quietschende Reifen, Gras, Kies, Curbs, Wind und Crashs
+- Online mit Freunden: Rennen (2–6 Spieler, mit Remplern und Rückspiegel) und Dragster 1 gegen 1 über einen 4-stelligen Raum-Code
 
 **Online spielen:** https://pazoozooch.github.io/lio-auto-saver/
 
@@ -44,7 +45,7 @@ Online spielen läuft ohne eigenen Server: Das Spiel verbindet sich direkt mit e
 
 - Jedes Gerät meldet sich **anonym** bei Firebase an (keine E-Mail, kein Passwort) und bekommt eine feste,
   nicht fälschbare Benutzer-ID.
-- Ein Spieler erstellt einen **Raum** (z.B. `TURBO-4821`). Dafür braucht es den **Freundes-Schlüssel**.
+- Ein Spieler erstellt einen **Raum** mit einem Code aus 4 Ziffern (z.B. `4821`). Dafür braucht es den **Freundes-Schlüssel**.
   Die anderen treten mit dem Raum-Code bei.
 - Der Gastgeber (👑) startet. Alle Geräte starten zur selben Serverzeit (`.info/serverTimeOffset`).
 - Jedes Gerät berechnet **nur sein eigenes Auto** und sendet Position, Richtung, Tempo und Fortschritt
