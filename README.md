@@ -9,12 +9,13 @@ und nochmals, damit es weiterfährt – so kommen alle heil zum Ausgang.
 - Fahrzeugpark mit 60 Fahrzeugen in fünf Seltenheitsstufen, viele mit Spezialkräften
 - Shop mit Garagentoren (Holz bis Obsidian), Spezial-Lacke (Gold, Regenbogen, Diamant, Obsidian)
 - Münzen sammeln, Fahrzeuge verkaufen, Level werden schnell schwieriger
+- Echte Geräusche aus dem Synthesizer: Motor mit Gängen, quietschende Reifen, Gras, Kies, Randsteine, Wind und Crashs
 - Online mit Freunden: Rennen (2–6 Spieler, mit Remplern) und Dragster 1 gegen 1 über einen Raum-Code
 
 **Online spielen:** https://pazoozooch.github.io/lio-auto-saver/
 
 Läuft ohne Build: `index.html` + `game.js`, dazu `press3d.js`, `race.js`, `drag.js`, `cars3d.js` und `world3d.js` für die 3D-Grafik
-sowie `online.js` für das Online-Spiel
+sowie `online.js` für das Online-Spiel und `sound.js` für die Geräusche
 (three.js wird aus dem Internet geladen; ohne Internet läuft die Presse in 2D). Der Spielstand liegt im `localStorage` des Browsers.
 
 ## Starten

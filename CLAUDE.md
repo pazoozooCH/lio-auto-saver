@@ -11,6 +11,7 @@ Browser-Spiel ohne Build: `index.html` + `game.js` (Spiellogik, Menüs und 2D-Ze
   haben in `KINDS` ein `look` (wird in 2D wie dieses Fahrzeug gezeichnet) und ein `badge` (Bildchen auf der Seite).
 - `online.js`: Online-Spiel (Lobby, Räume, Live-Daten) über Firebase Realtime Database mit anonymer Anmeldung.
   Regeln in `database.rules.json`, Einrichtung und Admin-Befehle im README. Freundes-Schlüssel nie ins Repo schreiben.
+- `sound.js`: Geräusche aus dem Synthesizer (Motor mit Gängen, Reifen, Gras/Kies/Randstein, Wind, Crashs), ohne Tondateien.
 - `world3d.js`: Baukasten für die Landschaften (Rauschen, Oberflächen mit Relief, Gelände, Wolken, Staub, Lichtstrahlen).
 Texte im Spiel sind Deutsch (Schweizer Schreibweise, kein ß).
 

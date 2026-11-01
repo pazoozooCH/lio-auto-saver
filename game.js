@@ -65,6 +65,10 @@ function audio() {
 
 function soundOn() { return state !== 'title' && state !== 'over'; }
 
+// Echte Geräusche für Crashs (sound.js); bis es geladen ist, klingt es wie früher
+let sound = null;
+import('./sound.js').then(m => { sound = m; }).catch(() => {});
+
 function beep(freq, dur, type = 'square', vol = 0.06, delay = 0) {
   if (!soundOn()) return;
   const a = audio(); if (!a) return;
@@ -762,8 +766,8 @@ function crush(c) {
         : Math.random() < 0.5 ? c.color : '#ffd166',
     });
   }
-  noise(0.5, 1800, 0.5);
-  beep(90, 0.4, 'sawtooth', 0.1);
+  if (sound && soundOn()) sound.crash(1, 'crush');
+  else { noise(0.5, 1800, 0.5); beep(90, 0.4, 'sawtooth', 0.1); }
   c.slot.entry.ps = Math.max(1, c.slot.entry.ps - 3);
   storeJSON('autoRetterFleet', fleet);
   floaters.push({ text: 'KRACH!  −3 PS', x: c.x + c.w / 2, y: ROAD_Y - 120, t: 0, color: '#ff5d5d', size: 32 });
@@ -877,7 +881,8 @@ function updatePress(p, dt) {
         p.phase = 'hold';
         p.t = 0.35;
         shake = 9;
-        noise(0.25, 400, 0.45);
+        if (sound && soundOn()) sound.crash(0.45, 'slam');
+        else noise(0.25, 400, 0.45);
         for (let i = 0; i < 16; i++) {
           const side = Math.random() < 0.5 ? -1 : 1;
           particles.push({

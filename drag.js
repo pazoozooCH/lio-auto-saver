@@ -6,6 +6,7 @@ import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { buildCar, animateCar, warmUp, makeQuality, mergeStatic } from './cars3d.js';
 import { makeNoise, rng, smoothstep, surface, terrain, cloudDome } from './world3d.js';
+import { createCarSound } from './sound.js';
 
 const DIST = 402;                 // eine Viertelmeile
 const LANE = 3.2;                 // Abstand der Spurmitte von der Mittelmauer
@@ -492,6 +493,7 @@ function shift(c) {
   c.gear++;
   c.shiftT = SHIFT_TIME;
   if (c.ai) return;
+  if (snd) snd.shift();
   if (rpm >= 0.86 && rpm < 0.99) { c.boost = 0.7; setMsg('PERFEKT! ✨', '', 0.7); window.beep && window.beep(880, 0.1, 'triangle', 0.06); }
   else if (rpm >= 0.99) setMsg('Zu spät!', '', 0.6);
   else if (rpm < 0.72) setMsg('Zu früh!', '', 0.6);
@@ -647,24 +649,32 @@ function render(dt) {
 }
 
 // ---------- Motorgeräusch ----------
-let engine = null;
+// Geräusche (sound.js): Motor mit echter Drehzahl, Reifen beim Start, „Pschh“ beim Schalten, Gegner auf der Nebenspur
+let snd = null;
 function startEngine() {
-  const a = window.audio && window.audio();
-  if (!a || engine) return;
-  const osc = a.createOscillator(), filter = a.createBiquadFilter(), gain = a.createGain();
-  osc.type = 'sawtooth'; filter.type = 'lowpass'; filter.frequency.value = 900; gain.gain.value = 0.035;
-  osc.connect(filter).connect(gain).connect(a.destination);
-  osc.start();
-  engine = { osc, gain, a };
+  if (snd) snd.stop();
+  const ps = drag.me.v.ps;
+  snd = createCarSound({ cyl: ps >= 110 ? 8 : ps >= 60 ? 6 : 4, level: 0.55 });
 }
 function engineSound(rpm, gear) {
-  if (engine) engine.osc.frequency.setTargetAtTime(60 + gear * 8 + rpm * 230, engine.a.currentTime, 0.04);
+  if (!snd) return;
+  const d = drag, { me, opp } = d;
+  let r, throttle;
+  if (!me.started) { // an der Ampel: Motor brummt und wird hochgedreht
+    const rev = d.phase === 'tree' || d.phase === 'go' ? 0.55 + 0.1 * Math.sin(d.t * 9) : 0.2;
+    r = 1000 + rev * 5000; throttle = rev;
+  } else if (me.finish) { r = 1200 + Math.min(1, me.speed / me.maxV) * 3000; throttle = 0.05; }
+  else { r = 1000 + 6500 * Math.min(1, rpm); throttle = me.shiftT > 0 ? 0.1 : 1; }
+  const sinceStart = me.started && me.react !== null ? d.t - me.react : 9;
+  const oRpm = opp.started && !opp.finish ? 1000 + 6500 * Math.min(1, Math.max(0.2, rpmOf(opp))) : 1800;
+  snd.update({
+    rpm: r, throttle, speed: me.speed, surface: 'asphalt',
+    slip: sinceStart < 0.7 ? 0.9 * (1 - sinceStart / 0.7) : 0, // Reifen drehen beim Start durch
+    other: { dist: Math.hypot(opp.x - me.x, 2 * LANE), rpm: oRpm }, dt: 1 / 60,
+  });
 }
 function stopEngine() {
-  if (!engine) return;
-  engine.gain.gain.setTargetAtTime(0, engine.a.currentTime, 0.05);
-  engine.osc.stop(engine.a.currentTime + 0.3);
-  engine = null;
+  if (snd) { snd.stop(); snd = null; }
 }
 
 function endDrag(quit) {

@@ -5,6 +5,7 @@ import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { buildCar, animateCar, warmUp, makeQuality, mergeStatic } from './cars3d.js';
 import { makeNoise, rng, smoothstep, surface, terrain, cloudDome } from './world3d.js';
+import { createCarSound, crash, gearbox } from './sound.js';
 
 const LAPS = 3;
 const TRACK_W = 14;          // Fahrbahnbreite in Metern
@@ -646,7 +647,7 @@ export function startRace({ player, opponents, kinds, topSpeed, onFinish, net = 
   window.__race = () => race; // für Tests im Browser
   window.__raceR = () => R;
   race = { cars, me, T, t: 0, phase: 'lights', lightsOut: net ? 4 : 3.4 + Math.random() * 0.8, clock: 0, input: {}, onFinish,
-    lastLights: 0, msgT: 0, endT: 0, lastLap: 1, last: performance.now(), net, sendT: 0, bumpT: 0, waitT: 0 };
+    lastLights: 0, msgT: 0, endT: 0, lastLap: 1, last: performance.now(), net, sendT: 0, bumpT: 0, waitT: 0, crashT: 0, gears: gearbox() };
   R.ui.root.hidden = false;
   R.ui.lightBox.style.display = '';
   R.ui.lights.forEach(l => l.classList.remove('on'));
@@ -706,6 +707,7 @@ function step(dt) {
     return;
   }
   if (race.net) race.clock = race.t - race.lightsOut; else race.clock += dt;
+  race.crashT -= dt;
 
   // --- Spieler: lenken, Gas, Bremse ---
   const driving = !me.finished;
@@ -725,6 +727,12 @@ function step(dt) {
   if (offTrack && me.speed > maxV) me.speed = Math.max(maxV, me.speed - 14 * dt);
   // Kurven: bei hohem Tempo kann man weniger stark einlenken (die Reifen halten nur so viel)
   const yawMax = Math.min(1.5, GRIP / Math.max(Math.abs(me.speed), 0.1));
+  // Für die Geräusche: Untergrund und wie stark die Reifen rutschen (Kurve am Limit oder Vollbremsung)
+  const al = Math.abs(lat), curvyHere = T.curv[me.idx] > 0.012;
+  me.surface = al <= TRACK_W / 2 ? 'asphalt' : curvyHere && al <= TRACK_W / 2 + 1.4 ? 'kerb' : curvyHere && al <= TRACK_W / 2 + 9 ? 'gravel' : 'grass';
+  const latA = Math.abs(me.steer) * yawMax * Math.abs(me.speed);
+  me.slip = Math.min(1, Math.max(0, (latA - 8.5) / 4.5)) * Math.min(1, Math.max(0, (Math.abs(me.speed) - 10) / 8));
+  if (brake && me.speed > 6) me.slip = Math.max(me.slip, 0.45 + 0.55 * Math.min(1, me.speed / 45));
   if (Math.abs(me.speed) > 0.3) me.heading += me.steer * yawMax * dt * Math.sign(me.speed);
   me.pos.x += Math.cos(me.heading) * me.speed * dt;
   me.pos.z += Math.sin(me.heading) * me.speed * dt;
@@ -745,7 +753,7 @@ function step(dt) {
   if (Math.abs(lat2) > Math.abs(limit)) {
     me.pos.x -= nrm.x * (lat2 - limit);
     me.pos.z -= nrm.z * (lat2 - limit);
-    if (Math.abs(me.speed) > 8) window.beep && window.beep(90, 0.15, 'sawtooth', 0.05);
+    if (Math.abs(me.speed) > 8 && race.crashT <= 0) { crash(Math.abs(me.speed) / 35, 'tyres'); race.crashT = 0.4; }
     me.speed *= 0.55;
   }
 
@@ -787,6 +795,7 @@ function step(dt) {
       me.pos.x += dx / dd * (minD - dd);
       me.pos.z += dz / dd * (minD - dd);
       if (me.prog < c.prog) me.speed *= 0.97; else c.speed *= 0.97;
+      if (race.crashT <= 0) { crash(0.15 + Math.abs(me.speed - c.speed) / 20, 'car'); race.crashT = 0.5; }
     }
   }
 
@@ -867,7 +876,7 @@ function bumpRemotes(dt) {
     const ahead = -(Math.cos(me.heading) * dx + Math.sin(me.heading) * dz); // > 0: der andere ist vor mir
     if (ahead > 0 && me.speed > c.speed) me.speed = Math.max(0, me.speed * 0.55 + c.speed * 0.45 - 1);
     else if (ahead < 0 && c.speed > me.speed) me.speed += (c.speed - me.speed) * 0.35;
-    if (race.bumpT <= 0) { race.bumpT = 0.4; window.beep && window.beep(110, 0.12, 'square', 0.05); }
+    if (race.bumpT <= 0) { race.bumpT = 0.5; crash(0.15 + Math.abs(me.speed - c.speed) / 20, 'car'); }
   }
 }
 
@@ -984,31 +993,33 @@ function drawMinimapCars() {
 }
 
 // ---------- Motorgeräusch ----------
-let engine = null;
+// Geräusche: eigener Motor mit Gängen, Reifen, Untergrund, Wind und der Motor des nächsten Gegners (sound.js)
 function startEngine() {
-  const a = window.audio && window.audio();
-  if (!a || engine) return;
-  const osc = a.createOscillator(), filter = a.createBiquadFilter(), gain = a.createGain();
-  osc.type = 'sawtooth';
-  filter.type = 'lowpass';
-  filter.frequency.value = 700;
-  gain.gain.value = 0.03;
-  osc.connect(filter).connect(gain).connect(a.destination);
-  osc.start();
-  engine = { osc, gain, a };
+  if (R.snd) R.snd.stop();
+  const ps = race.me.v.ps;
+  R.snd = createCarSound({ cyl: ps >= 110 ? 8 : ps >= 60 ? 6 : 4 });
 }
 function engineSound() {
-  if (!engine) return;
-  const v = Math.abs(race.me.speed), gearV = race.me.maxV / 6;
-  const gear = Math.min(5, Math.floor(v / gearV));
-  const rpm = (v - gear * gearV) / gearV;
-  engine.osc.frequency.setTargetAtTime(70 + gear * 10 + rpm * 120, engine.a.currentTime, 0.05);
+  if (!R.snd) return;
+  const me = race.me, g = race.gears(me.speed, me.maxV);
+  let near = null, nd = Infinity;
+  for (const c of race.cars) {
+    if (c === me) continue;
+    const p = c.ai ? c.wp : c.pos;
+    if (!p) continue;
+    const d = Math.hypot(p.x - me.pos.x, p.z - me.pos.z);
+    if (d < nd) { nd = d; near = c; }
+  }
+  const otherRpm = near ? 1500 + 5500 * ((Math.abs(near.speed || 0) / ((near.maxV || 50) / 6)) % 1) : 1000;
+  R.snd.update({
+    rpm: race.phase === 'lights' ? 1100 + (race.input.gas ? 3500 : 0) : g.rpm,
+    throttle: race.input.gas && !me.finished ? 1 : 0.15,
+    speed: me.speed, slip: race.phase === 'race' ? me.slip || 0 : 0, surface: me.surface || 'asphalt',
+    other: near ? { dist: nd, rpm: otherRpm } : null, dt: 1 / 60,
+  });
 }
 function stopEngine() {
-  if (!engine) return;
-  engine.gain.gain.setTargetAtTime(0, engine.a.currentTime, 0.05);
-  engine.osc.stop(engine.a.currentTime + 0.3);
-  engine = null;
+  if (R.snd) { R.snd.stop(); R.snd = null; }
 }
 
 // ---------- Ende ----------
