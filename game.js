@@ -281,6 +281,83 @@ const KINDS = {
                points: 5, info: '🦄 Einhorn-Mobil: repariert 3 zerquetschte Fahrzeuge!' },
   royal:     { name: 'Königskutsche', tier: 'legendary', w: [104, 114], h: [64, 68], wheel: 16, color: '#d4a017', coins: 5,
                points: 10, info: '👑 Königskutsche: 10 Punkte und 5 Münzen!' },
+  // --- Neue Fahrzeuge (Runde 4): look = wie es in 2D gezeichnet wird, badge = Bildchen auf der Seite ---
+  hatch:     { name: 'Kleinwagen', tier: 'common', w: [84, 94], h: [44, 48], look: 'kompakt' },
+  coupe:     { name: 'Coupé', tier: 'common', w: [98, 108], h: [38, 42], speed: 1.05, look: 'car' },
+  schoolbus: { name: 'Schulbus', tier: 'common', w: [140, 152], h: [56, 58], color: '#f5b700', points: 3, look: 'van', badge: '🎒',
+               info: '🎒 Schulbus: voller Kinder – 3 Punkte!' },
+  smart:     { name: 'Stadtflitzer', tier: 'common', w: [56, 62], h: [40, 44], wheel: 9, speed: 1.15, look: 'mini',
+               info: '🏙️ Stadtflitzer: passt in jede Lücke!' },
+  cargobike: { name: 'Lastenvelo', tier: 'common', w: [64, 72], h: [44, 48], wheel: 8, speed: 0.9, coins: 1, look: 'scooter', badge: '📦',
+               info: '🚲 Lastenvelo: bringt 1 Münze mit!' },
+  ecar:      { name: 'Elektroauto', tier: 'common', w: [96, 108], h: [40, 44], color: '#e9eef5', speed: 1.1, look: 'car', badge: '⚡',
+               info: '⚡ Elektroauto: leise und flott!' },
+  quad:      { name: 'Quad', tier: 'common', w: [70, 78], h: [44, 48], wheel: 12, speed: 1.15, look: 'buggy',
+               info: '🏍️ Quad: vier Räder, viel Spass!' },
+  moped:     { name: 'Mofa', tier: 'common', w: [52, 58], h: [44, 48], wheel: 8, speed: 1.05, look: 'scooter' },
+  offroad:   { name: 'Geländewagen', tier: 'common', w: [100, 110], h: [54, 58], wheel: 14, look: 'jeep',
+               info: '⛰️ Geländewagen: fährt über Stock und Stein!' },
+  roadster:  { name: 'Roadster', tier: 'common', w: [92, 100], h: [34, 38], speed: 1.1, look: 'cabrio' },
+  rally:     { name: 'Rallyeauto', tier: 'uncommon', w: [90, 100], h: [42, 46], wheel: 11, speed: 1.25, ability: 'turbo', look: 'sports', badge: '🏁',
+               info: '🏁 Rallyeauto: Antippen = TURBO! Aber es kann nicht bremsen.' },
+  sweeper:   { name: 'Kehrmaschine', tier: 'uncommon', w: [110, 120], h: [56, 60], color: '#f97316', ability: 'magnet', look: 'garbage', badge: '🧹',
+               info: '🧹 Kehrmaschine: Antippen = fegt ALLE Münzen zusammen!' },
+  taco:      { name: 'Taco-Truck', tier: 'uncommon', w: [118, 128], h: [58, 62], color: '#16a34a', points: 2, coins: 1, look: 'bakery', badge: '🌮',
+               info: '🌮 Taco-Truck: 2 Punkte und 1 Münze!' },
+  hippie:    { name: 'Hippie-Bus', tier: 'uncommon', w: [104, 114], h: [56, 60], color: '#38bdf8', points: 3, look: 'van', badge: '🌼',
+               info: '🌼 Hippie-Bus: Peace! 3 Punkte.' },
+  parcel:    { name: 'Paketbote', tier: 'uncommon', w: [118, 128], h: [56, 60], color: '#facc15', points: 2, look: 'delivery', badge: '📦',
+               info: '📦 Paketbote: viele Pakete – 2 Punkte!' },
+  rescue:    { name: 'Bergrettung', tier: 'uncommon', w: [100, 110], h: [54, 58], wheel: 15, color: '#dc2626', heal: 1, look: 'jeep', badge: '⛑️',
+               info: '⛑️ Bergrettung: retten repariert ein zerquetschtes Fahrzeug!' },
+  gokart:    { name: 'Gokart', tier: 'uncommon', w: [64, 72], h: [26, 30], wheel: 8, speed: 1.35, look: 'racer',
+               info: '🏎️ Gokart: ganz tief und sehr flink!' },
+  lowrider:  { name: 'Lowrider', tier: 'uncommon', w: [118, 128], h: [36, 40], color: '#7c3aed', points: 2, look: 'limo', badge: '🎵',
+               info: '🎵 Lowrider: cool und glänzend – 2 Punkte!' },
+  tanker:    { name: 'Tankwagen', tier: 'uncommon', w: [150, 162], h: [58, 62], armor: 1, look: 'cement', badge: '⛽',
+               info: '⛽ Tankwagen: dicker Stahltank – hält einen Schlag aus!' },
+  policebus: { name: 'Polizeibus', tier: 'uncommon', w: [130, 145], h: [54, 56], color: '#f4f6fb', ability: 'unstoppable', points: 3, look: 'van', badge: '🚓',
+               info: '🚓 Polizeibus: lässt sich NICHT anhalten! 3 Punkte.' },
+  dozer:     { name: 'Bulldozer', tier: 'rare', w: [120, 130], h: [60, 64], color: '#f6b500', ability: 'lift', armor: 1, look: 'excavator', badge: '🚜',
+               info: '🚜 Bulldozer: Antippen = Schild hoch! Hält die Presse 3 Sek. offen.' },
+  forklift:  { name: 'Gabelstapler', tier: 'rare', w: [80, 88], h: [62, 66], wheel: 9, color: '#f2b705', speed: 0.85, ability: 'lift', look: 'golfcart', badge: '📦',
+               info: '📦 Gabelstapler: Antippen = Gabel hoch! Hält die Presse 3 Sek. offen.' },
+  carrier:   { name: 'Autotransporter', tier: 'rare', w: [170, 185], h: [66, 70], color: '#1d4ed8', points: 5, look: 'crane', badge: '🚗',
+               info: '🚗 Autotransporter: bringt drei Autos mit – 5 Punkte!' },
+  groomer:   { name: 'Pistenfahrzeug', tier: 'rare', w: [124, 134], h: [62, 66], color: '#dc2626', ability: 'freeze', look: 'snowplow', badge: '⛷️',
+               info: '⛷️ Pistenfahrzeug: Antippen = Schnee! ALLE Pressen frieren 3 Sek. ein.' },
+  watercannon: { name: 'Wasserwerfer', tier: 'rare', w: [124, 134], h: [58, 62], color: '#e5e7eb', ability: 'water', look: 'armored', badge: '💦',
+               info: '💦 Wasserwerfer: Antippen = Wasser! Die Presse ist 5 Sek. aus.' },
+  stockcar:  { name: 'Stockcar', tier: 'rare', w: [108, 118], h: [36, 40], speed: 1.45, ability: 'turbo', look: 'muscle', badge: '🏁',
+               info: '🏁 Stockcar: Antippen = TURBO! Superschnell.' },
+  popcorn:   { name: 'Popcorn-Wagen', tier: 'rare', w: [116, 126], h: [60, 64], color: '#ef4444', coins: 2, look: 'icecream', badge: '🍿',
+               info: '🍿 Popcorn-Wagen: retten gibt 2 Münzen!' },
+  circus:    { name: 'Zirkuswagen', tier: 'rare', w: [140, 155], h: [60, 64], color: '#b91c1c', points: 4, look: 'camper', badge: '🎪',
+               info: '🎪 Zirkuswagen: Manege frei – 4 Punkte!' },
+  tram:      { name: 'Tram', tier: 'rare', w: [175, 190], h: [58, 62], color: '#1e40af', points: 5, speed: 0.85, look: 'van', badge: '🚋',
+               info: '🚋 Tram: ganz lang und voller Leute – 5 Punkte!' },
+  sub:       { name: 'U-Boot-Auto', tier: 'epic', w: [112, 122], h: [50, 54], color: '#facc15', ability: 'ghost', points: 3, look: 'amphibian', badge: '🫧',
+               info: '🫧 U-Boot-Auto: Antippen = abtauchen! Die Presse geht durch es durch.' },
+  jet:       { name: 'Düsenjet', tier: 'epic', w: [140, 150], h: [50, 54], wheel: 8, color: '#94a3b8', ability: 'rocket', points: 4, look: 'shuttle', badge: '✈️',
+               info: '✈️ Düsenjet: Antippen = abheben! Fliegt direkt zum Ausgang.' },
+  robot:     { name: 'Roboter-Truck', tier: 'epic', w: [110, 120], h: [74, 78], wheel: 18, color: '#64748b', armor: 2, points: 3, look: 'monster', badge: '🤖',
+               info: '🤖 Roboter-Truck: hält ZWEI Pressen-Schläge aus!' },
+  nightracer: { name: 'Nachtflitzer', tier: 'epic', w: [108, 118], h: [34, 38], color: '#18181b', speed: 1.4, ability: 'ghost', look: 'sports', badge: '🦇',
+               info: '🦇 Nachtflitzer: Antippen = unsichtbar wie die Nacht!' },
+  zeppelin:  { name: 'Zeppelin', tier: 'epic', w: [130, 140], h: [56, 60], color: '#cbd5e1', ability: 'beam', points: 4, look: 'ufo', badge: '🎈',
+               info: '🎈 Zeppelin: Antippen = schwebt hinter die nächste Presse!' },
+  pirate:    { name: 'Piratenschiff', tier: 'epic', w: [124, 134], h: [70, 74], color: '#7c4a1e', coins: 4, points: 3, look: 'treasure', badge: '🏴‍☠️',
+               info: '🏴‍☠️ Piratenschiff: Arrr! Retten gibt 4 Münzen.' },
+  polar:     { name: 'Polar-Truck', tier: 'epic', w: [112, 122], h: [70, 74], wheel: 20, color: '#e0f2fe', ability: 'freeze', armor: 1, look: 'monster', badge: '🐻‍❄️',
+               info: '🐻‍❄️ Polar-Truck: Antippen = Eiszeit! Und hält einen Schlag aus.' },
+  phoenix:   { name: 'Phönix-Auto', tier: 'legendary', w: [112, 122], h: [52, 56], color: '#ea580c', ability: 'fire', heal: 2, points: 6, look: 'dragon', badge: '🔥',
+               info: '🔥 Phönix-Auto: Antippen = Feuer! Und retten repariert 2 Fahrzeuge.' },
+  rover:     { name: 'Mondrover', tier: 'legendary', w: [104, 114], h: [52, 56], wheel: 13, color: '#e2e8f0', ability: 'beam', points: 7, look: 'buggy', badge: '🌙',
+               info: '🌙 Mondrover: Antippen = Mondsprung hinter die nächste Presse! 7 Punkte.' },
+  shark:     { name: 'Hai-Mobil', tier: 'legendary', w: [110, 120], h: [44, 48], color: '#64748b', speed: 1.3, ability: 'unstoppable', points: 7, look: 'sports', badge: '🦈',
+               info: '🦈 Hai-Mobil: lässt sich NICHT anhalten! 7 Punkte.' },
+  pumpkin:   { name: 'Kürbiskutsche', tier: 'legendary', w: [104, 114], h: [64, 68], wheel: 16, color: '#f97316', coins: 6, points: 8, look: 'royal', badge: '🎃',
+               info: '🎃 Kürbiskutsche: Zauberei! 8 Punkte und 6 Münzen.' },
 };
 
 // Münzen und Fahrzeugpark bleiben gespeichert
@@ -1126,7 +1203,7 @@ function amberLight(lx, ly) {
 // Räder als [x, Radius]
 function wheels(c) {
   const { x, w, r } = c;
-  switch (c.kind) {
+  switch (KINDS[c.kind].look || c.kind) {
     case 'firetruck': return [[x + 24, r], [x + 58, r], [x + w - 26, r]];
     case 'van': case 'icecream': case 'ambulance': case 'postauto':
     case 'delivery': case 'garbage': case 'camper': case 'umzug': case 'bakery': case 'doubledecker':
@@ -1208,7 +1285,7 @@ function drawCar(c) {
   ctx.fill();
 
   let lightY = y - h * 0.58 + 5;
-  switch (c.kind) {
+  switch (KINDS[c.kind].look || c.kind) {
     case 'van': case 'postauto': { // Bus und Postauto
       ctx.fillStyle = paint;
       rr(x, top, w, h - r * 0.4, 9); ctx.fill();
@@ -2136,6 +2213,11 @@ function drawCar(c) {
     }
     default: // car, mini
       drawSedan(c, paint, top);
+  }
+  if (KINDS[c.kind].badge) { // Bildchen für Fahrzeuge, die wie ein anderes gezeichnet werden
+    ctx.font = Math.round(Math.min(26, h * 0.42)) + 'px system-ui, sans-serif';
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillText(KINDS[c.kind].badge, x + w * 0.45, y - h * 0.42);
   }
 
   if (lightY !== null) {
