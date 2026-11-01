@@ -1,0 +1,41 @@
+# Veröffentlicht das Spiel bei jedem Push auf main über GitHub Pages
+name: Pages
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # ganze Historie, damit die Versionsnummer (Anzahl Commits) stimmt
+
+      - name: Seite zusammenstellen
+        run: |
+          mkdir -p _site
+          cp index.html game.js _site/
+          python3 serve.py --write-version _site/version.js
+          cat _site/version.js
+
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+      - id: deployment
+        uses: actions/deploy-pages@v4

@@ -7,6 +7,8 @@ und nochmals, damit es weiterfährt – so kommen alle heil zum Ausgang.
 - Shop mit Garagentoren (Holz bis Obsidian), Spezial-Lacke (Gold, Regenbogen, Diamant, Obsidian)
 - Münzen sammeln, Fahrzeuge verkaufen, Level werden schnell schwieriger
 
+**Online spielen:** https://pazoozooch.github.io/lio-auto-saver/
+
 Läuft ohne Build und ohne Abhängigkeiten: `index.html` + `game.js`. Der Spielstand liegt im `localStorage` des Browsers.
 
 ## Starten
@@ -20,3 +22,8 @@ Das Spiel ist dann unter `http://<Rechner-IP>:8123` im ganzen LAN erreichbar.
 Die Version steht unten rechts auf dem Startbildschirm.
 
 Nur lokal, z.B. zum Testen: `python3 serve.py --host 127.0.0.1 --port 8124`
+
+## Veröffentlichung
+
+Jeder Push auf `main` veröffentlicht das Spiel automatisch über GitHub Pages
+(`.github/workflows/pages.yml`, inklusive erzeugter `version.js`).
