@@ -96,7 +96,7 @@ function showHome(msg = '') {
     </div>
     <div class="cols">
       <div class="box"><b>Raum erstellen</b>
-        <label>Freundes-Schlüssel <input id="on-key" value="${esc(load(LS.key))}" placeholder="bekommst du von den Eltern" autocomplete="off"></label>
+        <label>Freundes-Schlüssel <input id="on-key" value="${esc(load(LS.key))}" placeholder="bekommst du von den Eltern" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false"></label>
         <button class="race" data-act="create" data-mode="race">🏁 Rennen (2–6)</button>
         <button class="drag" data-act="create" data-mode="drag">🔥 Dragster (1 gegen 1)</button>
       </div>
@@ -132,7 +132,8 @@ const ACTIONS = {
   async create(b) {
     const me = readForm();
     if (!me) return;
-    const key = ui.wrap.querySelector('#on-key').value.trim();
+    // Gross-/Kleinschreibung egal (Handy-Tastaturen schreiben gern den ersten Buchstaben gross)
+    const key = ui.wrap.querySelector('#on-key').value.trim().toLowerCase().replace(/\s+/g, '');
     if (!key) { status('Zum Erstellen brauchst du den Freundes-Schlüssel.'); return; }
     store(LS.key, key);
     busy(true); status('Verbinde …');
@@ -149,7 +150,7 @@ const ACTIONS = {
       status('Kein freier Raum-Code gefunden – nochmal versuchen.');
     } catch (err) {
       console.error(err);
-      status(/permission/i.test(err.message) ? 'Der Freundes-Schlüssel stimmt nicht. 🔑' : 'Keine Verbindung – braucht Internet.');
+      status(/permission/i.test(err.message) ? 'Der Freundes-Schlüssel stimmt nicht. 🔑 (Oder die App ist veraltet: Update-Knopf auf dem Startbildschirm.)' : 'Keine Verbindung – braucht Internet.');
     }
     busy(false);
   },

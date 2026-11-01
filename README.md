@@ -133,6 +133,8 @@ curl           -H "Authorization: Bearer $TOKEN"         "$DB/keys.json"        
 curl -X DELETE -H "Authorization: Bearer $TOKEN"         "$DB/keys/<Schlüssel>.json"   # sperren
 ```
 
+Schlüssel immer **kleingeschrieben** anlegen: Das Spiel wandelt die Eingabe in Kleinbuchstaben um,
+Gross-/Kleinschreibung spielt beim Eintippen also keine Rolle.
 Erlaubte Zeichen: Buchstaben, Ziffern und `-` (kein `.`, `#`, `$`, `[`, `]`, `/`).
 Wer den Schlüssel kennt, gibt ihn im Spiel einmal unter „Raum erstellen“ ein, das Spiel merkt ihn sich.
 Zum Beitreten reicht der Raum-Code.

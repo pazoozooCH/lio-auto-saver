@@ -20,6 +20,7 @@ Texte im Spiel sind Deutsch (Schweizer Schreibweise, kein ß).
 - Nach jeder Änderung committen und auf `main` pushen (Remote: github.com/pazoozooCH/lio-auto-saver).
 - Das Spiel heisst „Car-Saver“ (früher „Auto-Retter“). Die `localStorage`-Schlüssel beginnen weiter mit `autoRetter`,
   damit Spielstände erhalten bleiben – nie umbenennen.
+- Neue Spieldatei? In `.github/workflows/pages.yml` (Kopierliste) und in `APP_FILES` in `game.js` (Update-Knopf) eintragen.
 - Die Versionsnummer ist die Anzahl Commits; `serve.py` erzeugt `version.js` daraus. `version.js` nie committen.
 
 ## Server und Tests

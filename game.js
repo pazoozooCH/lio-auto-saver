@@ -2672,7 +2672,51 @@ function drawVersion() {
   ctx.textAlign = 'right';
   ctx.textBaseline = 'bottom';
   ctx.fillText(versionText(), W - 12, H - 8);
+  if (appUpdate.info) { // neue Version gefunden: Knopf oben rechts
+    const pulse = 1 + 0.04 * Math.sin(time * 5);
+    ctx.save();
+    ctx.translate(UPDATE_BTN.x + UPDATE_BTN.w / 2, UPDATE_BTN.y + UPDATE_BTN.h / 2);
+    ctx.scale(pulse, pulse);
+    ctx.translate(-(UPDATE_BTN.x + UPDATE_BTN.w / 2), -(UPDATE_BTN.y + UPDATE_BTN.h / 2));
+    drawButton(UPDATE_BTN, appUpdate.busy ? '⏳ Lädt …' : '🔄 Update: Version ' + appUpdate.info.number, '#16a34a', 18);
+    ctx.restore();
+  }
 }
+
+// ---------- Update-Check ----------
+// Auf dem Homescreen bleibt die App oft tagelang im Speicher und lädt nichts neu. Darum fragt sie beim Start,
+// alle 10 Minuten und beim Zurückkehren in die App nach version.js. Gibt es eine neue Version, erscheint
+// auf dem Startbildschirm ein Update-Knopf; kommt man auf dem Startbildschirm in die App zurück, wird gleich aktualisiert.
+// APP_FILES: alle Dateien des Spiels (beim Hinzufügen einer Datei hier ergänzen).
+const APP_FILES = ['./', 'index.html', 'game.js', 'version.js', 'press3d.js', 'race.js', 'drag.js', 'cars3d.js', 'world3d.js',
+  'online.js', 'sound.js', 'manifest.webmanifest', 'icon-192.png', 'icon-512.png', 'apple-touch-icon.png', 'favicon.png'];
+const UPDATE_BTN = { x: W - 262, y: 14, w: 248, h: 46 };
+const appUpdate = { info: null, busy: false, last: 0 };
+
+async function checkUpdate(auto = false) {
+  if (appUpdate.busy || Date.now() - appUpdate.last < 20000) return;
+  appUpdate.last = Date.now();
+  try {
+    const text = await (await fetch('version.js', { cache: 'no-store' })).text();
+    const m = text.match(/GAME_VERSION\s*=\s*(\{.*\})/);
+    const v = m && JSON.parse(m[1]), cur = window.GAME_VERSION || {};
+    if (!v || !v.commit || v.commit === cur.commit || (v.number || 0) < (cur.number || 0)) return;
+    appUpdate.info = v;
+    if (auto && state === 'title') applyUpdate();
+  } catch (e) { /* offline: später nochmal */ }
+}
+
+// Alle Dateien frisch vom Server holen (das füllt den Browser-Zwischenspeicher neu), dann neu laden
+async function applyUpdate() {
+  if (appUpdate.busy) return;
+  appUpdate.busy = true;
+  await Promise.all(APP_FILES.map(f => fetch(f, { cache: 'reload' }).catch(() => {})));
+  location.reload();
+}
+
+setTimeout(() => checkUpdate(), 3000);
+setInterval(() => checkUpdate(), 10 * 60 * 1000);
+document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') { appUpdate.last = 0; checkUpdate(true); } });
 
 function drawMenuButtons(playText) {
   const pulse = 1 + 0.03 * Math.sin(time * 4);
@@ -3730,7 +3774,8 @@ canvas.addEventListener('pointerdown', e => {
   if (state === 'title' || state === 'over') {
     if (state === 'over' && overTime < 0.8) return;
     if (state === 'title') {
-      if (inRect(px, py, VERSION_AREA)) secretTap();
+      if (appUpdate.info && inRect(px, py, UPDATE_BTN)) applyUpdate();
+      else if (inRect(px, py, VERSION_AREA)) secretTap();
       else if (inRect(px, py, RACE_BTN)) openMenu('racemenu');
       else if (inRect(px, py, DRAG_BTN)) openDragMenu();
       else if (inRect(px, py, ONLINE_BTN)) openOnline();
