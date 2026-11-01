@@ -1,0 +1,63 @@
+{
+  "rules": {
+    ".read": false,
+    ".write": false,
+    "keys": {
+      ".read": false,
+      ".write": false
+    },
+    "rooms": {
+      "$code": {
+        ".read": "auth != null",
+        ".write": "auth != null && ((!data.exists() && newData.child('host').val() === auth.uid && root.child('keys').child(newData.child('key').val()).val() === true) || (data.exists() && !newData.exists() && (data.child('host').val() === auth.uid || data.child('created').val() < now - 10800000)))",
+        ".validate": "$code.matches(/^[A-Z]{3,8}-[0-9]{4}$/) && newData.hasChildren(['host', 'key', 'created', 'mode', 'state', 'round'])",
+        "host": { ".validate": "newData.isString() && newData.val().length < 64" },
+        "key": { ".validate": "newData.isString() && newData.val().length < 64" },
+        "created": { ".validate": "newData.isNumber() && newData.val() <= now" },
+        "mode": { ".validate": "newData.val() === 'race' || newData.val() === 'drag'" },
+        "state": {
+          ".write": "auth != null && data.parent().child('host').val() === auth.uid",
+          ".validate": "newData.val() === 'lobby' || newData.val() === 'running'"
+        },
+        "start": {
+          ".write": "auth != null && data.parent().child('host').val() === auth.uid",
+          ".validate": "newData.isNumber() && newData.val() > now - 60000 && newData.val() < now + 60000"
+        },
+        "round": {
+          ".write": "auth != null && data.parent().child('host').val() === auth.uid",
+          ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() < 100000"
+        },
+        "players": {
+          "$slot": {
+            ".write": "auth != null && $slot.matches(/^[0-5]$/) && ((!data.exists() && newData.child('uid').val() === auth.uid) || data.child('uid').val() === auth.uid || (!newData.exists() && root.child('rooms').child($code).child('host').val() === auth.uid))",
+            ".validate": "newData.hasChildren(['uid', 'name', 'kind', 'color', 'ps']) && (root.child('rooms').child($code).exists() || newData.parent().parent().child('host').val() === auth.uid)",
+            "uid": { ".validate": "newData.val() === auth.uid" },
+            "name": { ".validate": "newData.isString() && newData.val().length >= 1 && newData.val().length <= 16" },
+            "kind": { ".validate": "newData.isString() && newData.val().length <= 20" },
+            "color": { ".validate": "newData.isString() && newData.val().length <= 10" },
+            "special": { ".validate": "newData.isString() && newData.val().length <= 10" },
+            "ps": { ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 1000" },
+            "$other": { ".validate": false }
+          }
+        },
+        "live": {
+          "$slot": {
+            ".write": "auth != null && root.child('rooms').child($code).child('players').child($slot).child('uid').val() === auth.uid",
+            ".validate": "newData.hasChildren(['t', 'r']) && newData.child('t').val() === now && (!data.exists() || now - data.child('t').val() >= 40)",
+            "t": { ".validate": "newData.isNumber()" },
+            "r": { ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() < 100000" },
+            "x": { ".validate": "newData.isNumber() && newData.val() > -5000 && newData.val() < 5000" },
+            "z": { ".validate": "newData.isNumber() && newData.val() > -5000 && newData.val() < 5000" },
+            "h": { ".validate": "newData.isNumber() && newData.val() > -100000 && newData.val() < 100000" },
+            "v": { ".validate": "newData.isNumber() && newData.val() > -100 && newData.val() < 300" },
+            "p": { ".validate": "newData.isNumber() && newData.val() > -1000 && newData.val() < 100000" },
+            "g": { ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() < 10" },
+            "fin": { ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() < 3600" },
+            "$other": { ".validate": false }
+          }
+        },
+        "$other": { ".validate": false }
+      }
+    }
+  }
+}

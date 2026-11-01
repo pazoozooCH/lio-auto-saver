@@ -9,10 +9,12 @@ und nochmals, damit es weiterfährt – so kommen alle heil zum Ausgang.
 - Fahrzeugpark mit 60 Fahrzeugen in fünf Seltenheitsstufen, viele mit Spezialkräften
 - Shop mit Garagentoren (Holz bis Obsidian), Spezial-Lacke (Gold, Regenbogen, Diamant, Obsidian)
 - Münzen sammeln, Fahrzeuge verkaufen, Level werden schnell schwieriger
+- Online mit Freunden: Rennen (2–6 Spieler, mit Remplern) und Dragster 1 gegen 1 über einen Raum-Code
 
 **Online spielen:** https://pazoozooch.github.io/lio-auto-saver/
 
 Läuft ohne Build: `index.html` + `game.js`, dazu `press3d.js`, `race.js`, `drag.js`, `cars3d.js` und `world3d.js` für die 3D-Grafik
+sowie `online.js` für das Online-Spiel
 (three.js wird aus dem Internet geladen; ohne Internet läuft die Presse in 2D). Der Spielstand liegt im `localStorage` des Browsers.
 
 ## Starten
@@ -31,3 +33,138 @@ Nur lokal, z.B. zum Testen: `python3 serve.py --host 127.0.0.1 --port 8124`
 
 Jeder Push auf `main` veröffentlicht das Spiel automatisch über GitHub Pages
 (`.github/workflows/pages.yml`, inklusive erzeugter `version.js`).
+
+## Online-Modus (Firebase)
+
+Online spielen läuft ohne eigenen Server: Das Spiel verbindet sich direkt mit einer
+**Firebase Realtime Database**. Was erlaubt ist, prüfen die Sicherheitsregeln auf dem Firebase-Server.
+
+### So funktioniert es
+
+- Jedes Gerät meldet sich **anonym** bei Firebase an (keine E-Mail, kein Passwort) und bekommt eine feste,
+  nicht fälschbare Benutzer-ID.
+- Ein Spieler erstellt einen **Raum** (z.B. `TURBO-4821`). Dafür braucht es den **Freundes-Schlüssel**.
+  Die anderen treten mit dem Raum-Code bei.
+- Der Gastgeber (👑) startet. Alle Geräte starten zur selben Serverzeit (`.info/serverTimeOffset`).
+- Jedes Gerät berechnet **nur sein eigenes Auto** und sendet Position, Richtung, Tempo und Fortschritt
+  10× pro Sekunde. Die Autos der anderen werden geglättet und vorausberechnet angezeigt.
+- **Kollisionen:** Berühren sich zwei Autos, schiebt jedes Gerät sein eigenes Auto weg.
+  Wer auffährt, wird langsamer, wer angeschoben wird, bekommt Schwung.
+- Dragster: gemeinsame Startampel. Ein Frühstart kostet 1 Sekunde, die Zeiten werden verglichen.
+- Online werden **keine Autos gewonnen oder verloren** und keine Pokale vergeben, es geht nur um Ruhm.
+- Verlässt ein Spieler den Raum oder bricht seine Verbindung ab, löscht Firebase seinen Platz
+  (`onDisconnect`). Beim Gastgeber wird der ganze Raum gelöscht.
+
+Datenaufbau:
+
+```
+keys/<Schlüssel>: true                        Freundes-Schlüssel (nicht lesbar, nur per Admin-Zugang)
+rooms/<CODE>/  host, key, created, mode (race|drag), state (lobby|running), start, round
+rooms/<CODE>/players/<0–5>: uid, name, kind, color, special, ps
+rooms/<CODE>/live/<0–5>:    x, z, h, v, p, g, fin, r (Runde), t (Serverzeit)
+```
+
+### Einrichtung (bereits erledigt)
+
+| Was | Wert |
+|---|---|
+| Firebase-Projekt | `lio-car-saver-de75a` (im privaten Google-Konto der Familie) |
+| Tarif | **Spark (gratis)**, **kein Abrechnungskonto verknüpft** – es können keine Kosten entstehen |
+| Realtime Database | `https://lio-car-saver-de75a-default-rtdb.europe-west1.firebasedatabase.app` (Belgien) |
+| Anmeldung | Authentication → Anonym, mit „auto clean-up“ (anonyme Konten werden nach 30 Tagen gelöscht) |
+| Web-App | „Car-Saver“, Konfiguration steht in `online.js` (`CONFIG`) |
+| Google Analytics | aus |
+| Regeln | `database.rules.json` |
+
+Die Werte in `CONFIG` sind **nicht geheim**. Sie stehen bei jeder Firebase-Web-App im Code, den Schutz übernehmen die Regeln.
+
+> ⚠️ In der Firebase-Konsole **nicht** auf „Upgrade auf Blaze“ klicken: Das würde eine Zahlungsart verknüpfen.
+> Alles hier läuft im Gratis-Plan. Werden dessen Grenzen erreicht (100 gleichzeitige Verbindungen, 1 GB Speicher,
+> 10 GB Download pro Monat), pausiert nur das Online-Spiel bis zum nächsten Monat.
+> Der normale Spielstand liegt lokal im Browser und ist nie betroffen.
+
+So wurde es eingerichtet (zum Nachvollziehen oder für ein neues Projekt):
+
+1. In der [Firebase-Konsole](https://console.firebase.google.com) ein Projekt erstellen
+   (Nutzungsbedingungen akzeptieren, Analytics aus).
+2. APIs einschalten und die Datenbank anlegen:
+   ```bash
+   P=lio-car-saver-de75a; A=<privates-google-konto>
+   gcloud services enable firebasedatabase.googleapis.com identitytoolkit.googleapis.com --project=$P --account=$A
+   TOKEN=$(gcloud auth print-access-token --account=$A)
+   curl -X POST -H "Authorization: Bearer $TOKEN" -H "x-goog-user-project: $P" -H "Content-Type: application/json" \
+     -d '{"type":"DEFAULT_DATABASE"}' \
+     "https://firebasedatabase.googleapis.com/v1beta/projects/$P/locations/europe-west1/instances?databaseId=$P-default-rtdb"
+   ```
+3. In der Konsole unter **Authentication** auf „Get started“ klicken und **Anonym** aktivieren
+   (inklusive „auto clean-up“).
+4. Web-App registrieren und ihre Konfiguration auslesen:
+   ```bash
+   curl -X POST -H "Authorization: Bearer $TOKEN" -H "x-goog-user-project: $P" -H "Content-Type: application/json" \
+     -d '{"displayName":"Car-Saver"}' "https://firebase.googleapis.com/v1beta1/projects/$P/webApps"
+   curl -H "Authorization: Bearer $TOKEN" -H "x-goog-user-project: $P" \
+     "https://firebase.googleapis.com/v1beta1/projects/$P/webApps/<appId>/config"
+   ```
+5. Regeln hochladen und einen Freundes-Schlüssel anlegen (siehe unten).
+
+### Pflege
+
+Für alle Befehle zuerst:
+
+```bash
+A=<privates-google-konto>
+DB=https://lio-car-saver-de75a-default-rtdb.europe-west1.firebasedatabase.app
+TOKEN=$(gcloud auth print-access-token --account=$A)
+```
+
+**Regeln hochladen** (nach jeder Änderung an `database.rules.json`):
+
+```bash
+curl -X PUT -H "Authorization: Bearer $TOKEN" --data-binary @database.rules.json "$DB/.settings/rules.json"
+```
+
+**Freundes-Schlüssel** (nur mit Leuten teilen, die Räume erstellen dürfen; nie ins Repository schreiben):
+
+```bash
+curl -X PUT    -H "Authorization: Bearer $TOKEN" -d true "$DB/keys/<Schlüssel>.json"   # anlegen
+curl           -H "Authorization: Bearer $TOKEN"         "$DB/keys.json"                # anzeigen
+curl -X DELETE -H "Authorization: Bearer $TOKEN"         "$DB/keys/<Schlüssel>.json"   # sperren
+```
+
+Erlaubte Zeichen: Buchstaben, Ziffern und `-` (kein `.`, `#`, `$`, `[`, `]`, `/`).
+Wer den Schlüssel kennt, gibt ihn im Spiel einmal unter „Raum erstellen“ ein, das Spiel merkt ihn sich.
+Zum Beitreten reicht der Raum-Code.
+
+**Räume anzeigen oder alle löschen** (normalerweise nicht nötig, Räume räumen sich selbst auf):
+
+```bash
+curl -H "Authorization: Bearer $TOKEN" "$DB/rooms.json?shallow=true"
+curl -X DELETE -H "Authorization: Bearer $TOKEN" "$DB/rooms.json"
+```
+
+### Schutz vor Missbrauch
+
+Die Regeln in `database.rules.json` sorgen dafür:
+
+- Lesen und Schreiben nur für angemeldete (anonyme) Nutzer und nur unter `rooms/`.
+  Die Raumliste ist nicht abrufbar, man sieht nur einen Raum, dessen Code man kennt.
+- Räume erstellen nur mit gültigem Freundes-Schlüssel. Die Schlüssel selbst sind nicht lesbar.
+- Jeder schreibt nur seinen eigenen Platz (`uid`). Start und Runde setzt nur der Gastgeber.
+- Nur bekannte Felder mit geprüften Typen und Grössen (z.B. Name 1–16 Zeichen),
+  höchstens 6 Plätze pro Raum, Positionen höchstens alle 40 ms.
+- Löschen darf ein Raum nur der Gastgeber. Räume, die älter als 3 Stunden sind, darf jeder löschen.
+
+Grenzen: Wer den Code liest, kann sich ebenfalls anonym anmelden und mit einem bekannten Raum-Code
+innerhalb der Regeln mitspielen, zum Beispiel mit einem frechen Spitznamen. Mehr ist nicht möglich.
+Schlimmstenfalls werden die Gratis-Grenzen erreicht, es entstehen aber keine Kosten.
+Weitere mögliche Stufen, falls einmal nötig:
+
+- den API-Schlüssel in der Google-Cloud-Konsole auf die eigenen Adressen beschränken
+  (`pazoozooch.github.io`, `localhost`, LAN-Adresse);
+- Firebase App Check mit reCAPTCHA.
+
+### Testen
+
+- Auf Port 8124 testen. Ein zweiter Spieler braucht eine **eigene Herkunft**, weil sich Tabs derselben Adresse
+  die Anmeldung teilen: z.B. `http://localhost:8124` und `http://127.0.0.1:8124`, oder ein zweites Gerät.
+- Ein Rennen läuft nur im Vordergrund-Tab weiter (der Browser bremst Hintergrund-Tabs).

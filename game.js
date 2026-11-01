@@ -3183,10 +3183,11 @@ function drawReveal() {
 }
 
 // --- Startbildschirm: Rennen, Presse, Shop ---
-const RACE_BTN = { x: 30, y: 420, w: 210, h: 62 };
-const DRAG_BTN = { x: 260, y: 420, w: 210, h: 62 };
-const PRESS_BTN = { x: 490, y: 420, w: 210, h: 62 };
-const TITLE_SHOP_BTN = { x: 720, y: 420, w: 210, h: 62 };
+const RACE_BTN = { x: 22, y: 420, w: 172, h: 62 };
+const DRAG_BTN = { x: 208, y: 420, w: 172, h: 62 };
+const ONLINE_BTN = { x: 394, y: 420, w: 172, h: 62 };
+const PRESS_BTN = { x: 580, y: 420, w: 172, h: 62 };
+const TITLE_SHOP_BTN = { x: 766, y: 420, w: 172, h: 62 };
 
 function drawTitleButtons() {
   const pulse = 1 + 0.03 * Math.sin(time * 4);
@@ -3194,11 +3195,12 @@ function drawTitleButtons() {
   ctx.translate(RACE_BTN.x + RACE_BTN.w / 2, RACE_BTN.y + RACE_BTN.h / 2);
   ctx.scale(pulse, pulse);
   ctx.translate(-(RACE_BTN.x + RACE_BTN.w / 2), -(RACE_BTN.y + RACE_BTN.h / 2));
-  drawButton(RACE_BTN, '🏁 RENNEN', '#c0392b', 22);
+  drawButton(RACE_BTN, '🏁 RENNEN', '#c0392b', 20);
   ctx.restore();
-  drawButton(DRAG_BTN, '🔥 DRAGSTER', '#d35400', 22);
-  drawButton(PRESS_BTN, '🏭 PRESSE', '#21a35b', 22);
-  drawButton(TITLE_SHOP_BTN, '🏪 SHOP  🪙 ' + wallet, '#3657b8', 22);
+  drawButton(DRAG_BTN, '🔥 DRAGSTER', '#d35400', 20);
+  drawButton(ONLINE_BTN, '🌍 ONLINE', '#0e7490', 20);
+  drawButton(PRESS_BTN, '🏭 PRESSE', '#21a35b', 20);
+  drawButton(TITLE_SHOP_BTN, '🏪 🪙 ' + wallet, '#3657b8', 20);
 }
 
 // --- Rennstrecke: Cups, Fahrzeugwahl und Pokale ---
@@ -3309,6 +3311,17 @@ function raceMenuTap(px, py) {
     return;
   }
   if (inRect(px, py, RACE_GO_BTN)) startRaceMode();
+}
+
+// Online spielen (online.js): Räume mit Code, Mitspieler live. Ohne Internet zurück zum Start.
+function openOnline() {
+  state = 'online';
+  import('./online.js')
+    .then(m => m.openLobby({ kinds: KINDS, fleet: fleetByPS, topSpeed: raceTopSpeed, paintLabel: specialLabel, onClose: () => openMenu('title') }))
+    .catch(err => {
+      console.error(err);
+      openMenu('title');
+    });
 }
 
 // Lädt die 3D-Rennstrecke (race.js + three.js) erst beim ersten Rennen
@@ -3715,6 +3728,7 @@ canvas.addEventListener('pointerdown', e => {
       if (inRect(px, py, VERSION_AREA)) secretTap();
       else if (inRect(px, py, RACE_BTN)) openMenu('racemenu');
       else if (inRect(px, py, DRAG_BTN)) openDragMenu();
+      else if (inRect(px, py, ONLINE_BTN)) openOnline();
       else if (inRect(px, py, PRESS_BTN)) openMenu('select');
       else if (inRect(px, py, TITLE_SHOP_BTN)) openMenu('shop');
       return;
@@ -3762,7 +3776,7 @@ let lastTime = performance.now();
 function frame(now) {
   const dt = Math.min(0.05, (now - lastTime) / 1000);
   lastTime = now;
-  if (state !== 'race' && state !== 'drag') { // im Rennen zeichnen race.js bzw. drag.js in 3D
+  if (state !== 'race' && state !== 'drag' && state !== 'online') { // dort zeichnen race.js, drag.js bzw. online.js
     update(dt);
     draw();
   }

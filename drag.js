@@ -406,7 +406,8 @@ function layout() {
 
 // ---------- Rennen ----------
 // player/opponent: Fahrzeuge aus dem Fahrzeugpark ({ kind, color, special, ps, name }); skill: wie gut der Gegner schaltet
-export function startDrag({ player, opponent, skill, kinds, topSpeed, onFinish }) {
+// net (nur online): { startAt, serverNow(), send(state), latest() } – der Gegner ist dann ein Mitspieler (siehe online.js)
+export function startDrag({ player, opponent, skill, kinds, topSpeed, onFinish, net = null }) {
   if (!W3) {
     W3 = buildWorld();
     W3.ui = buildDom();
@@ -422,7 +423,8 @@ export function startDrag({ player, opponent, skill, kinds, topSpeed, onFinish }
   for (const c of [me, opp]) { c.mesh.position.set(c.x, 0, c.z); W3.scene.add(c.mesh); }
   warmUp(W3.renderer, W3.scene, W3.camera);
   if (!W3.quality) W3.quality = makeQuality(W3.renderer, layout);
-  drag = { me, opp, t: 0, phase: 'stage', greenAt: 0, onFinish, endT: 0, msgT: 0, last: performance.now(), lightStep: 0 };
+  drag = { me, opp, t: 0, phase: 'stage', greenAt: 0, onFinish, endT: 0, msgT: 0, last: performance.now(), lightStep: 0, net, sendT: 0, waitT: 0 };
+  if (net) opp.ai = false;
   W3.ui.root.hidden = false;
   W3.ui.meName.textContent = 'Du · ' + kinds[player.kind].name + ' · ' + player.ps + ' PS';
   W3.ui.oppName.textContent = opponent.name + ' · ' + kinds[opponent.kind].name + ' · ' + opponent.ps + ' PS';
@@ -455,6 +457,10 @@ function press() {
   const d = drag;
   if (!d || d.me.finish) return;
   const me = d.me;
+  if ((d.phase === 'stage' || d.phase === 'tree') && d.net) { // online: Frühstart kostet 1 Sekunde
+    if (!me.penalty) { me.penalty = 1; setMsg('FRÜHSTART! ❌', '1 Sekunde Strafe', 1.6); window.beep && window.beep(160, 0.4, 'square', 0.06); }
+    return;
+  }
   if (d.phase === 'stage' || d.phase === 'tree') {
     // Frühstart: nochmal von vorne
     setMsg('FRÜHSTART! ❌', 'Warte auf Grün – nochmal!', 0);
@@ -467,6 +473,7 @@ function press() {
   }
   if (d.phase !== 'go') return;
   if (!me.started) {
+    if (me.penalty && d.t < me.penalty) return; // Strafzeit abwarten
     me.started = true;
     me.react = d.t - d.greenAt;
     setMsg('', 'Reaktion: ' + me.react.toFixed(3) + ' s' + (me.react < 0.25 ? '  ⚡ Super!' : ''), 1.4);
@@ -518,7 +525,12 @@ function loop(now) {
 
 function step(dt) {
   const d = drag, { me, opp } = d;
-  d.t += dt;
+  if (d.net) { // gemeinsame Uhr: 0–1,2 s bereit, 1,2–3,2 s gelbe Lichter, dann grün
+    const t = (d.net.serverNow() - d.net.startAt) / 1000;
+    d.t = d.phase === 'stage' ? t : d.phase === 'tree' ? t - 1.2 : t - 3.2;
+    if (t < 0 && d.msgT <= 0) setMsg('Bereit…', 'Gleich geht es los …');
+    netTick(dt);
+  } else d.t += dt;
   if (d.msgT > 0 && (d.msgT -= dt) <= 0) setMsg('', '');
 
   if (d.phase === 'foul' && d.t > 1.6) { d.phase = 'stage'; d.t = 0; d.lightStep = 0; resetLights(); setMsg('Bereit…', 'Gib Gas, sobald es GRÜN wird!'); }
@@ -541,13 +553,17 @@ function step(dt) {
     }
   }
   if (d.phase === 'go') {
-    if (!opp.started && d.t >= opp.aiReact) { opp.started = true; opp.react = d.t; }
+    if (!d.net && !opp.started && d.t >= opp.aiReact) { opp.started = true; opp.react = d.t; }
     physics(me, dt);
-    physics(opp, dt);
-    for (const c of [me, opp]) {
+    if (!d.net) physics(opp, dt);
+    for (const c of d.net ? [me] : [me, opp]) {
       if (!c.finish && c.x >= DIST) {
         c.finish = d.t - (c.react !== null ? 0 : 0);
-        if (c === me) {
+        if (c === me && d.net) { // online: Sieger erst, wenn beide Zeiten da sind
+          setMsg('🏁 IM ZIEL!', 'Deine Zeit: ' + d.t.toFixed(2) + ' s · ' + Math.round(me.speed * 3.6) + ' km/h', 0);
+          d.waitT = 10;
+          W3.ui.go.textContent = '🏁';
+        } else if (c === me) {
           const won = !opp.finish;
           setMsg(won ? '🏆 GEWONNEN!' : '😢 VERLOREN', 'Deine Zeit: ' + (d.t).toFixed(2) + ' s · ' + Math.round(me.speed * 3.6) + ' km/h', 0);
           d.endT = 3;
@@ -555,11 +571,34 @@ function step(dt) {
         }
       }
     }
+    if (d.net && me.finish && !d.endT && (opp.finish || (d.waitT -= dt) <= 0)) {
+      const won = !opp.finish || me.finish <= opp.finish;
+      setMsg(won ? '🏆 GEWONNEN!' : '😢 VERLOREN', 'Du: ' + me.finish.toFixed(2) + ' s · ' + opp.v.name + ': ' + (opp.finish ? opp.finish.toFixed(2) + ' s' : '–'), 0);
+      d.endT = 3;
+    }
     if (opp.finish && !me.finish && !d.oppMsg) { d.oppMsg = true; setMsg('', opp.v.name + ' ist im Ziel!', 1.5); }
     if (opp.finish && !me.finish && d.t > opp.finish + 8) { endDrag(false); return; } // nie losgefahren oder viel zu langsam
   }
   if (d.endT > 0 && (d.endT -= dt) <= 0) { endDrag(false); return; }
   updateHud();
+}
+
+// Online: eigenen Stand senden, Gegner aus den gemeldeten Daten bewegen
+function netTick(dt) {
+  const d = drag, { me, opp } = d, n = d.net;
+  if ((d.sendT -= dt) <= 0) {
+    d.sendT = 0.1;
+    n.send({ x: +me.x.toFixed(2), v: +me.speed.toFixed(2), g: me.gear, fin: me.finish ? +me.finish.toFixed(3) : 0 });
+  }
+  const s = n.latest();
+  if (!s || n.serverNow() - s.t > 6000) return;
+  const age = Math.min(0.5, Math.max(0, (n.serverNow() - s.t) / 1000));
+  const tx = s.fin ? Math.max(s.x, DIST) : s.x + s.v * age;
+  opp.x += (tx - opp.x) * (1 - Math.exp(-dt * 12));
+  opp.speed = s.v;
+  opp.gear = s.g || 0;
+  opp.started = opp.started || s.v > 0;
+  if (s.fin && !opp.finish) opp.finish = s.fin;
 }
 
 function updateHud() {

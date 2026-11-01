@@ -609,7 +609,8 @@ function layout() {
 }
 
 // ---------- Rennen ----------
-export function startRace({ player, opponents, kinds, topSpeed, onFinish }) {
+// net (nur online): { mySlot, startAt, serverNow(), remotes: [{ slot, name, v }], send(state), latest(slot) } – siehe online.js
+export function startRace({ player, opponents, kinds, topSpeed, onFinish, net = null }) {
   if (!R) {
     R = buildWorld();
     R.ui = buildDom();
@@ -628,7 +629,12 @@ export function startRace({ player, opponents, kinds, topSpeed, onFinish }) {
       speed: 0, maxV: topSpeed(v.ps) * (0.94 + Math.random() * 0.05), acc: accelFor(v.ps) * (0.9 + Math.random() * 0.1),
       corner: 0.9 + Math.random() * 0.07, mesh: buildCar(v, kinds), finished: null, color: v.special ? '#ffd700' : v.color };
   });
-  const pg = gridSlot(T, grid.length);
+  if (net) for (const p of net.remotes) { // Mitspieler: Position kommt übers Netz
+    const g = gridSlot(T, p.slot);
+    cars.push({ v: p.v, name: p.name, isRemote: true, slot: p.slot, pos: g.pos.clone(), heading: Math.atan2(g.fwd.z, g.fwd.x),
+      speed: 0, idx: nearestIndex(T, g.pos, 0), prog: g.s, mesh: buildCar(p.v, kinds), finished: null, color: p.v.special ? '#ffd700' : p.v.color });
+  }
+  const pg = gridSlot(T, net ? net.mySlot : grid.length);
   const me = { v: player, name: player.name, ai: false, pos: pg.pos.clone(), heading: Math.atan2(pg.fwd.z, pg.fwd.x),
     speed: 0, steer: 0, idx: nearestIndex(T, pg.pos, 0), prog: pg.s, maxV: topSpeed(player.ps), acc: accelFor(player.ps),
     mesh: buildCar(player, kinds), finished: null, wrongT: 0 };
@@ -639,8 +645,8 @@ export function startRace({ player, opponents, kinds, topSpeed, onFinish }) {
 
   window.__race = () => race; // für Tests im Browser
   window.__raceR = () => R;
-  race = { cars, me, T, t: 0, phase: 'lights', lightsOut: 3.4 + Math.random() * 0.8, clock: 0, input: {}, onFinish,
-    lastLights: 0, msgT: 0, endT: 0, lastLap: 1, last: performance.now() };
+  race = { cars, me, T, t: 0, phase: 'lights', lightsOut: net ? 4 : 3.4 + Math.random() * 0.8, clock: 0, input: {}, onFinish,
+    lastLights: 0, msgT: 0, endT: 0, lastLap: 1, last: performance.now(), net, sendT: 0, bumpT: 0, waitT: 0 };
   R.ui.root.hidden = false;
   R.ui.lightBox.style.display = '';
   R.ui.lights.forEach(l => l.classList.remove('on'));
@@ -675,12 +681,15 @@ function loop(now) {
 
 function step(dt) {
   const { T, me, input } = race;
-  race.t += dt;
+  if (race.net) race.t = (race.net.serverNow() - race.net.startAt) / 1000; // gemeinsame Uhr: Ampel überall gleichzeitig
+  else race.t += dt;
   if (race.msgT > 0 && (race.msgT -= dt) <= 0) R.ui.msg.textContent = '';
+  if (race.net) netTick(dt);
 
   // Startampel: fünf rote Lichter gehen an, dann alle aus = LOS!
   if (race.phase === 'lights') {
-    const on = Math.min(5, Math.floor(race.t / 0.6));
+    if (race.t < 0 && race.msgT <= 0) showMsg('Gleich geht es los …', 0.5);
+    const on = Math.max(0, Math.min(5, Math.floor(race.t / 0.6)));
     if (on > race.lastLights) { race.lastLights = on; window.beep && window.beep(440, 0.15, 'square', 0.05); }
     R.ui.lights.forEach((l, i) => l.classList.toggle('on', i < on));
     R.lights.forEach((m, i) => { m.emissiveIntensity = i < on ? 3 : 0; });
@@ -696,7 +705,7 @@ function step(dt) {
     updateHud();
     return;
   }
-  race.clock += dt;
+  if (race.net) race.clock = race.t - race.lightsOut; else race.clock += dt;
 
   // --- Spieler: lenken, Gas, Bremse ---
   const driving = !me.finished;
@@ -726,6 +735,8 @@ function step(dt) {
   if (d < -T.length / 2) d += T.length;
   if (d > T.length / 2) d -= T.length;
   me.prog += d;
+
+  if (race.net) bumpRemotes(dt);
 
   // Reifenstapel: nicht durchfahren
   const nrm = T.nor[me.idx], p = T.pts[me.idx];
@@ -782,14 +793,20 @@ function step(dt) {
   // Runden und Ziel
   const total = LAPS * T.length;
   for (const c of race.cars) {
+    if (c.isRemote) continue; // Mitspieler melden ihre Zielzeit selbst
     if (!c.finished && c.prog >= total) {
       c.finished = race.clock;
       if (c === me) {
         const place = race.cars.filter(o => o.finished && o.finished <= race.clock).length;
         showMsg(place === 1 ? '🏆 SIEG!' : '🏁 ZIEL! Platz ' + place, 4);
-        race.endT = 3.2;
+        if (race.net) race.waitT = 25; else race.endT = 3.2;
       }
     }
+  }
+  if (race.net && me.finished && !race.endT) { // online: warten, bis alle im Ziel sind (höchstens 25 s)
+    race.waitT -= dt;
+    const open = race.cars.some(c => c.isRemote && !c.finished && !c.gone);
+    if (!open || race.waitT <= 0) race.endT = 2.5;
   }
   const lapNow = Math.min(LAPS, Math.max(1, Math.floor(me.prog / T.length) + 1));
   if (lapNow > race.lastLap && !me.finished) {
@@ -800,6 +817,58 @@ function step(dt) {
 
   placeCars();
   updateHud();
+}
+
+// ---------- Online: Mitspieler ----------
+// Eigenen Zustand 10× pro Sekunde senden; Mitspieler weich zur gemeldeten (und vorausberechneten) Position ziehen
+function netTick(dt) {
+  const n = race.net, me = race.me;
+  if ((race.sendT -= dt) <= 0) {
+    race.sendT = 0.1;
+    n.send({ x: +me.pos.x.toFixed(2), z: +me.pos.z.toFixed(2), h: +me.heading.toFixed(3), v: +me.speed.toFixed(2),
+      p: +me.prog.toFixed(1), fin: me.finished ? +me.finished.toFixed(3) : 0 });
+  }
+  const now = n.serverNow(), k = 1 - Math.exp(-dt * 12);
+  for (const c of race.cars) {
+    if (!c.isRemote) continue;
+    const s = n.latest(c.slot);
+    const stale = !s || now - s.t > 6000;
+    if (stale) {
+      if (race.phase === 'race' && race.clock > 6 && !c.finished && !c.gone) { c.gone = true; showMsg('📡 ' + c.name + ' ist weg', 2); }
+      continue;
+    }
+    c.gone = false;
+    const age = Math.min(0.5, Math.max(0, (now - s.t) / 1000));
+    const tx = s.x + Math.cos(s.h) * s.v * age, tz = s.z + Math.sin(s.h) * s.v * age;
+    if (Math.hypot(tx - c.pos.x, tz - c.pos.z) > 15) c.pos.set(tx, 0, tz);
+    else { c.pos.x += (tx - c.pos.x) * k; c.pos.z += (tz - c.pos.z) * k; }
+    const dh = Math.atan2(Math.sin(s.h - c.heading), Math.cos(s.h - c.heading));
+    c.heading += dh * k;
+    c.speed = s.v;
+    c.prog = s.p + s.v * age;
+    c.idx = nearestIndex(race.T, c.pos, c.idx);
+    if (s.fin) c.finished = s.fin;
+  }
+}
+
+// Zusammenstoss mit Mitspielern: jedes Gerät schiebt sein eigenes Auto weg, beide gleich stark.
+// Wer auffährt, wird langsamer; wer angeschoben wird, bekommt etwas Schwung.
+function bumpRemotes(dt) {
+  const me = race.me;
+  race.bumpT -= dt;
+  for (const c of race.cars) {
+    if (!c.isRemote || c.gone) continue;
+    const dx = me.pos.x - c.pos.x, dz = me.pos.z - c.pos.z, dd = Math.hypot(dx, dz);
+    const minD = (me.mesh.userData.radius + c.mesh.userData.radius) * 0.85;
+    if (dd >= minD || dd < 0.01) continue;
+    const push = (minD - dd) * 0.6;
+    me.pos.x += dx / dd * push;
+    me.pos.z += dz / dd * push;
+    const ahead = -(Math.cos(me.heading) * dx + Math.sin(me.heading) * dz); // > 0: der andere ist vor mir
+    if (ahead > 0 && me.speed > c.speed) me.speed = Math.max(0, me.speed * 0.55 + c.speed * 0.45 - 1);
+    else if (ahead < 0 && c.speed > me.speed) me.speed += (c.speed - me.speed) * 0.35;
+    if (race.bumpT <= 0) { race.bumpT = 0.4; window.beep && window.beep(110, 0.12, 'square', 0.05); }
+  }
 }
 
 function latOf(c) {
@@ -906,10 +975,11 @@ function drawMinimapCars() {
   for (const c of race.cars) {
     const p = c.ai ? c.wp : c.pos;
     const [x, y] = mapInfo.map(p.x, p.z);
-    g.fillStyle = c.ai ? c.color : '#ffe066';
+    const mine = c === race.me;
+    g.fillStyle = mine ? '#ffe066' : c.color;
     g.strokeStyle = '#000';
     g.lineWidth = 1.5;
-    g.beginPath(); g.arc(x, y, c.ai ? 4 : 6, 0, Math.PI * 2); g.fill(); g.stroke();
+    g.beginPath(); g.arc(x, y, mine ? 6 : 4, 0, Math.PI * 2); g.fill(); g.stroke();
   }
 }
 
