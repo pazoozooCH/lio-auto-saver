@@ -1,8 +1,12 @@
 # Auto-Retter
 
-Browser-Spiel ohne Build: `index.html` + `game.js` (2D-Canvas: Menüs, Presse, Shop), `race.js` (3D-Rennstrecke mit
-three.js, als ES-Modul erst beim ersten Rennen per `import()` geladen; three.js kommt per Import-Map von jsDelivr),
-`serve.py` als Webserver.
+Browser-Spiel ohne Build: `index.html` + `game.js` (Spiellogik, Menüs und 2D-Zeichnung), `serve.py` als Webserver.
+3D mit three.js (per Import-Map von jsDelivr), als ES-Module per `import()` nachgeladen:
+- `press3d.js`: zeichnet die Presse als 3D-Fabrikhalle. Die Logik bleibt in `game.js` (2D-Koordinaten);
+  `press3d.project()` rechnet Positionen für Texte, Symbole und Antippen um. Ohne three.js (offline) zeichnet
+  `game.js` die Presse wie früher in 2D.
+- `race.js`: 3D-Rennstrecke, erst beim ersten Rennen geladen.
+- `cars3d.js`: 3D-Fahrzeuge (aus Grundformen) für beide.
 Texte im Spiel sind Deutsch (Schweizer Schreibweise, kein ß).
 
 ## Arbeitsweise

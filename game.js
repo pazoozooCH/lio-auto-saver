@@ -16,6 +16,7 @@ const canvas = document.getElementById('game');
 const ctx = canvas.getContext('2d');
 let scale = 1, dpr = 1;
 let rotated = false; // Hochformat: das Spiel wird um 90° gedreht, damit es immer quer läuft
+let press3d = null;  // 3D-Presse (press3d.js), sobald geladen; sonst wird in 2D gezeichnet
 
 function resize() {
   dpr = window.devicePixelRatio || 1;
@@ -30,6 +31,7 @@ function resize() {
   canvas.style.transform = rotated ? 'rotate(90deg)' : 'none';
   canvas.width = Math.round(cssW * dpr);
   canvas.height = Math.round(cssH * dpr);
+  if (press3d) press3d.layout(cssW, cssH, (vw - cssW) / 2, (vh - cssH) / 2, canvas.style.transform);
 }
 window.addEventListener('resize', resize);
 window.addEventListener('orientationchange', resize);
@@ -529,9 +531,10 @@ function carAt(px, py) {
   let bestCar = null, bestDist = Infinity;
   for (const c of cars) {
     if (c.fly) continue;
-    if (px < c.x - 14 || px > c.x + c.w + 14) continue;
-    if (py < ROAD_Y - c.h - 50 || py > ROAD_Y + 30) continue;
-    const d = Math.abs(px - (c.x + c.w / 2));
+    const a = screenPos(c.x, ROAD_Y - c.h - 50), b = screenPos(c.x + c.w, ROAD_Y + 30);
+    if (px < a.x - 14 || px > b.x + 14) continue;
+    if (py < a.y || py > b.y) continue;
+    const d = Math.abs(px - (a.x + b.x) / 2);
     if (d < bestDist) { bestDist = d; bestCar = c; }
   }
   return bestCar;
@@ -727,7 +730,8 @@ function updateCoins(dt) {
 
 function coinAt(px, py) {
   for (const k of coins) {
-    if (Math.hypot(px - k.x, py - k.y) < COIN_R + 22) return k;
+    const p = in3D() ? press3d.projectCoin(k) : k;
+    if (Math.hypot(px - p.x, py - p.y) < COIN_R + 22) return k;
   }
   return null;
 }
@@ -2167,9 +2171,26 @@ function drawCar(c) {
     ctx.stroke();
   }
 
-  // Symbol über dem Auto
-  const ix = x + w / 2;
-  let iy = top - 20;
+  drawCarIcons(c, x + w / 2, top - 20);
+
+  // Glitzer auf Spezial-Lack (Diamant und Obsidian funkeln am meisten)
+  if (c.special) {
+    ctx.fillStyle = c.special === 'obsidian' ? '#c9a2ff' : '#fff';
+    for (let k = 0; k < (c.special === 'diamond' || c.special === 'obsidian' ? 6 : 3); k++) {
+      const phase = time * 2.5 + c.seed * 10 + k * 2.1;
+      const cycle = Math.floor(phase / Math.PI);
+      const glow = Math.sin(phase);
+      if (glow <= 0) continue;
+      const fx = ((c.seed * 7.3 + k * 0.37 + cycle * 0.618) % 1);
+      const fy = ((c.seed * 3.1 + k * 0.53 + cycle * 0.382) % 1);
+      drawSparkle(x + 8 + fx * (w - 16), y - h + 6 + fy * (h * 0.6), 6 * glow);
+    }
+  }
+  ctx.restore();
+}
+
+// Symbole über einem Fahrzeug: Fähigkeit, Stopp-Schild, Spezial-Lack
+function drawCarIcons(c, ix, iy) {
   const power = abilityIcon(c);
   if (power) {
     ctx.font = '20px system-ui, sans-serif';
@@ -2199,21 +2220,6 @@ function drawCar(c) {
   } else if (c.special === 'obsidian') {
     drawObsidianIcon(ix, iy + Math.sin(time * 6) * 3);
   }
-
-  // Glitzer auf Spezial-Lack (Diamant und Obsidian funkeln am meisten)
-  if (c.special) {
-    ctx.fillStyle = c.special === 'obsidian' ? '#c9a2ff' : '#fff';
-    for (let k = 0; k < (c.special === 'diamond' || c.special === 'obsidian' ? 6 : 3); k++) {
-      const phase = time * 2.5 + c.seed * 10 + k * 2.1;
-      const cycle = Math.floor(phase / Math.PI);
-      const glow = Math.sin(phase);
-      if (glow <= 0) continue;
-      const fx = ((c.seed * 7.3 + k * 0.37 + cycle * 0.618) % 1);
-      const fy = ((c.seed * 3.1 + k * 0.53 + cycle * 0.382) % 1);
-      drawSparkle(x + 8 + fx * (w - 16), y - h + 6 + fy * (h * 0.6), 6 * glow);
-    }
-  }
-  ctx.restore();
 }
 
 function drawWreck(wk) {
@@ -2316,14 +2322,43 @@ function drawPress(p) {
         poly([[ix, p.y], [ix + 8, p.y], [ix + 4, p.y + 8 + ((ix * 7) % 9)]]);
       }
     }
-    const label = { ice: '❄️ AUS ', water: '💧 AUS ', lift: '🏗️ HALT ', fire: '🔥 AUS ', firework: '🎆 AUS ', time: '⏳ STOPP ' }[p.off] + Math.ceil(p.t);
-    ctx.fillStyle = { ice: '#2a7fa8', water: '#1d5fbf', lift: '#9a6b00', fire: '#b4400c', firework: '#6d28d9', time: '#0e7490' }[p.off];
-    rr(x + 12, plateTop + 5, PRESS_W - 24, PLATE_H - 10, 6); ctx.fill();
-    ctx.fillStyle = '#fff';
-    ctx.font = 'bold 16px system-ui, sans-serif';
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    ctx.fillText(label, x + PRESS_W / 2, plateTop + PLATE_H / 2 + 1);
+    drawOffLabel(p, x + PRESS_W / 2, plateTop + PLATE_H / 2);
+  }
+}
+
+function drawOffLabel(p, cx, cy) {
+  const label = { ice: '❄️ AUS ', water: '💧 AUS ', lift: '🏗️ HALT ', fire: '🔥 AUS ', firework: '🎆 AUS ', time: '⏳ STOPP ' }[p.off] + Math.ceil(p.t);
+  ctx.fillStyle = { ice: '#2a7fa8', water: '#1d5fbf', lift: '#9a6b00', fire: '#b4400c', firework: '#6d28d9', time: '#0e7490' }[p.off];
+  rr(cx - PRESS_W / 2 + 12, cy - PLATE_H / 2 + 5, PRESS_W - 24, PLATE_H - 10, 6); ctx.fill();
+  ctx.fillStyle = '#fff';
+  ctx.font = 'bold 16px system-ui, sans-serif';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(label, cx, cy + 1);
+}
+
+// --- Über der 3D-Presse: Symbole, Countdown, Schilder (Positionen kommen von der 3D-Kamera) ---
+function in3D() { return press3d && (state === 'title' || state === 'play' || state === 'over'); }
+function screenPos(lx, ly) { return in3D() ? press3d.project(lx, ly) : { x: lx, y: ly }; }
+
+function drawSceneOverlay() {
+  for (const p of presses) {
+    if (p.phase === 'idle') { // Countdown-Ring um die Warnlampe
+      const l = screenPos(p.x + PRESS_W / 2, press3d.lampY());
+      ctx.strokeStyle = 'rgba(255,255,255,0.85)';
+      ctx.lineWidth = 3;
+      ctx.beginPath();
+      ctx.arc(l.x, l.y, 15, -Math.PI / 2, -Math.PI / 2 + Math.max(0, p.t / p.t0) * Math.PI * 2);
+      ctx.stroke();
+    }
+    if (p.phase === 'off') {
+      const c = screenPos(p.x + PRESS_W / 2, p.y - PLATE_H / 2);
+      drawOffLabel(p, c.x, c.y);
+    }
+  }
+  for (const c of cars) {
+    const top = screenPos(c.x + c.w / 2, ROAD_Y - c.h - (c.alt || 0));
+    drawCarIcons(c, top.x, top.y - 22);
   }
 }
 
@@ -2392,6 +2427,7 @@ function drawOverlay(title, lines, prompt) {
 
 function draw() {
   ctx.setTransform(scale * dpr, 0, 0, scale * dpr, 0, 0);
+  if (press3d && !in3D()) press3d.setVisible(false);
   if (state === 'select') { drawSelect(); return; }
   if (state === 'shop') { drawShop(); return; }
   if (state === 'reveal') { drawReveal(); return; }
@@ -2400,14 +2436,19 @@ function draw() {
   if (state === 'raceresult') { drawRaceResult(); return; }
   if (state === 'raceload') { drawLoading(); return; }
   ctx.save();
-  if (shake > 0) ctx.translate(rand(-shake, shake), rand(-shake, shake));
-
-  drawBackground();
-  for (const wk of wrecks) drawWreck(wk);
-  for (const c of cars) if (!c.fly) drawCar(c);
-  for (const p of presses) drawPress(p);
-  for (const c of cars) if (c.fly) drawCar(c);
-  drawCoins();
+  if (in3D()) {
+    ctx.clearRect(0, 0, W, H); // durchsichtig: darunter liegt die 3D-Szene
+    press3d.render({ cars, presses, wrecks, coins, time, shake });
+    drawSceneOverlay();
+  } else {
+    if (shake > 0) ctx.translate(rand(-shake, shake), rand(-shake, shake));
+    drawBackground();
+    for (const wk of wrecks) drawWreck(wk);
+    for (const c of cars) if (!c.fly) drawCar(c);
+    for (const p of presses) drawPress(p);
+    for (const c of cars) if (c.fly) drawCar(c);
+    drawCoins();
+  }
   drawParticles();
 
   for (const f of floaters) {
@@ -2418,7 +2459,8 @@ function draw() {
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     const half = ctx.measureText(f.text).width / 2 + 10;
-    ctx.fillText(f.text, Math.max(half, Math.min(W - half, f.x)), f.y - f.t * (f.long ? 15 : 50));
+    const fp = f.long ? f : screenPos(f.x, f.y); // grosse Meldungen stehen fest in der Bildmitte
+    ctx.fillText(f.text, Math.max(half, Math.min(W - half, fp.x)), fp.y - f.t * (f.long ? 15 : 50));
   }
   ctx.globalAlpha = 1;
   ctx.restore();
@@ -2550,7 +2592,8 @@ function drawParticles() {
   for (const pt of particles) {
     ctx.globalAlpha = 1 - pt.life / pt.max;
     ctx.fillStyle = pt.color;
-    ctx.fillRect(pt.x, pt.y, pt.size, pt.size);
+    const sp = screenPos(pt.x, pt.y);
+    ctx.fillRect(sp.x, sp.y, pt.size, pt.size);
   }
   ctx.globalAlpha = 1;
 }
@@ -3322,6 +3365,15 @@ window.addEventListener('keydown', e => {
   }
   if (e.code === 'Escape' && ['select', 'shop', 'admin', 'racemenu', 'raceresult'].includes(state)) openMenu('title');
 });
+
+// ---------- 3D-Presse laden; klappt das nicht (z.B. offline), bleibt alles in 2D ----------
+import('./press3d.js')
+  .then(m => {
+    m.init({ W, H, ROAD_Y, PRESS_W, PLATE_H, PLATE_UP, COIN_GROUND, KINDS, canvas });
+    press3d = m;
+    resize();
+  })
+  .catch(err => console.warn('3D-Presse nicht verfügbar, es wird in 2D gezeichnet.', err));
 
 // ---------- Hauptschleife ----------
 let lastTime = performance.now();

@@ -4,14 +4,15 @@ Ein Browser-Spiel: Autos fahren durch eine Fabrik mit hydraulischen Pressen. Tip
 und nochmals, damit es weiterfährt – so kommen alle heil zum Ausgang.
 
 - 3D-Rennstrecke im F1-Stil: lenken, Gas, Bremse – vier Cups mit Pokalen, mehr PS = schneller
-- Presse: Autos retten bringt Münzen und +1 PS, zerquetscht kostet −3 PS
+- Presse in einer 3D-Fabrikhalle: Autos retten bringt Münzen und +1 PS, zerquetscht kostet −3 PS
 - Fahrzeugpark mit 60 Fahrzeugen in fünf Seltenheitsstufen, viele mit Spezialkräften
 - Shop mit Garagentoren (Holz bis Obsidian), Spezial-Lacke (Gold, Regenbogen, Diamant, Obsidian)
 - Münzen sammeln, Fahrzeuge verkaufen, Level werden schnell schwieriger
 
 **Online spielen:** https://pazoozooch.github.io/lio-auto-saver/
 
-Läuft ohne Build: `index.html` + `game.js`, dazu `race.js` für die 3D-Rennstrecke (three.js wird aus dem Internet geladen). Der Spielstand liegt im `localStorage` des Browsers.
+Läuft ohne Build: `index.html` + `game.js`, dazu `press3d.js`, `race.js` und `cars3d.js` für die 3D-Grafik
+(three.js wird aus dem Internet geladen; ohne Internet läuft die Presse in 2D). Der Spielstand liegt im `localStorage` des Browsers.
 
 ## Starten
 
