@@ -10,7 +10,7 @@ const CONFIG = {
   appId: '1:377042518173:web:f1184f6da48e2c21509474',
 };
 const MAX_PLAYERS = { race: 6, drag: 2 };
-const LS = { name: 'autoRetterOnlineName', key: 'autoRetterFriendKey', car: 'autoRetterOnlineCar' };
+const LS = { name: 'autoRetterOnlineName', key: 'autoRetterFriendKey', car: 'autoRetterOnlineCar', pub: 'autoRetterOnlinePublic' };
 
 let api = null;   // vom Spiel: kinds, fleet(), topSpeed, paintLabel(v), onClose()
 let fb = null;    // Firebase: db-Funktionen, uid, Zeitversatz zur Serveruhr
@@ -37,6 +37,8 @@ async function connect() {
 }
 const serverNow = () => Date.now() + (fb ? fb.offset : 0);
 const roomRef = (code, path = '') => fb.ref(fb.db, 'rooms/' + code + (path ? '/' + path : ''));
+const publicRef = (code = '') => fb.ref(fb.db, 'public' + (code ? '/' + code : ''));
+let publicWatch = null; // Abo der Liste offener Räume (nur im Online-Menü)
 
 // ---------- Oberfläche ----------
 const CSS = `
@@ -62,6 +64,11 @@ const CSS = `
 #online .players li.me { color: #ffd166; }
 #online .status { min-height: 22px; margin: 10px 0; color: #ffb4a8; font-weight: 700; }
 #online .hint { color: #9aa4b8; font-size: 14px; }
+#online .check { display: flex; align-items: center; gap: 8px; color: #fff; font-size: 16px; }
+#online .check input { width: 22px; height: 22px; margin: 0; display: inline-block; }
+#online .rooms button { display: flex; justify-content: space-between; width: 100%; text-align: left; background: #1f2a44; margin: 6px 0; }
+#online .rooms button small { color: #9aa4b8; font-weight: 700; }
+#online .badge { font-size: 15px; background: #0e7490; border-radius: 8px; padding: 3px 8px; margin-left: 8px; vertical-align: middle; }
 #online table { width: 100%; border-collapse: collapse; font-size: 17px; }
 #online td { padding: 6px 4px; border-bottom: 1px solid rgba(255,255,255,0.08); }
 `;
@@ -97,6 +104,7 @@ function showHome(msg = '') {
     <div class="cols">
       <div class="box"><b>Raum erstellen</b>
         <label>Freundes-Schlüssel <input id="on-key" value="${esc(load(LS.key))}" placeholder="bekommst du von den Eltern" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false"></label>
+        <label class="check"><input type="checkbox" id="on-public"${load(LS.pub) === '1' ? ' checked' : ''}> 🌍 Öffentlich (alle sehen den Raum)</label>
         <button class="race" data-act="create" data-mode="race">🏁 Rennen (2–6)</button>
         <button class="drag" data-act="create" data-mode="drag">🔥 Dragster (1 gegen 1)</button>
       </div>
@@ -105,10 +113,38 @@ function showHome(msg = '') {
         <button data-act="join">➜ Beitreten</button>
       </div>
     </div>
+    <div class="box"><b>🌍 Offene Räume</b><div class="rooms"><p class="hint">Suche …</p></div></div>
     <div class="status"></div>
     <button class="grey" data-act="back">← Zurück</button>
     <p class="hint">Online gibt es keine Autos zu gewinnen oder zu verlieren – nur Ruhm! 🏆</p>`;
   status(msg);
+  watchPublic();
+}
+
+// Liste der öffentlichen Räume live anzeigen; Antippen = beitreten
+function watchPublic() {
+  if (publicWatch) return;
+  publicWatch = 'starting';
+  connect().then(() => {
+    if (publicWatch !== 'starting') return;
+    publicWatch = fb.onValue(publicRef(), snap => renderPublic(snap.val() || {}), () => renderPublic(null));
+  }).catch(() => { publicWatch = null; renderPublic(null); });
+}
+function stopPublic() {
+  if (typeof publicWatch === 'function') publicWatch();
+  publicWatch = null;
+}
+function renderPublic(list) {
+  const box = ui.wrap.querySelector('.rooms');
+  if (!box) return;
+  if (!list) { box.innerHTML = '<p class="hint">Offline – keine Liste.</p>'; return; }
+  const fresh = Object.entries(list).filter(([, r]) => r && r.created > serverNow() - 3 * 3600 * 1000)
+    .sort((a, b) => b[1].created - a[1].created).slice(0, 12);
+  box.innerHTML = fresh.length ? fresh.map(([code, r]) => {
+    const full = r.n >= MAX_PLAYERS[r.mode];
+    return `<button data-act="join" data-code="${esc(code)}"${full ? ' disabled' : ''}><span>${r.mode === 'race' ? '🏁 Rennen' : '🔥 Dragster'} von ${esc(r.name)}</span>
+      <small>${r.n}/${MAX_PLAYERS[r.mode]}${r.state === 'running' ? ' · fährt gerade' : ''}${full ? ' · voll' : ''}</small></button>`;
+  }).join('') : '<p class="hint">Gerade gibt es keine offenen Räume. Erstell doch selber einen! 😊</p>';
 }
 
 // Eingaben lesen und merken
@@ -136,6 +172,8 @@ const ACTIONS = {
     const key = ui.wrap.querySelector('#on-key').value.trim().toLowerCase().replace(/\s+/g, '');
     if (!key) { status('Zum Erstellen brauchst du den Freundes-Schlüssel.'); return; }
     store(LS.key, key);
+    const isPublic = ui.wrap.querySelector('#on-public').checked;
+    store(LS.pub, isPublic ? '1' : '0');
     busy(true); status('Verbinde …');
     try {
       await connect();
@@ -144,7 +182,11 @@ const ACTIONS = {
         const code = String(1000 + Math.floor(Math.random() * 9000)); // vier Ziffern: schnell eingetippt
         if ((await fb.get(roomRef(code))).exists()) continue;
         await fb.set(roomRef(code), { host: fb.uid, key, created: fb.serverTimestamp(), mode, state: 'lobby', round: 0, players: { 0: { uid: fb.uid, ...me } } });
-        await enterRoom(code, 0, true);
+        if (isPublic) { // in die öffentliche Liste eintragen (verschwindet mit dem Raum)
+          await fb.set(publicRef(code), { mode, name: me.name, n: 1, state: 'lobby', created: fb.serverTimestamp() });
+          await fb.onDisconnect(publicRef(code)).remove();
+        }
+        await enterRoom(code, 0, true, 0, isPublic);
         return;
       }
       status('Kein freier Raum-Code gefunden – nochmal versuchen.');
@@ -154,10 +196,10 @@ const ACTIONS = {
     }
     busy(false);
   },
-  async join() {
+  async join(b) {
     const me = readForm();
     if (!me) return;
-    const code = ui.wrap.querySelector('#on-code').value.replace(/\D/g, '');
+    const code = (b && b.dataset.code) || ui.wrap.querySelector('#on-code').value.replace(/\D/g, '');
     if (!/^[0-9]{4}$/.test(code)) { status('Der Raum-Code hat 4 Ziffern, z.B. 4821'); return; }
     busy(true); status('Verbinde …');
     try {
@@ -189,8 +231,9 @@ const ACTIONS = {
 };
 
 // ---------- Raum ----------
-async function enterRoom(code, slot, host, lastRound = 0) {
-  room = { code, slot, host, data: null, lastRound, racing: false, results: null };
+async function enterRoom(code, slot, host, lastRound = 0, isPublic = false) {
+  stopPublic();
+  room = { code, slot, host, data: null, lastRound, racing: false, results: null, public: isPublic, pubN: 1, pubState: 'lobby' };
   // Bricht die Verbindung ab, räumt Firebase selbst auf: eigener Platz weg, als Gastgeber der ganze Raum
   await fb.onDisconnect(roomRef(code, 'live/' + slot)).remove();
   await fb.onDisconnect(roomRef(code, 'players/' + slot)).remove();
@@ -203,6 +246,13 @@ function onRoom(data) {
   if (!data) { leaveRoom(false, 'Der Raum wurde geschlossen.'); return; }
   room.data = data;
   room.mode = data.mode;
+  if (room.public && data.host === fb.uid) { // öffentliche Liste aktuell halten: Spielerzahl, läuft gerade?
+    const n = Object.keys(data.players || {}).length;
+    if (n !== room.pubN || data.state !== room.pubState) {
+      room.pubN = n; room.pubState = data.state;
+      fb.update(publicRef(room.code), { n, state: data.state }).catch(() => {});
+    }
+  }
   if (data.state === 'running' && data.round > room.lastRound && data.players && data.players[room.slot]) {
     room.lastRound = data.round;
     launch(data);
@@ -216,9 +266,9 @@ function showRoom() {
   const isHost = d.host === fb.uid, n = slots.length, max = MAX_PLAYERS[d.mode];
   const ready = d.mode === 'drag' ? n === 2 : n >= 2;
   ui.wrap.innerHTML = `
-    <h1>${d.mode === 'race' ? '🏁 Online-Rennen' : '🔥 Online-Dragster'}</h1>
+    <h1>${d.mode === 'race' ? '🏁 Online-Rennen' : '🔥 Online-Dragster'}${room.public ? '<span class="badge">🌍 öffentlich</span>' : ''}</h1>
     <div class="box"><b>Raum-Code</b><div class="code">${esc(room.code)}</div>
-      <p class="hint">Schick diesen Code deinen Freunden. Sie tippen ihn unter „Raum beitreten“ ein.</p></div>
+      <p class="hint">${room.public ? 'Der Raum steht bei allen unter „Offene Räume“. Du kannst den Code auch direkt weitergeben.' : 'Schick diesen Code deinen Freunden. Sie tippen ihn unter „Raum beitreten“ ein.'}</p></div>
     <div class="box"><b>Spieler (${n}/${max})</b><ul class="players">${slots.map(s => {
       const p = players[s];
       return `<li class="${+s === room.slot ? 'me' : ''}"><span>${p.uid === d.host ? '👑 ' : ''}${esc(p.name)}</span><span>${esc(carLabel(p))}</span></li>`;
@@ -243,8 +293,10 @@ async function leaveRoom(byUser, msg = '') {
   room = null;
   if (r.unsub) r.unsub();
   try {
-    if (r.data && r.data.host === fb.uid) await fb.remove(roomRef(r.code));
-    else { await fb.remove(roomRef(r.code, 'live/' + r.slot)); await fb.remove(roomRef(r.code, 'players/' + r.slot)); }
+    if (r.data && r.data.host === fb.uid) {
+      if (r.public) { await fb.remove(publicRef(r.code)); await fb.onDisconnect(publicRef(r.code)).cancel(); }
+      await fb.remove(roomRef(r.code));
+    } else { await fb.remove(roomRef(r.code, 'live/' + r.slot)); await fb.remove(roomRef(r.code, 'players/' + r.slot)); }
     for (const p of ['live/' + r.slot, 'players/' + r.slot, '']) await fb.onDisconnect(roomRef(r.code, p)).cancel();
   } catch (e) { /* Raum ist vielleicht schon weg */ }
   if (!r.racing) showHome(msg);
@@ -318,6 +370,7 @@ export function openLobby(gameApi) {
 }
 
 function close() {
+  stopPublic();
   ui.root.hidden = true;
   api.onClose();
 }

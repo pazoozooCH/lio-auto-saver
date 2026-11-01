@@ -46,7 +46,8 @@ Online spielen läuft ohne eigenen Server: Das Spiel verbindet sich direkt mit e
 - Jedes Gerät meldet sich **anonym** bei Firebase an (keine E-Mail, kein Passwort) und bekommt eine feste,
   nicht fälschbare Benutzer-ID.
 - Ein Spieler erstellt einen **Raum** mit einem Code aus 4 Ziffern (z.B. `4821`). Dafür braucht es den **Freundes-Schlüssel**.
-  Die anderen treten mit dem Raum-Code bei.
+  Die anderen treten mit dem Raum-Code bei. Mit dem Häkchen **„🌍 Öffentlich“** steht der Raum zusätzlich
+  bei allen im Online-Menü unter „Offene Räume“ und kann dort direkt angetippt werden.
 - Der Gastgeber (👑) startet. Alle Geräte starten zur selben Serverzeit (`.info/serverTimeOffset`).
 - Jedes Gerät berechnet **nur sein eigenes Auto** und sendet Position, Richtung, Tempo und Fortschritt
   10× pro Sekunde. Die Autos der anderen werden geglättet und vorausberechnet angezeigt.
@@ -61,6 +62,7 @@ Datenaufbau:
 
 ```
 keys/<Schlüssel>: true                        Freundes-Schlüssel (nicht lesbar, nur per Admin-Zugang)
+public/<CODE>: mode, name (Gastgeber), n (Spieler), state, created   Liste der öffentlichen Räume
 rooms/<CODE>/  host, key, created, mode (race|drag), state (lobby|running), start, round
 rooms/<CODE>/players/<0–5>: uid, name, kind, color, special, ps
 rooms/<CODE>/live/<0–5>:    x, z, h, v, p, g, fin, r (Runde), t (Serverzeit)
@@ -150,8 +152,10 @@ curl -X DELETE -H "Authorization: Bearer $TOKEN" "$DB/rooms.json"
 
 Die Regeln in `database.rules.json` sorgen dafür:
 
-- Lesen und Schreiben nur für angemeldete (anonyme) Nutzer und nur unter `rooms/`.
-  Die Raumliste ist nicht abrufbar, man sieht nur einen Raum, dessen Code man kennt.
+- Lesen und Schreiben nur für angemeldete (anonyme) Nutzer und nur unter `rooms/` und `public/`.
+  Die Raumliste unter `rooms/` ist nicht abrufbar, man sieht nur einen Raum, dessen Code man kennt.
+  Lesbar für alle ist nur `public/` mit den freiwillig öffentlichen Räumen (Art, Gastgeber-Name, Spielerzahl).
+  Eintragen darf dort nur der Gastgeber des Raums. Einträge ohne Raum darf jeder löschen.
 - Räume erstellen nur mit gültigem Freundes-Schlüssel. Die Schlüssel selbst sind nicht lesbar.
 - Jeder schreibt nur seinen eigenen Platz (`uid`). Start und Runde setzt nur der Gastgeber.
 - Nur bekannte Felder mit geprüften Typen und Grössen (z.B. Name 1–16 Zeichen),
