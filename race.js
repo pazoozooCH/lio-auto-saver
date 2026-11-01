@@ -757,7 +757,7 @@ function placeCars() {
     if (c === race.me) { // Vorderräder lenken mit
       for (const w of m.userData.wheels) if (w.position.x > 0) w.rotation.y = -c.steer * 0.4;
     }
-    animateCar(m, race.t, c.v.special);
+    animateCar(m, race.t, c.v.special, c.fly);
   }
 }
 

@@ -292,7 +292,7 @@ function updateCars(cars, t) {
     const spin = (c.x - m.userData.lastX) * SX / 0.35;
     m.userData.lastX = c.x;
     for (const w of m.userData.wheels) w.rotation.z -= spin;
-    animateCar(m, t, c.special);
+    animateCar(m, t, c.special, c.fly);
   }
   for (const [c, m] of carViews) {
     if (cars.includes(c)) continue;

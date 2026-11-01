@@ -6,7 +6,7 @@ Browser-Spiel ohne Build: `index.html` + `game.js` (Spiellogik, Menüs und 2D-Ze
   `press3d.project()` rechnet Positionen für Texte, Symbole und Antippen um. Ohne three.js (offline) zeichnet
   `game.js` die Presse wie früher in 2D.
 - `race.js`: 3D-Rennstrecke, erst beim ersten Rennen geladen.
-- `cars3d.js`: 3D-Fahrzeuge (aus Grundformen) für beide.
+- `cars3d.js`: 3D-Fahrzeuge für beide; jedes Fahrzeug hat in `BUILD` eine eigene Bauanleitung nach seiner 2D-Zeichnung.
 Texte im Spiel sind Deutsch (Schweizer Schreibweise, kein ß).
 
 ## Arbeitsweise
