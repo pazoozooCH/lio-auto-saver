@@ -772,7 +772,7 @@ const BUILD = {
     C.add(wing, 0, by - 0.35, 0);
     C.ext([[X(0.02), by + 0.5], [X(0.14), by + 1.9], [X(0.24), by + 1.9], [X(0.3), by + 0.5]], 0.12, M.white, 0.03); // Leitwerk
     C.box(0.35, 0.22, 0.9, M.dark, X(0.82), by + 0.38, 0); // Cockpit
-    C.decal(1.2, 0.3, X(0.45), by + 0.1, text('RETTER', '#e11d48'), 0.45);
+    C.decal(1.2, 0.3, X(0.45), by + 0.1, text('SAVER', '#e11d48'), 0.45);
     const flame = C.cyl(0, 0.4, 1.4, new THREE.MeshBasicMaterial({ color: 0xffa020 }), X(0) - 0.7, by, 0, [0, 0, PI / 2]);
     flame.userData.flame = true;
     for (const f of [0.2, 0.8]) C.box(0.06, by - 0.6, 0.06, M.dark, X(f), (by - 0.6) / 2 + C.r, 0);

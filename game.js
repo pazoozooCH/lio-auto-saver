@@ -2559,7 +2559,7 @@ function draw() {
   if (state !== 'title') drawHUD();
 
   if (state === 'title') {
-    drawOverlay('AUTO-RETTER', [
+    drawOverlay('CAR-SAVER', [
       '🏁 Rennstrecke: lenken, Gas, Bremse – gewinne Pokale in vier Cups!',
       '⚡ Je mehr PS dein Auto hat, desto schneller ist es im Rennen.',
       '🏭 Presse: Autos antippen = anhalten. Gerettet +1 PS, zerquetscht −3 PS.',

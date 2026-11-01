@@ -1,6 +1,6 @@
 {
-  "name": "Auto-Retter",
-  "short_name": "Auto-Retter",
+  "name": "Car-Saver",
+  "short_name": "Car-Saver",
   "description": "Rette die Autos vor der Presse!",
   "lang": "de",
   "start_url": "./",

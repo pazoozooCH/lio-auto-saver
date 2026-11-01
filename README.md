@@ -1,4 +1,4 @@
-# Auto-Retter
+# Car-Saver
 
 Ein Browser-Spiel: Autos fahren durch eine Fabrik mit hydraulischen Pressen. Tippe ein Auto an, damit es anhält,
 und nochmals, damit es weiterfährt – so kommen alle heil zum Ausgang.

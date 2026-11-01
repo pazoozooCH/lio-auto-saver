@@ -1,4 +1,4 @@
-# Auto-Retter
+# Car-Saver
 
 Browser-Spiel ohne Build: `index.html` + `game.js` (Spiellogik, Menüs und 2D-Zeichnung), `serve.py` als Webserver.
 3D mit three.js (per Import-Map von jsDelivr), als ES-Module per `import()` nachgeladen:
@@ -15,6 +15,8 @@ Texte im Spiel sind Deutsch (Schweizer Schreibweise, kein ß).
 ## Arbeitsweise
 
 - Nach jeder Änderung committen und auf `main` pushen (Remote: github.com/pazoozooCH/lio-auto-saver).
+- Das Spiel heisst „Car-Saver“ (früher „Auto-Retter“). Die `localStorage`-Schlüssel beginnen weiter mit `autoRetter`,
+  damit Spielstände erhalten bleiben – nie umbenennen.
 - Die Versionsnummer ist die Anzahl Commits; `serve.py` erzeugt `version.js` daraus. `version.js` nie committen.
 
 ## Server und Tests

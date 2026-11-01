@@ -109,7 +109,7 @@ function buildWorld() {
   // Betonmauern: Mitte und aussen, mit Werbestreifen
   const concrete = new THREE.MeshStandardMaterial({ color: 0xd8d4cc, roughness: 0.9 });
   const adTex = canvasTexture(1024, 64, (g, w, h) => {
-    const ads = [['AUTO-RETTER', '#c0392b'], ['DRAG CUP', '#1d4ed8'], ['VOLLGAS', '#21a35b'], ['TURBO-PS', '#f39c12']];
+    const ads = [['CAR-SAVER', '#c0392b'], ['DRAG CUP', '#1d4ed8'], ['VOLLGAS', '#21a35b'], ['TURBO-PS', '#f39c12']];
     ads.forEach(([t, c], i) => { g.fillStyle = c; g.fillRect(i * w / 4, 0, w / 4, h); g.fillStyle = '#fff'; g.font = '900 40px system-ui'; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText(t, i * w / 4 + w / 8, h / 2 + 2); });
   });
   adTex.repeat.set(len / 60, 1);

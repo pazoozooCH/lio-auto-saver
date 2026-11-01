@@ -282,7 +282,7 @@ function buildWorld() {
   buildPits(scene, s0, 1);
 
   // Werbetafeln
-  const ads = [['AUTO-RETTER GP', '#c0392b', '#fff'], ['TURBO-PS', '#ffd166', '#222'], ['PRESSE CUP', '#1d4ed8', '#fff'], ['VOLLGAS!', '#21a35b', '#fff']];
+  const ads = [['CAR-SAVER GP', '#c0392b', '#fff'], ['TURBO-PS', '#ffd166', '#222'], ['PRESSE CUP', '#1d4ed8', '#fff'], ['VOLLGAS!', '#21a35b', '#fff']];
   ads.forEach(([text, bg, fg], i) => {
     const tp = trackPoint(T, T.length * (0.12 + i * 0.22));
     const o = (T.wallOff[0][tp.i] + 3) * -1;
@@ -399,8 +399,8 @@ function buildPits(scene, s0, sgn) {
   }
   const sign = new THREE.Mesh(new THREE.BoxGeometry(30, 3, 0.4), [
     wall, wall, wall, wall,
-    new THREE.MeshStandardMaterial({ map: billboardTexture('AUTO-RETTER GP', '#c0392b', '#fff') }),
-    new THREE.MeshStandardMaterial({ map: billboardTexture('AUTO-RETTER GP', '#c0392b', '#fff') }),
+    new THREE.MeshStandardMaterial({ map: billboardTexture('CAR-SAVER GP', '#c0392b', '#fff') }),
+    new THREE.MeshStandardMaterial({ map: billboardTexture('CAR-SAVER GP', '#c0392b', '#fff') }),
   ]);
   sign.position.set(0, 9, (WALL + 4) * sgn);
   g.add(sign);

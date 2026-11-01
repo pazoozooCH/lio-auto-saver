@@ -152,7 +152,7 @@ function buildHall(tex) {
   buildDetails(tex, frame);
 
   // Grosser Schriftzug an der Wand
-  const logo = new THREE.Mesh(new THREE.PlaneGeometry(22, 3.2), new THREE.MeshStandardMaterial({ map: signTexture('AUTO-RETTER WERK', '#1f2430', '#f1c40f', 1024, 150, 96), roughness: 0.6 }));
+  const logo = new THREE.Mesh(new THREE.PlaneGeometry(22, 3.2), new THREE.MeshStandardMaterial({ map: signTexture('CAR-SAVER WERK', '#1f2430', '#f1c40f', 1024, 150, 96), roughness: 0.6 }));
   logo.position.set(0, 11.2, -11.7);
   scene.add(logo);
 

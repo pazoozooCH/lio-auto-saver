@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Webserver für Auto-Retter.
+"""Webserver für Car-Saver.
 
 Liefert das Spiel aus und erzeugt /version.js aus dem Git-Stand:
 Versionsnummer = Anzahl Commits, dazu Zeitpunkt und Kurz-Hash des letzten Commits.
@@ -76,7 +76,7 @@ def main():
         return
 
     server = http.server.ThreadingHTTPServer((args.host, args.port), Handler)
-    print(f'Auto-Retter läuft auf http://{args.host}:{args.port}', flush=True)
+    print(f'Car-Saver läuft auf http://{args.host}:{args.port}', flush=True)
     server.serve_forever()
 
 
