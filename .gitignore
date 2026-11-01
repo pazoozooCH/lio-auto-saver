@@ -1,0 +1,8 @@
+# wird von serve.py aus Git erzeugt
+version.js
+_site/
+
+# lokale Claude-Einstellungen
+.claude/settings.local.json
+
+__pycache__/

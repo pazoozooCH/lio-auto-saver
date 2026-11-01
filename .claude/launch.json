@@ -1,0 +1,17 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "auto-retter",
+      "runtimeExecutable": "python3",
+      "runtimeArgs": ["serve.py", "--host", "0.0.0.0", "--port", "8123"],
+      "port": 8123
+    },
+    {
+      "name": "auto-retter-test",
+      "runtimeExecutable": "python3",
+      "runtimeArgs": ["serve.py", "--host", "127.0.0.1", "--port", "8124"],
+      "port": 8124
+    }
+  ]
+}
