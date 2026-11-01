@@ -1021,6 +1021,20 @@ function drawMinimapBase() {
   T.pts.forEach((p, i) => { const [x, y] = mapInfo.map(p.x, p.z); if (i) b.lineTo(x, y); else b.moveTo(x, y); });
   b.closePath();
   b.stroke();
+  // Ziel: schwarz-weisser Balken quer über die Strecke und eine Zielflagge daneben
+  const [fx, fy] = mapInfo.map(T.pts[0].x, T.pts[0].z), n = T.nor[0], len = 16;
+  const ux = n.x, uy = n.z; // Querrichtung (auf der Karte gleich wie in der Welt)
+  b.lineWidth = 5; b.lineCap = 'butt';
+  for (let k = 0; k < 4; k++) {
+    const a0 = -len / 2 + k * len / 4, a1 = a0 + len / 4;
+    b.strokeStyle = k % 2 ? '#111' : '#fff';
+    b.beginPath(); b.moveTo(fx + ux * a0, fy + uy * a0); b.lineTo(fx + ux * a1, fy + uy * a1); b.stroke();
+  }
+  b.strokeStyle = '#111'; b.lineWidth = 1;
+  b.strokeRect(Math.min(fx - ux * len / 2, fx + ux * len / 2) - 2.5 * Math.abs(uy), Math.min(fy - uy * len / 2, fy + uy * len / 2) - 2.5 * Math.abs(ux),
+    Math.abs(ux * len) + 5 * Math.abs(uy), Math.abs(uy * len) + 5 * Math.abs(ux));
+  b.font = '15px system-ui, sans-serif'; b.textAlign = 'center'; b.textBaseline = 'middle';
+  b.fillText('🏁', fx + ux * (len / 2 + 10), fy + uy * (len / 2 + 10));
   mapInfo.base = base;
   g.clearRect(0, 0, cvs.width, cvs.height);
   g.drawImage(base, 0, 0);
