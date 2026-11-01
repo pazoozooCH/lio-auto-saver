@@ -4,9 +4,10 @@
 import * as THREE from 'three';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 import { buildCar, animateCar, warmUp, makeQuality, mergeStatic } from './cars3d.js';
+import { makeNoise, rng, surface, dust } from './world3d.js';
 
 let G = null;        // Spielkonstanten aus game.js
-let renderer, scene, camera, sun, quality, lastLayout, lastFrame = 0;
+let renderer, scene, camera, sun, quality, lastLayout, lastFrame = 0, dustCloud = null;
 const SX = 1 / 22, SY = 1 / 24;  // Pixel der 2D-Spielwelt → Meter
 const COIN_Z = 3.6;              // Münzen liegen vor der Fahrbahn
 const CAM = new THREE.Vector3(0, 7.5, 46), LOOK = new THREE.Vector3(0, 6.8, 0);
@@ -27,42 +28,45 @@ function canvasTexture(w, h, paint, repeat = true) {
   return tex;
 }
 
-function speckle(g, w, h, base, spots, count) {
-  g.fillStyle = base;
-  g.fillRect(0, 0, w, h);
-  for (let i = 0; i < count; i++) {
-    g.fillStyle = spots[i % spots.length];
-    g.fillRect(Math.random() * w, Math.random() * h, 1 + Math.random() * 2, 1 + Math.random() * 2);
-  }
-}
-
 function makeTextures() {
+  const N = makeNoise(31), r = rng(17);
+  const hash = (a, b) => { const v = Math.sin(a * 127.1 + b * 311.7) * 43758.5453; return v - Math.floor(v); };
+  // Glatter Industrieboden: wolkig, kleine Poren, Fugen am Plattenrand
+  const concrete = surface(512, (u, v) => {
+    const n = N.fbm(u * 6, v * 6, 5, 6), pore = r() > 0.985 ? 1 : 0;
+    const joint = Math.min(u, 1 - u, v, 1 - v) < 0.004 ? 1 : 0;
+    const k = 84 + n * 56 + r() * 8 - pore * 30 - joint * 40;
+    return [k, k, k - 3, 1 - joint - pore * 0.5 + n * 0.3];
+  }, 2.5);
+  // Backstein: einzelne Steine mit Farbunterschieden und vertieften Mörtelfugen
+  const bricks = surface(512, (u, v) => {
+    const rows = 16, cols = 8, row = Math.floor(v * rows), shift = row % 2 ? 0.5 : 0;
+    const cu = u * cols + shift, col = Math.floor(cu) % cols;
+    const fu = cu - Math.floor(cu), fv = v * rows - row;
+    const mortar = fu < 0.045 || fv < 0.09;
+    const n = N.fbm(u * 24, v * 24, 3, 24), h = hash(row, col);
+    if (mortar) { const k = 128 + n * 30; return [k, k - 4, k - 10, 0.1 + n * 0.1]; }
+    const l = 0.62 + h * 0.3 + n * 0.25 - (hash(col, row + 7) > 0.85 ? 0.22 : 0);
+    return [168 * l, (78 + h * 22) * l, (58 + h * 10) * l, 0.9 + n * 0.25];
+  }, 5);
+  // Fahrspur: dunkler Asphalt mit Reifenspuren
+  const lane = surface(256, (u, v) => {
+    const n = N.fbm(u * 4, v * 4, 4, 4), grain = r();
+    const k = 52 + n * 20 + grain * 14 - (Math.abs(((v * 2) % 1) - 0.5) < 0.12 ? 10 : 0);
+    return [k, k + 1, k + 4, grain * 0.5 + n * 0.4];
+  }, 2);
+  // Fabrikfenster: viele kleine Scheiben, manche heller oder milchig
+  const panes = canvasTexture(128, 192, (g, w, h) => {
+    g.fillStyle = '#20242c'; g.fillRect(0, 0, w, h);
+    for (let y = 0; y < 6; y++) for (let x = 0; x < 4; x++) {
+      const l = 72 + r() * 22;
+      g.fillStyle = `hsl(205, 35%, ${l}%)`;
+      g.fillRect(x * 32 + 3, y * 32 + 3, 26, 26);
+    }
+  }, false);
   return {
-    concrete: canvasTexture(512, 512, (g, w, h) => {
-      speckle(g, w, h, '#8b8e93', ['#93969b', '#83868b', '#7c7f84', '#9a9da2'], 30000);
-      g.globalAlpha = 0.12; // Flecken
-      for (let i = 0; i < 14; i++) {
-        g.fillStyle = '#4a4d52';
-        g.beginPath(); g.ellipse(Math.random() * w, Math.random() * h, 20 + Math.random() * 50, 10 + Math.random() * 30, Math.random() * 3, 0, Math.PI * 2); g.fill();
-      }
-      g.globalAlpha = 1;
-      g.strokeStyle = 'rgba(40,40,45,0.5)'; // Fugen der Bodenplatten
-      g.lineWidth = 2;
-      g.strokeRect(1, 1, w - 2, h - 2);
-    }),
-    lane: canvasTexture(256, 256, (g, w, h) => speckle(g, w, h, '#3d4046', ['#44474d', '#36393e', '#4a4d53'], 9000)),
-    bricks: canvasTexture(512, 256, (g, w, h) => {
-      g.fillStyle = '#6f645b';
-      g.fillRect(0, 0, w, h);
-      for (let row = 0; row < h / 32; row++) {
-        for (let col = -1; col < w / 64 + 1; col++) {
-          const x = col * 64 + (row % 2) * 32, y = row * 32;
-          const l = 32 + Math.random() * 10;
-          g.fillStyle = `hsl(${10 + Math.random() * 8}, ${35 + Math.random() * 15}%, ${l}%)`;
-          g.fillRect(x + 2, y + 2, 60, 28);
-        }
-      }
-    }),
+    concrete: concrete.map, concreteN: concrete.normalMap, bricks: bricks.map, bricksN: bricks.normalMap,
+    lane: lane.map, laneN: lane.normalMap, panes,
     hazard: canvasTexture(128, 32, (g, w, h) => {
       g.fillStyle = '#f1c40f';
       g.fillRect(0, 0, w, h);
@@ -108,13 +112,15 @@ function box(w, h, d, mat, x, y, z, shadow = true) {
 
 function buildHall(tex) {
   // Boden und Fahrspur
-  tex.concrete.repeat.set(20, 10);
-  const floor = new THREE.Mesh(new THREE.PlaneGeometry(160, 80), new THREE.MeshStandardMaterial({ map: tex.concrete, roughness: 0.92 }));
+  for (const t of [tex.concrete, tex.concreteN]) t.repeat.set(32, 16);
+  const floor = new THREE.Mesh(new THREE.PlaneGeometry(160, 80), new THREE.MeshStandardMaterial({
+    map: tex.concrete, normalMap: tex.concreteN, normalScale: new THREE.Vector2(0.5, 0.5), roughness: 0.42, metalness: 0.05 }));
   floor.rotation.x = -Math.PI / 2;
   floor.receiveShadow = true;
   scene.add(floor);
-  tex.lane.repeat.set(30, 2);
-  const lane = new THREE.Mesh(new THREE.PlaneGeometry(90, 6), new THREE.MeshStandardMaterial({ map: tex.lane, roughness: 0.85 }));
+  for (const t of [tex.lane, tex.laneN]) t.repeat.set(15, 1);
+  const lane = new THREE.Mesh(new THREE.PlaneGeometry(90, 6), new THREE.MeshStandardMaterial({
+    map: tex.lane, normalMap: tex.laneN, normalScale: new THREE.Vector2(0.5, 0.5), roughness: 0.8 }));
   lane.rotation.x = -Math.PI / 2;
   lane.position.y = 0.01;
   lane.receiveShadow = true;
@@ -129,12 +135,13 @@ function buildHall(tex) {
   }
 
   // Rückwand aus Backstein mit hohen Fenstern
-  tex.bricks.repeat.set(14, 5);
-  const wall = new THREE.Mesh(new THREE.PlaneGeometry(140, 34), new THREE.MeshStandardMaterial({ map: tex.bricks, roughness: 0.95 }));
+  for (const t of [tex.bricks, tex.bricksN]) t.repeat.set(35, 8.5);
+  const wall = new THREE.Mesh(new THREE.PlaneGeometry(140, 34), new THREE.MeshStandardMaterial({
+    map: tex.bricks, normalMap: tex.bricksN, roughness: 0.95 }));
   wall.position.set(0, 17, -12);
   wall.receiveShadow = true;
   scene.add(wall);
-  const glow = new THREE.MeshStandardMaterial({ color: 0xbcd6f0, emissive: 0xd8ecff, emissiveIntensity: 0.9, roughness: 0.2 });
+  const glow = new THREE.MeshStandardMaterial({ color: 0xffffff, map: tex.panes, emissive: 0xffffff, emissiveMap: tex.panes, emissiveIntensity: 1.0, roughness: 0.2 });
   const frame = new THREE.MeshStandardMaterial({ color: 0x2b2f38, metalness: 0.6, roughness: 0.5 });
   for (let x = -54; x <= 54; x += 12) {
     box(5.2, 8.2, 0.2, frame, x, 18.5, -11.85, false);
@@ -142,6 +149,8 @@ function buildHall(tex) {
     box(0.18, 7.6, 0.25, frame, x, 18.5, -11.6, false);
     box(4.6, 0.18, 0.25, frame, x, 18.5, -11.6, false);
   }
+  buildDetails(tex, frame);
+
   // Grosser Schriftzug an der Wand
   const logo = new THREE.Mesh(new THREE.PlaneGeometry(22, 3.2), new THREE.MeshStandardMaterial({ map: signTexture('AUTO-RETTER WERK', '#1f2430', '#f1c40f', 1024, 150, 96), roughness: 0.6 }));
   logo.position.set(0, 11.2, -11.7);
@@ -187,6 +196,165 @@ function buildHall(tex) {
     barrel.castShadow = barrel.receiveShadow = true;
     scene.add(barrel);
   }
+}
+
+// Wandschmutz, Rohre, Sockel, Lichtstrahlen, Ölflecken, Regal, Gabelstapler und Schilder
+function buildDetails(tex, frame) {
+  const r = rng(77);
+  // Russ und Regenspuren auf dem Backstein (oben dunkler, Streifen unter den Fenstern, unten Strassenschmutz)
+  const grime = canvasTexture(1024, 256, (g, w, h) => {
+    const top = g.createLinearGradient(0, 0, 0, h);
+    top.addColorStop(0, 'rgba(10,8,6,0.55)'); top.addColorStop(0.35, 'rgba(10,8,6,0.12)');
+    top.addColorStop(0.85, 'rgba(10,8,6,0.05)'); top.addColorStop(1, 'rgba(25,20,15,0.5)');
+    g.fillStyle = top; g.fillRect(0, 0, w, h);
+    for (let x = -54; x <= 54; x += 12) { // unter jedem Fenster
+      const px = (x + 70) / 140 * w;
+      for (let k = 0; k < 9; k++) {
+        const sx = px + (r() - 0.5) * 30, len = 30 + r() * 70;
+        const st = g.createLinearGradient(0, 105, 0, 105 + len);
+        st.addColorStop(0, 'rgba(15,12,10,0.35)'); st.addColorStop(1, 'rgba(15,12,10,0)');
+        g.fillStyle = st; g.fillRect(sx, 105, 1.5 + r() * 3, len);
+      }
+    }
+  }, false);
+  const grimeMesh = new THREE.Mesh(new THREE.PlaneGeometry(140, 34), new THREE.MeshBasicMaterial({ map: grime, transparent: true, depthWrite: false }));
+  grimeMesh.position.set(0, 17, -11.97);
+  scene.add(grimeMesh);
+
+  // Betonsockel unten an der Wand
+  const plinth = new THREE.MeshStandardMaterial({ color: 0x55605c, roughness: 0.8 });
+  box(140, 1.3, 0.35, plinth, 0, 0.65, -11.85, false);
+  // Gelbe Gehweg-Linien auf dem Boden
+  const paint = new THREE.MeshStandardMaterial({ color: 0xe8b923, roughness: 0.6, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 });
+  for (const z of [-5.4, 5.4]) {
+    const l = new THREE.Mesh(new THREE.PlaneGeometry(140, 0.16), paint);
+    l.rotation.x = -Math.PI / 2;
+    l.position.set(0, 0.015, z);
+    scene.add(l);
+  }
+
+  // Rohrleitungen mit Halterungen zwischen Schriftzug und Fenstern, ein Rohr führt zu einem Ventil
+  const red = new THREE.MeshStandardMaterial({ color: 0xa8281e, metalness: 0.3, roughness: 0.45 });
+  const grey = new THREE.MeshStandardMaterial({ color: 0x8a9099, metalness: 0.6, roughness: 0.35 });
+  const pipe = (rad, mat, x0, y0, z0, x1, y1, z1) => {
+    const a = new THREE.Vector3(x0, y0, z0), b = new THREE.Vector3(x1, y1, z1);
+    const m = new THREE.Mesh(new THREE.CylinderGeometry(rad, rad, a.distanceTo(b), 14), mat);
+    m.position.copy(a).add(b).multiplyScalar(0.5);
+    m.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), b.clone().sub(a).normalize());
+    m.castShadow = true;
+    scene.add(m);
+  };
+  pipe(0.24, grey, -70, 13.7, -11.35, 70, 13.7, -11.35);
+  pipe(0.16, red, -70, 14.3, -11.45, 70, 14.3, -11.45);
+  for (let x = -66; x <= 66; x += 6) box(0.12, 1.1, 0.5, frame, x, 13.95, -11.6, false);
+  pipe(0.16, red, -19.5, 14.3, -11.45, -19.5, 1.6, -11.45);
+  pipe(0.3, red, -19.5, 1.6, -11.45, -19.5, 0.8, -11.45);
+  box(0.9, 0.12, 0.12, grey, -19.5, 2.1, -11.2, false); // Ventilrad
+
+  // Lichtstrahlen von den Fenstern schräg zum Boden, dort helle Flecken
+  const shaftTex = canvasTexture(64, 128, (g, w, h) => {
+    const gv = g.createLinearGradient(0, 0, 0, h);
+    gv.addColorStop(0, 'rgba(255,255,255,1)'); gv.addColorStop(1, 'rgba(255,255,255,0.15)');
+    g.fillStyle = gv; g.fillRect(0, 0, w, h);
+    g.globalCompositeOperation = 'destination-in';
+    const gu = g.createLinearGradient(0, 0, w, 0);
+    gu.addColorStop(0, 'rgba(0,0,0,0)'); gu.addColorStop(0.25, 'rgba(0,0,0,1)'); gu.addColorStop(0.75, 'rgba(0,0,0,1)'); gu.addColorStop(1, 'rgba(0,0,0,0)');
+    g.fillStyle = gu; g.fillRect(0, 0, w, h);
+  }, false);
+  const beamMat = new THREE.MeshBasicMaterial({ map: shaftTex, color: 0xffe9c4, transparent: true, opacity: 0.38, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide });
+  const patchMat = new THREE.MeshBasicMaterial({ map: shaftTex, color: 0xffe2b0, transparent: true, opacity: 0.5, depthWrite: false, blending: THREE.AdditiveBlending, polygonOffset: true, polygonOffsetFactor: -3, polygonOffsetUnits: -3 });
+  const dir = new THREE.Vector3(0.32, -0.8, 0.5).normalize();
+  for (let x = -42; x <= 42; x += 12) {
+    const top = new THREE.Vector3(x, 20.5, -11.6), t = top.y / -dir.y, foot = top.clone().addScaledVector(dir, t);
+    const half = 2.3;
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.Float32BufferAttribute([
+      top.x - half, top.y, top.z, top.x + half, top.y, top.z, foot.x + half, 0.05, foot.z, foot.x - half, 0.05, foot.z], 3));
+    g.setAttribute('uv', new THREE.Float32BufferAttribute([0, 1, 1, 1, 1, 0, 0, 0], 2));
+    g.setIndex([0, 2, 1, 0, 3, 2]);
+    g.computeVertexNormals();
+    scene.add(new THREE.Mesh(g, beamMat));
+    const patch = new THREE.Mesh(new THREE.PlaneGeometry(4.6, 5.5), patchMat);
+    patch.rotation.x = -Math.PI / 2;
+    patch.position.set(foot.x, 0.03, foot.z - 1.5);
+    scene.add(patch);
+  }
+
+  // Ölflecken auf dem Boden
+  const oilTex = canvasTexture(128, 128, (g, w, h) => {
+    for (let k = 0; k < 6; k++) {
+      const x = 40 + r() * 48, y = 40 + r() * 48, rad = 14 + r() * 26;
+      const rg = g.createRadialGradient(x, y, 0, x, y, rad);
+      rg.addColorStop(0, 'rgba(8,8,10,0.55)'); rg.addColorStop(1, 'rgba(8,8,10,0)');
+      g.fillStyle = rg; g.fillRect(0, 0, w, h);
+    }
+  }, false);
+  const oilMat = new THREE.MeshStandardMaterial({ map: oilTex, transparent: true, depthWrite: false, roughness: 0.15, metalness: 0.3, polygonOffset: true, polygonOffsetFactor: -4, polygonOffsetUnits: -4 });
+  for (const [x, z, s] of [[-14, -1.5, 3], [-1, 1, 3.5], [13, -0.5, 3], [-5, -7, 2.5], [9, -6.5, 3.5], [-24, 4, 3], [24, -2, 2.5], [4, 7, 2]]) {
+    const o = new THREE.Mesh(new THREE.PlaneGeometry(s, s), oilMat);
+    o.rotation.set(-Math.PI / 2, 0, r() * 6);
+    o.position.set(x, 0.025, z);
+    scene.add(o);
+  }
+
+  // Hochregal mit Paletten und Kartons links
+  const orange = new THREE.MeshStandardMaterial({ color: 0xd9611c, roughness: 0.55, metalness: 0.4 });
+  const blue = new THREE.MeshStandardMaterial({ color: 0x1f4f9c, roughness: 0.5, metalness: 0.4 });
+  const carton = new THREE.MeshStandardMaterial({ color: 0xa47b4c, roughness: 0.9 });
+  const pallet = new THREE.MeshStandardMaterial({ map: tex.wood, roughness: 0.9 });
+  for (const x of [-24.6, -21.8, -19]) for (const z of [-10.8, -9.4]) box(0.14, 6.4, 0.14, orange, x, 3.2, z, true);
+  for (const y of [0.25, 2.25, 4.25]) {
+    for (const z of [-10.8, -9.4]) box(5.8, 0.18, 0.12, blue, -21.8, y, z, false);
+    for (const x of [-23.2, -20.4]) {
+      box(2.4, 0.14, 1.3, pallet, x, y + 0.16, -10.1, false);
+      const n = 1 + Math.floor(r() * 3);
+      for (let k = 0; k < n; k++) {
+        const w = 0.6 + r() * 0.4, h = 0.5 + r() * 0.6;
+        box(w, h, 0.9, carton, x - 0.8 + k * 0.8, y + 0.23 + h / 2, -10.1, true);
+      }
+    }
+  }
+
+  // Gabelstapler, der gerade eine Kiste holt
+  const yellow = new THREE.MeshStandardMaterial({ color: 0xf2b705, roughness: 0.45, metalness: 0.2 });
+  const black = new THREE.MeshStandardMaterial({ color: 0x1b1c20, roughness: 0.8 });
+  const fl = new THREE.Group();
+  const part = (w, h, d, mat, x, y, z) => { const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat); m.position.set(x, y, z); m.castShadow = true; fl.add(m); };
+  part(2.0, 0.9, 1.3, yellow, 0, 0.85, 0);          // Körper
+  part(0.7, 1.0, 1.3, yellow, 0.75, 1.45, 0);        // Gegengewicht hinten
+  part(0.6, 0.5, 0.8, black, -0.1, 1.55, 0);         // Sitz
+  for (const [x, z] of [[-0.75, -0.6], [-0.75, 0.6], [0.55, -0.6], [0.55, 0.6]]) part(0.08, 1.6, 0.08, black, x, 2.05, z); // Schutzdach-Stangen
+  part(1.45, 0.08, 1.35, black, -0.1, 2.85, 0);      // Schutzdach
+  for (const z of [-0.4, 0.4]) part(0.12, 2.9, 0.12, frame, -1.1, 1.45, z); // Hubmast
+  for (const z of [-0.3, 0.3]) part(1.2, 0.06, 0.14, frame, -1.75, 0.5, z);  // Gabeln
+  part(0.9, 0.9, 0.9, pallet, -1.75, 0.98, 0);       // Kiste auf der Gabel
+  for (const [x, z] of [[-0.6, -0.68], [-0.6, 0.68], [0.65, -0.68], [0.65, 0.68]]) {
+    const w = new THREE.Mesh(new THREE.CylinderGeometry(0.38, 0.38, 0.3, 16), black);
+    w.rotation.x = Math.PI / 2;
+    w.position.set(x, 0.38, z);
+    fl.add(w);
+  }
+  fl.position.set(10.4, 0, -7.6);
+  fl.rotation.y = 0.35;
+  scene.add(fl);
+
+  // Warnschilder an den Stützen und ein Feuerlöscher
+  const warn = canvasTexture(128, 128, (g, w, h) => {
+    g.fillStyle = '#f2c200'; g.strokeStyle = '#111'; g.lineWidth = 8; g.lineJoin = 'round';
+    g.beginPath(); g.moveTo(64, 10); g.lineTo(122, 112); g.lineTo(6, 112); g.closePath(); g.fill(); g.stroke();
+    g.fillStyle = '#111'; g.font = '900 64px system-ui'; g.textAlign = 'center'; g.fillText('!', 64, 100);
+  }, false);
+  const warnMat = new THREE.MeshStandardMaterial({ map: warn, transparent: true, alphaTest: 0.5, roughness: 0.6 });
+  for (const x of [-6, 18]) {
+    const sgn = new THREE.Mesh(new THREE.PlaneGeometry(1.3, 1.3), warnMat);
+    sgn.position.set(x, 6, -10.78);
+    scene.add(sgn);
+  }
+  const ext = new THREE.MeshStandardMaterial({ color: 0xc81e1e, roughness: 0.35, metalness: 0.2 });
+  const bottle = new THREE.Mesh(new THREE.CylinderGeometry(0.18, 0.18, 0.75, 14), ext);
+  bottle.position.set(-6, 1.5, -10.6);
+  scene.add(bottle);
+  box(0.1, 0.18, 0.1, black, -6, 1.95, -10.6, false);
 }
 
 // ---------- Pressen ----------
@@ -389,6 +557,8 @@ export function init(consts) {
   for (const o of [...scene.children]) if (o.isMesh) hall.add(o);
   scene.add(hall);
   mergeStatic(hall);
+  dustCloud = dust({ count: 420, box: [-26, 0.4, -10, 26, 21, 6], size: 0.14, opacity: 0.4 });
+  scene.add(dustCloud);
   coinGeo = new THREE.CylinderGeometry(0.45, 0.45, 0.09, 28);
   coinMat = new THREE.MeshStandardMaterial({ color: 0xffd34d, metalness: 1, roughness: 0.22, emissive: 0x5a3d00, emissiveIntensity: 0.4 });
   quality = makeQuality(renderer, () => lastLayout && layout(...lastLayout));
@@ -401,6 +571,7 @@ export function init(consts) {
     pressViews.push(v);
   }
   warmUp(renderer, scene, camera);
+  window.__press3d = () => ({ scene, renderer }); // für Tests im Browser
   extras.forEach(m => scene.remove(m));
 }
 
@@ -434,6 +605,7 @@ export function setVisible(on) {
 export function render({ cars, presses, wrecks, coins, time, shake }) {
   const now = performance.now();
   if (lastFrame) quality((now - lastFrame) / 1000);
+  dustCloud.userData.update(Math.min(0.1, lastFrame ? (now - lastFrame) / 1000 : 0));
   lastFrame = now;
   setVisible(true);
   updatePresses(presses, time);

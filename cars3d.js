@@ -795,7 +795,7 @@ export function warmUp(renderer, scene, camera) {
   renderer.compile(scene, camera);
   scene.traverse(o => {
     const mats = Array.isArray(o.material) ? o.material : o.material ? [o.material] : [];
-    for (const m of mats) for (const k of ['map', 'emissiveMap']) if (m[k]) renderer.initTexture(m[k]);
+    for (const m of mats) for (const k of ['map', 'emissiveMap', 'normalMap', 'roughnessMap']) if (m[k]) renderer.initTexture(m[k]);
   });
 }
 

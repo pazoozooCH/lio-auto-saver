@@ -3,7 +3,9 @@
 import * as THREE from 'three';
 import { Sky } from 'three/addons/objects/Sky.js';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
+import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { buildCar, animateCar, warmUp, makeQuality, mergeStatic } from './cars3d.js';
+import { makeNoise, rng, smoothstep, surface, terrain, cloudDome } from './world3d.js';
 
 const DIST = 402;                 // eine Viertelmeile
 const LANE = 3.2;                 // Abstand der Spurmitte von der Mittelmauer
@@ -24,10 +26,6 @@ function canvasTexture(w, h, paint, repeat = true) {
   if (repeat) tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
   tex.anisotropy = 8;
   return tex;
-}
-function speckle(g, w, h, base, spots, n) {
-  g.fillStyle = base; g.fillRect(0, 0, w, h);
-  for (let i = 0; i < n; i++) { g.fillStyle = spots[i % spots.length]; g.fillRect(Math.random() * w, Math.random() * h, 1 + Math.random() * 2, 1 + Math.random() * 2); }
 }
 function label(text, bg, fg, w = 512, h = 128, size = 70) {
   return canvasTexture(w, h, (g) => {
@@ -68,19 +66,20 @@ function buildWorld() {
   sun.shadow.bias = -0.0005;
   scene.add(sun, sun.target);
 
-  // Wüstenboden
-  const sand = canvasTexture(256, 256, (g, w, h) => speckle(g, w, h, '#c99a64', ['#d4a670', '#bb8b57', '#dcb07c', '#b07f4d'], 12000));
-  sand.repeat.set(300, 300);
-  const ground = new THREE.Mesh(new THREE.PlaneGeometry(6000, 6000), new THREE.MeshStandardMaterial({ map: sand, roughness: 1 }));
-  ground.rotation.x = -Math.PI / 2;
-  ground.receiveShadow = true;
-  scene.add(ground);
+  // Wüste mit Sanddünen (Tafelberge, Felsen und Kakteen kommen weiter unten)
+  const land = makeDesert();
 
   // Fahrbahn: zwei Spuren, Startbereich dunkel vom Gummi
-  const asphalt = canvasTexture(512, 512, (g, w, h) => speckle(g, w, h, '#3c3f45', ['#43464c', '#36383d', '#484b51'], 24000));
-  asphalt.repeat.set(2, 120);
+  const N = makeNoise(6), rnd = rng(3);
+  const asphalt = surface(512, (u, v) => {
+    const n = N.fbm(u * 8, v * 8, 5, 8), grain = rnd(), stone = grain > 0.94 ? 1 : 0;
+    const k = 46 + n * 24 + grain * 12 + stone * 28;
+    return [k, k + 1, k + 4, grain * 0.4 + stone * 0.9 + n * 0.5];
+  }, 3);
   const len = DIST + 420, x0 = -80;
-  const road = new THREE.Mesh(new THREE.PlaneGeometry(len, 15), new THREE.MeshStandardMaterial({ map: asphalt, roughness: 0.85 }));
+  for (const t of [asphalt.map, asphalt.normalMap]) t.repeat.set(len / 12, 15 / 12);
+  const road = new THREE.Mesh(new THREE.PlaneGeometry(len, 15), new THREE.MeshStandardMaterial({
+    map: asphalt.map, normalMap: asphalt.normalMap, normalScale: new THREE.Vector2(0.4, 0.4), roughness: 0.8 }));
   road.rotation.x = -Math.PI / 2;
   road.position.set(x0 + len / 2, 0.02, 0);
   road.receiveShadow = true;
@@ -220,14 +219,7 @@ function buildWorld() {
   });
   scene.add(masts, lamps);
 
-  // Tafelberge und Kakteen in der Wüste
-  const rock = new THREE.MeshStandardMaterial({ color: 0xa65a38, roughness: 1, flatShading: true });
-  for (let i = 0; i < 22; i++) {
-    const a = (i / 22) * Math.PI * 2, r = 900 + Math.random() * 700;
-    const mesa = new THREE.Mesh(new THREE.CylinderGeometry(80 + Math.random() * 120, 140 + Math.random() * 160, 60 + Math.random() * 140, 7), rock);
-    mesa.position.set(200 + Math.cos(a) * r, 30, Math.sin(a) * r);
-    scene.add(mesa);
-  }
+  // Kakteen, Felsbrocken und trockene Büsche in der Wüste
   const cactusMat = new THREE.MeshStandardMaterial({ color: 0x3f7d34, roughness: 0.8 });
   const trunks = new THREE.InstancedMesh(new THREE.CapsuleGeometry(0.3, 1, 4, 8), cactusMat, 120);
   const arms = new THREE.InstancedMesh(new THREE.CapsuleGeometry(0.2, 1, 4, 8), cactusMat, 240);
@@ -235,12 +227,31 @@ function buildWorld() {
   let nArms = 0;
   for (let i = 0; i < 120; i++) {
     const x = -300 + Math.random() * 1200, z = (Math.random() < 0.5 ? -1 : 1) * (40 + Math.random() * 300);
-    const h = 2 + Math.random() * 3;
-    trunks.setMatrixAt(i, mtx.compose(pos.set(x, h / 2 + 0.3, z), quat, scl.set(1, h, 1)));
+    const h = 2 + Math.random() * 3, y = land.height(x, z);
+    trunks.setMatrixAt(i, mtx.compose(pos.set(x, y + h / 2 + 0.3, z), quat, scl.set(1, h, 1)));
     for (const sgn of [-1, 1]) if (Math.random() < 0.7) {
-      arms.setMatrixAt(nArms++, mtx.compose(pos.set(x, h * (0.4 + Math.random() * 0.3), z + sgn * 0.55), quat, scl.set(1, h * 0.35, 1)));
+      arms.setMatrixAt(nArms++, mtx.compose(pos.set(x, y + h * (0.4 + Math.random() * 0.3), z + sgn * 0.55), quat, scl.set(1, h * 0.35, 1)));
     }
   }
+  const boulders = new THREE.InstancedMesh(new THREE.DodecahedronGeometry(1, 0), new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.95, flatShading: true }), 260);
+  const shrubs = new THREE.InstancedMesh(new THREE.IcosahedronGeometry(0.8, 0), new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 1, flatShading: true }), 320);
+  const col = new THREE.Color(), e = new THREE.Euler();
+  for (let i = 0; i < 260; i++) {
+    const x = -400 + Math.random() * 1400, z = (Math.random() < 0.5 ? -1 : 1) * (38 + Math.random() * 500);
+    const s = 0.5 + Math.random() ** 3 * 5;
+    quat.setFromEuler(e.set(Math.random() * 3, Math.random() * 3, Math.random() * 3));
+    boulders.setMatrixAt(i, mtx.compose(pos.set(x, land.height(x, z) + s * 0.3, z), quat, scl.set(s * (1 + Math.random()), s * (0.6 + Math.random() * 0.4), s * (1 + Math.random()))));
+    boulders.setColorAt(i, col.setHSL(0.04 + Math.random() * 0.03, 0.45, 0.16 + Math.random() * 0.12));
+  }
+  quat.identity();
+  for (let i = 0; i < 320; i++) {
+    const x = -400 + Math.random() * 1400, z = (Math.random() < 0.5 ? -1 : 1) * (36 + Math.random() * 400);
+    const s = 0.6 + Math.random() * 1.2;
+    shrubs.setMatrixAt(i, mtx.compose(pos.set(x, land.height(x, z) + s * 0.3, z), quat, scl.set(s * 1.3, s * 0.7, s * 1.3)));
+    shrubs.setColorAt(i, col.setHSL(0.13 + Math.random() * 0.08, 0.3, 0.07 + Math.random() * 0.06));
+  }
+  boulders.castShadow = shrubs.castShadow = true;
+  scene.add(boulders, shrubs);
   arms.count = nArms;
   trunks.castShadow = arms.castShadow = true;
   scene.add(trunks, arms);
@@ -251,8 +262,74 @@ function buildWorld() {
   for (const o of [...scene.children]) if ((o.isMesh || o.isGroup) && o !== sky) decor.add(o);
   scene.add(decor);
   mergeStatic(decor);
+  scene.add(land.mesh, buildMesas()); // eigene Farben: nicht mit den anderen Teilen verschmelzen
+  const clouds = cloudDome({ radius: 3500, coverage: 0.55, tint: '#ffdcb4', shade: '#9a6a78', seed: 5 });
+  scene.add(clouds);
   warmUp(renderer, scene, camera);
-  return { renderer, scene, camera, sun, bulbs };
+  return { renderer, scene, camera, sun, bulbs, clouds };
+}
+
+// ---------- Wüste ----------
+function makeDesert() {
+  const N = makeNoise(12);
+  // Um die Bahn herum flach, weiter draussen wellige Sanddünen
+  const height = (x, z) => {
+    const f = smoothstep(20, 110, Math.hypot(Math.max(0, -150 - x, x - (DIST + 330)), Math.max(0, Math.abs(z) - 35)));
+    if (f <= 0) return 0;
+    const warp = N.fbm(x / 400, z / 400, 3) * 7;
+    const dune = Math.pow(0.5 + 0.5 * Math.sin((x * 0.35 + z * 0.94) / 38 + warp), 2.2) * (3 + 16 * N.fbm(x / 600 + 3, z / 600, 3));
+    return f * (dune + (N.fbm(x / 150, z / 150, 3) - 0.5) * 3);
+  };
+  const C = hex => new THREE.Color(hex);
+  const sandA = C(0xe0ac70), sandB = C(0xc98f58), sandDark = C(0xa9713f), pale = C(0xead0a6);
+  const color = (x, z, y, steep, c) => {
+    c.lerpColors(sandA, sandB, N.fbm(x / 120, z / 120, 3));
+    c.lerp(sandDark, smoothstep(0.6, 0.75, N.fbm(x / 300 + 4, z / 300, 3)) * 0.55);
+    c.lerp(pale, smoothstep(6, 18, y) * 0.35); // Dünenkämme heller
+  };
+  // Sand mit feinen Windrippeln
+  const r = rng(5);
+  const detail = surface(256, (u, v) => {
+    const ripple = Math.sin(2 * Math.PI * (v * 24 + N.fbm(u * 4, v * 4, 3, 4) * 1.5));
+    const k = 222 + ripple * 10 + r() * 20;
+    return [k, k - 4, k - 12, ripple * 0.5 + r() * 0.15];
+  }, 2);
+  const mesh = terrain({ size: 6000, segments: 220, center: [200, 0], height, color, detail, detailRepeat: 600 });
+  mesh.material.normalScale.set(0.6, 0.6);
+  return { mesh, height };
+}
+
+// Tafelberge: steile Felswände mit Gesteinsschichten, unten ein Schuttkegel, oben flach
+function buildMesas() {
+  const N = makeNoise(21), r = rng(9);
+  const strata = [0xb0583a, 0xc8794a, 0xe2b487, 0x9a4a32, 0xd08e5c, 0xbf6a44].map(h => new THREE.Color(h));
+  const top = new THREE.Color(0xb88a5e), col = new THREE.Color();
+  const geos = [];
+  for (let i = 0; i < 20; i++) {
+    const a = (i / 20) * Math.PI * 2 + r() * 0.25, dist = 850 + r() * 900;
+    const rad = 100 + r() * 170, h = 100 + r() * 170, seed = r() * 50;
+    const g = new THREE.CylinderGeometry(rad, rad, h, 48, 28);
+    const pos = g.attributes.position, nrm = g.attributes.normal, colors = [];
+    for (let k = 0; k < pos.count; k++) {
+      const x = pos.getX(k), y = pos.getY(k), z = pos.getZ(k), t = y / h + 0.5;
+      const ang = Math.atan2(z, x), capTop = nrm.getY(k) > 0.9;
+      const rough = 1 + 0.32 * (N.fbm(Math.cos(ang) * 2 + seed, Math.sin(ang) * 2 + t * 1.5, 4) - 0.5);
+      const flare = 1 + 0.75 * (1 - smoothstep(0, 0.38, t)) ** 1.6 + (t < 0.62 ? 0.07 : 0); // Schuttkegel und Felsband
+      const f = rough * flare;
+      pos.setXYZ(k, x * f, y, z * f);
+      const yy = y + h / 2 + (N.noise(ang * 3 + seed, 0) - 0.5) * 8;
+      if (capTop) col.copy(top);
+      else if (t < 0.3) col.copy(strata[1]).lerp(top, 0.35 + (1 - t / 0.3) * 0.3);
+      else col.copy(strata[Math.floor(yy / 9) % strata.length]).lerp(strata[Math.floor(yy / 9 + 1) % strata.length], (yy / 9) % 1 * 0.3);
+      colors.push(col.r, col.g, col.b);
+    }
+    g.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
+    g.translate(200 + Math.cos(a) * dist, h / 2 - 10, Math.sin(a) * dist);
+    geos.push(g);
+  }
+  const mesh = new THREE.Mesh(mergeGeometries(geos), new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 1, flatShading: true }));
+  mesh.receiveShadow = true;
+  return mesh;
 }
 
 // ---------- Bedienoberfläche ----------
@@ -526,6 +603,7 @@ function render(dt) {
   cam.updateProjectionMatrix();
   W3.sun.position.set(me.x - 60, 70, -50);
   W3.sun.target.position.set(me.x + 10, 0, 0);
+  W3.clouds.position.set(cam.position.x, 0, cam.position.z);
   W3.renderer.render(W3.scene, cam);
 }
 
@@ -563,3 +641,4 @@ function endDrag(quit) {
 }
 
 window.__drag = () => drag; // für Tests im Browser
+window.__dragW = () => W3;

@@ -2,7 +2,9 @@
 import * as THREE from 'three';
 import { Sky } from 'three/addons/objects/Sky.js';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
+import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { buildCar, animateCar, warmUp, makeQuality, mergeStatic } from './cars3d.js';
+import { makeNoise, rng, smoothstep, surface, terrain, cloudDome } from './world3d.js';
 
 const LAPS = 3;
 const TRACK_W = 14;          // Fahrbahnbreite in Metern
@@ -134,29 +136,23 @@ function canvasTexture(w, h, paint, repeat = true) {
   return tex;
 }
 
-function noise(g, w, h, base, spots, count) {
-  g.fillStyle = base;
-  g.fillRect(0, 0, w, h);
-  for (let i = 0; i < count; i++) {
-    g.fillStyle = spots[Math.floor(Math.random() * spots.length)];
-    g.fillRect(Math.random() * w, Math.random() * h, 1 + Math.random() * 2, 1 + Math.random() * 2);
-  }
-}
-
 function makeTextures() {
+  const N = makeNoise(2), r = rng(4);
+  // Asphalt: feine Körnung mit einzelnen hellen Steinchen, in der Mitte dunkler abgefahren
+  const asphalt = surface(512, (u, v) => {
+    const n = N.fbm(u * 12, v * 12, 5, 12), grain = r(), stone = grain > 0.94 ? 1 : 0;
+    const worn = 1 - 0.2 * Math.exp(-(((u - 0.5) / 0.2) ** 2));
+    const k = (50 + n * 26 + grain * 12 + stone * 30) * worn;
+    return [k, k + 1, k + 4, grain * 0.4 + stone * 0.9 + n * 0.5];
+  }, 3);
+  // Kies: runde Steinchen in Beige- und Grautönen
+  const gravel = surface(256, (u, v) => {
+    const n = N.noise(u * 40, v * 40, 40), m = N.noise(u * 13 + 4, v * 13, 13), g = r();
+    const k = 0.62 + n * 0.3 + g * 0.12;
+    return [212 * k, (190 - m * 25) * k, (150 - m * 30) * k, n + g * 0.25];
+  }, 4);
   return {
-    asphalt: canvasTexture(512, 512, (g, w, h) => noise(g, w, h, '#44474d', ['#494c52', '#404349', '#4d5056', '#3d4046'], 26000)),
-    grass: canvasTexture(256, 256, (g, w, h) => {
-      g.fillStyle = '#5a9440'; g.fillRect(0, 0, w, h / 2);
-      g.fillStyle = '#4f873a'; g.fillRect(0, h / 2, w, h / 2);
-      g.globalAlpha = 0.35;
-      for (let i = 0; i < 9000; i++) {
-        g.fillStyle = ['#66a34a', '#47803a', '#5c9a44'][i % 3];
-        g.fillRect(Math.random() * w, Math.random() * h, 1, 2);
-      }
-      g.globalAlpha = 1;
-    }),
-    gravel: canvasTexture(128, 128, (g, w, h) => noise(g, w, h, '#cdb98f', ['#bba77e', '#ddc9a0', '#a8946c'], 4000)),
+    asphalt: asphalt.map, asphaltN: asphalt.normalMap, gravel: gravel.map, gravelN: gravel.normalMap,
     kerb: canvasTexture(16, 64, (g) => {
       g.fillStyle = '#d62828'; g.fillRect(0, 0, 16, 32);
       g.fillStyle = '#f5f5f5'; g.fillRect(0, 32, 16, 32);
@@ -205,7 +201,7 @@ function buildWorld() {
   renderer.shadowMap.type = THREE.PCFShadowMap;
 
   const scene = new THREE.Scene();
-  scene.fog = new THREE.Fog(0xbcd3e6, 250, 1500);
+  scene.fog = new THREE.Fog(0xbfd4e6, 250, 2900);
   const pmrem = new THREE.PMREMGenerator(renderer);
   scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
 
@@ -232,12 +228,7 @@ function buildWorld() {
   const T = makeTrack();
   const tex = makeTextures();
 
-  // Wiese
-  tex.grass.repeat.set(220, 220);
-  const ground = new THREE.Mesh(new THREE.PlaneGeometry(4000, 4000), new THREE.MeshStandardMaterial({ map: tex.grass, roughness: 1 }));
-  ground.rotation.x = -Math.PI / 2;
-  ground.receiveShadow = true;
-  scene.add(ground);
+  const land = makeLand(T);
 
   const curvy = i => T.curv[i] > 0.012;
   const strip = (a, b, y, v, mat, inc) => {
@@ -247,12 +238,12 @@ function buildWorld() {
   };
   const side = THREE.DoubleSide;
   // Kies in den Kurven, Asphalt, Randsteine, weisse Linien
+  const gravelMat = new THREE.MeshStandardMaterial({ map: tex.gravel, normalMap: tex.gravelN, roughness: 1, side });
   strip(TRACK_W / 2 + 1.4, i => Math.min(T.wallOff[1][i] - 0.5, TRACK_W / 2 + 9), 0.008, 0.2,
-    new THREE.MeshStandardMaterial({ map: tex.gravel, roughness: 1, side }), curvy);
-  strip(-TRACK_W / 2 - 1.4, i => -Math.min(T.wallOff[0][i] - 0.5, TRACK_W / 2 + 9), 0.008, 0.2,
-    new THREE.MeshStandardMaterial({ map: tex.gravel, roughness: 1, side }), curvy);
-  tex.asphalt.repeat.set(1, 1);
-  strip(-TRACK_W / 2, TRACK_W / 2, 0.02, 1 / 14, new THREE.MeshStandardMaterial({ map: tex.asphalt, roughness: 0.88, side }));
+    gravelMat, curvy);
+  strip(-TRACK_W / 2 - 1.4, i => -Math.min(T.wallOff[0][i] - 0.5, TRACK_W / 2 + 9), 0.008, 0.2, gravelMat, curvy);
+  strip(-TRACK_W / 2, TRACK_W / 2, 0.02, 1 / 14, new THREE.MeshStandardMaterial({
+    map: tex.asphalt, normalMap: tex.asphaltN, normalScale: new THREE.Vector2(0.4, 0.4), roughness: 0.78, side }));
   const kerbMat = new THREE.MeshStandardMaterial({ map: tex.kerb, roughness: 0.7, side });
   strip(TRACK_W / 2, TRACK_W / 2 + 1.4, 0.03, 1 / 3, kerbMat, curvy);
   strip(-TRACK_W / 2 - 1.4, -TRACK_W / 2, 0.03, 1 / 3, kerbMat, curvy);
@@ -311,8 +302,7 @@ function buildWorld() {
     }
   });
 
-  buildTrees(scene, T);
-  buildHills(scene);
+  buildTrees(scene, land);
 
   // Flache Schichten (Wiese < Asphalt/Kies < Linien/Randsteine) sauber übereinander zeichnen
   const lift = (m, by) => { m.polygonOffset = true; m.polygonOffsetFactor = m.polygonOffsetUnits = -by; };
@@ -322,8 +312,11 @@ function buildWorld() {
   for (const o of [...scene.children]) if ((o.isMesh || o.isGroup) && o !== sky) decor.add(o);
   scene.add(decor);
   mergeStatic(decor);
+  scene.add(land.mesh); // Gelände mit eigenen Farben: nicht mit den anderen Teilen verschmelzen
+  const clouds = cloudDome({ radius: 3000, coverage: 0.5, shade: '#aebccd', seed: 3 });
+  scene.add(clouds);
   warmUp(renderer, scene, camera);
-  return { renderer, scene, camera, sun, T, lights };
+  return { renderer, scene, camera, sun, T, lights, clouds };
 }
 
 function gridSlot(T, k) {
@@ -416,47 +409,112 @@ function buildPits(scene, s0, sgn) {
   scene.add(g);
 }
 
-function buildTrees(scene, T) {
-  const trunks = new THREE.InstancedMesh(new THREE.CylinderGeometry(0.25, 0.4, 3, 6), new THREE.MeshStandardMaterial({ color: 0x6b4a2b, roughness: 1 }), 500);
-  const crowns = new THREE.InstancedMesh(new THREE.IcosahedronGeometry(2.6, 1), new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.9, flatShading: true }), 500);
-  const pines = new THREE.InstancedMesh(new THREE.ConeGeometry(2.2, 7, 7), new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.9, flatShading: true }), 500);
-  trunks.castShadow = crowns.castShadow = pines.castShadow = true;
-  const m = new THREE.Matrix4(), q = new THREE.Quaternion(), sc = new THREE.Vector3(), pos = new THREE.Vector3();
-  const color = new THREE.Color();
-  let nT = 0, nC = 0, nP = 0;
-  for (let tries = 0; tries < 6000 && nT < 500; tries++) {
-    const x = (Math.random() - 0.5) * 1100, z = (Math.random() - 0.5) * 900 + 140;
-    let near = false;
-    for (let i = 0; i < T.n && !near; i += 6) {
-      if ((T.pts[i].x - x) ** 2 + (T.pts[i].z - z) ** 2 < (WALL + 8) ** 2) near = true;
-    }
-    if (near || (Math.abs(z) < 75 && x > -170 && x < 120)) continue; // nicht auf Strecke, Tribüne oder Boxen
-    const s = 0.8 + Math.random() * 0.8;
-    q.setFromAxisAngle(new THREE.Vector3(0, 1, 0), Math.random() * 6);
-    m.compose(pos.set(x, 1.5 * s, z), q, sc.set(s, s, s));
-    trunks.setMatrixAt(nT++, m);
-    if (Math.random() < 0.55) {
-      m.compose(pos.set(x, 4.6 * s, z), q, sc.set(s, s * 1.1, s));
-      crowns.setMatrixAt(nC, m);
-      crowns.setColorAt(nC++, color.setHSL(0.27 + Math.random() * 0.06, 0.45, 0.28 + Math.random() * 0.1));
-    } else {
-      m.compose(pos.set(x, 5.5 * s, z), q, sc.set(s, s, s));
-      pines.setMatrixAt(nP, m);
-      pines.setColorAt(nP++, color.setHSL(0.32 + Math.random() * 0.05, 0.4, 0.22 + Math.random() * 0.08));
-    }
-  }
-  trunks.count = nT; crowns.count = nC; pines.count = nP;
-  scene.add(trunks, crowns, pines);
+// ---------- Landschaft: Wiesen, Wälder, Hügel und Berge mit Schnee ----------
+const CX = 35, CZ = 140; // ungefähre Mitte der Strecke
+
+function makeLand(T) {
+  const N = makeNoise(5);
+  let x0 = Infinity, x1 = -Infinity, z0 = Infinity, z1 = -Infinity;
+  for (const p of T.pts) { x0 = Math.min(x0, p.x); x1 = Math.max(x1, p.x); z0 = Math.min(z0, p.z); z1 = Math.max(z1, p.z); }
+  const FAR = 200;
+  const trackDist = (x, z) => {
+    if (x < x0 - FAR || x > x1 + FAR || z < z0 - FAR || z > z1 + FAR) return FAR;
+    let best = Infinity;
+    for (let i = 0; i < T.n; i += 4) best = Math.min(best, (T.pts[i].x - x) ** 2 + (T.pts[i].z - z) ** 2);
+    return Math.min(FAR, Math.sqrt(best));
+  };
+  const forest = (x, z) => N.fbm(x / 220 + 5, z / 220 + 9, 3);
+  // Rund um die Strecke flach, dahinter sanfte Hügel, ganz aussen hohe Berge
+  const height = (x, z) => {
+    const r = Math.hypot(x - CX, z - CZ);
+    const roll = (N.fbm(x / 260, z / 260, 4) - 0.42) * (12 + 55 * smoothstep(250, 1000, r));
+    const ridge = 1 - Math.abs(2 * N.fbm(x / 520 + 7, z / 520 + 3, 4) - 1);
+    const mount = ridge * ridge * 520 * smoothstep(850, 1750, r);
+    return (roll + mount) * smoothstep(55, 175, trackDist(x, z));
+  };
+  const C = hex => new THREE.Color(hex);
+  const grassA = C(0x5e9142), grassB = C(0x4a7c35), dry = C(0x9a965a), wood = C(0x2e5a2c),
+    rock = C(0x857b70), rockDark = C(0x5e5852), snow = C(0xf3f6fa), alpine = C(0x7d8a5a);
+  const color = (x, z, y, steep, c) => {
+    c.lerpColors(grassA, grassB, N.fbm(x / 90, z / 90, 3));
+    c.lerp(dry, smoothstep(0.55, 0.75, N.fbm(x / 400 + 11, z / 400, 3)) * 0.6);
+    c.lerp(wood, smoothstep(0.48, 0.58, forest(x, z)) * 0.85 * (1 - smoothstep(160, 260, y)));
+    c.lerp(alpine, smoothstep(150, 260, y) * 0.7);
+    const rk = smoothstep(0.16, 0.34, steep) + smoothstep(260, 380, y) * 0.6;
+    if (rk > 0) c.lerp(rock.clone().lerp(rockDark, N.noise(x / 40, z / 40)), Math.min(1, rk));
+    const line = 330 + (N.noise(x / 120, z / 120) - 0.5) * 120;
+    c.lerp(snow, smoothstep(line, line + 50, y) * (1 - smoothstep(0.4, 0.6, steep)));
+  };
+  // Feine Grashalme als Detail (wird mit den Geländefarben eingefärbt)
+  const r = rng(8);
+  const detail = surface(256, (u, v) => {
+    const n = N.fbm(u * 16, v * 16, 4, 16), blade = r();
+    const k = 200 + n * 40 + blade * 15;
+    return [k, k + 3, k - 8, n * 0.6 + blade * 0.5];
+  }, 3);
+  const mesh = terrain({ size: 4600, segments: 220, center: [CX, CZ], height, color, detail, detailRepeat: 300 });
+  mesh.material.normalScale.set(0.35, 0.35);
+  return { mesh, height, trackDist, forest };
 }
 
-function buildHills(scene) {
-  const mat = new THREE.MeshStandardMaterial({ color: 0x5f7f55, roughness: 1, flatShading: true });
-  for (let i = 0; i < 26; i++) {
-    const a = (i / 26) * Math.PI * 2 + Math.random() * 0.2, r = 1100 + Math.random() * 500;
-    const hill = new THREE.Mesh(new THREE.ConeGeometry(180 + Math.random() * 160, 90 + Math.random() * 160, 7), mat);
-    hill.position.set(Math.cos(a) * r, 0, Math.sin(a) * r + 140);
-    hill.rotation.y = Math.random() * 3;
-    scene.add(hill);
+// Bäume (Laub- und Nadelbäume) und Büsche. Nahe Bäume werfen Schatten, ferne nicht (spart Rechenzeit).
+function treeSet(max, shadow, detail) {
+  const crownGeo = mergeGeometries([[0, 0, 0, 2.6], [1.3, -0.6, 0.6, 1.9], [-1.1, -0.4, -0.8, 2.0], [0.2, 1.4, -0.3, 1.8]]
+    .map(([x, y, z, rad]) => new THREE.IcosahedronGeometry(rad, detail).translate(x, y, z)));
+  const pineGeo = mergeGeometries([[2.6, 4.2, 0], [2.0, 3.6, 2.4], [1.3, 3.0, 4.6]]
+    .map(([rad, h, y]) => new THREE.ConeGeometry(rad, h, detail ? 8 : 6, 1, true).translate(0, y, 0).toNonIndexed()));
+  const mat = c => new THREE.MeshStandardMaterial({ color: c, roughness: 0.95, flatShading: true });
+  const set = {
+    trunks: new THREE.InstancedMesh(new THREE.CylinderGeometry(0.22, 0.38, 3, 6), mat(0x5b4030), max),
+    crowns: new THREE.InstancedMesh(crownGeo, mat(0xffffff), max),
+    pines: new THREE.InstancedMesh(pineGeo, mat(0xffffff), max),
+    bushes: new THREE.InstancedMesh(new THREE.IcosahedronGeometry(1.2, detail), mat(0xffffff), max),
+  };
+  for (const m of Object.values(set)) { m.castShadow = shadow; m.count = 0; }
+  return set;
+}
+
+function buildTrees(scene, land) {
+  const near = treeSet(1400, true, 1), far = treeSet(2200, false, 0);
+  const r = rng(21), N = makeNoise(9);
+  const m = new THREE.Matrix4(), q = new THREE.Quaternion(), sc = new THREE.Vector3(), pos = new THREE.Vector3(), up = new THREE.Vector3(0, 1, 0);
+  const color = new THREE.Color();
+  const put = (mesh, x, y, z, sx, sy, sz, h, s, l) => {
+    if (mesh.count >= mesh.instanceMatrix.count) return;
+    m.compose(pos.set(x, y, z), q, sc.set(sx, sy, sz));
+    mesh.setMatrixAt(mesh.count, m);
+    if (h !== undefined) mesh.setColorAt(mesh.count, color.setHSL(h, s, l));
+    mesh.count++;
+  };
+  for (let tries = 0; tries < 40000; tries++) {
+    const a = r() * Math.PI * 2, rad = Math.sqrt(r()) * 1500;
+    const x = CX + Math.cos(a) * rad, z = CZ + Math.sin(a) * rad;
+    const d = land.trackDist(x, z);
+    if (d < WALL + 4 || (Math.abs(z) < 75 && x > -170 && x < 120)) continue; // nicht auf Strecke, Tribüne oder Boxen
+    const inWood = land.forest(x, z) > 0.52;
+    const nearTrack = d < 150;
+    if (r() > (inWood ? 0.9 : nearTrack ? 0.12 : 0.03)) continue;
+    const y = land.height(x, z);
+    if (y > 240) continue;
+    if (y > 15 && Math.abs(land.height(x + 6, z) - y) + Math.abs(land.height(x, z + 6) - y) > 7) continue; // zu steil
+    const set = nearTrack ? near : far;
+    if (set.trunks.count >= set.trunks.instanceMatrix.count) continue;
+    q.setFromAxisAngle(up, r() * 6.3);
+    const s = 0.9 + r() * 0.9;
+    if (d < WALL + 30 && r() < 0.5) { // Büsche am Streckenrand
+      const b = 0.7 + r() * 0.9;
+      put(set.bushes, x, y + 0.5 * b, z, b * 1.3, b * 0.8, b * 1.1, 0.24 + r() * 0.08, 0.45, 0.08 + r() * 0.05);
+      continue;
+    }
+    const pine = y > 90 || r() < (N.noise(x / 300, z / 300) > 0.5 ? 0.7 : 0.25);
+    put(set.trunks, x, y + 1.4 * s, z, s, s, s);
+    if (pine) put(set.pines, x, y + 3.0 * s, z, s, s * (1 + r() * 0.3), s, 0.31 + r() * 0.05, 0.4, 0.06 + r() * 0.04);
+    else put(set.crowns, x, y + 5.2 * s, z, s, s * (0.9 + r() * 0.3), s, 0.22 + r() * 0.09, 0.5, 0.09 + r() * 0.06);
+  }
+  for (const set of [near, far]) for (const mesh of Object.values(set)) {
+    if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
+    mesh.computeBoundingSphere();
+    scene.add(mesh);
   }
 }
 
@@ -580,6 +638,7 @@ export function startRace({ player, opponents, kinds, topSpeed, onFinish }) {
   if (!R.quality) R.quality = makeQuality(R.renderer, layout);
 
   window.__race = () => race; // für Tests im Browser
+  window.__raceR = () => R;
   race = { cars, me, T, t: 0, phase: 'lights', lightsOut: 3.4 + Math.random() * 0.8, clock: 0, input: {}, onFinish,
     lastLights: 0, msgT: 0, endT: 0, lastLap: 1, last: performance.now() };
   R.ui.root.hidden = false;
@@ -813,6 +872,7 @@ function render(dt) {
   // Sonne folgt dem Spieler, damit Schatten scharf bleiben
   R.sun.position.set(me.pos.x + 60, 110, me.pos.z + 40);
   R.sun.target.position.set(me.pos.x, 0, me.pos.z);
+  R.clouds.position.set(R.camera.position.x, 0, R.camera.position.z);
   R.renderer.render(R.scene, R.camera);
 }
 

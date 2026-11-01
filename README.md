@@ -12,7 +12,7 @@ und nochmals, damit es weiterfährt – so kommen alle heil zum Ausgang.
 
 **Online spielen:** https://pazoozooch.github.io/lio-auto-saver/
 
-Läuft ohne Build: `index.html` + `game.js`, dazu `press3d.js`, `race.js` und `cars3d.js` für die 3D-Grafik
+Läuft ohne Build: `index.html` + `game.js`, dazu `press3d.js`, `race.js`, `drag.js`, `cars3d.js` und `world3d.js` für die 3D-Grafik
 (three.js wird aus dem Internet geladen; ohne Internet läuft die Presse in 2D). Der Spielstand liegt im `localStorage` des Browsers.
 
 ## Starten

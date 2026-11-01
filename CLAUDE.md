@@ -8,6 +8,7 @@ Browser-Spiel ohne Build: `index.html` + `game.js` (Spiellogik, Menüs und 2D-Ze
 - `race.js`: 3D-Rennstrecke, erst beim ersten Rennen geladen.
 - `drag.js`: 3D-Dragster-Bahn (1 gegen 1, Startampel, selber schalten); Gewinner bekommt das Auto des Verlierers.
 - `cars3d.js`: 3D-Fahrzeuge für beide; jedes Fahrzeug hat in `BUILD` eine eigene Bauanleitung nach seiner 2D-Zeichnung.
+- `world3d.js`: Baukasten für die Landschaften (Rauschen, Oberflächen mit Relief, Gelände, Wolken, Staub, Lichtstrahlen).
 Texte im Spiel sind Deutsch (Schweizer Schreibweise, kein ß).
 
 ## Arbeitsweise
