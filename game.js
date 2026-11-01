@@ -2573,6 +2573,7 @@ function draw() {
     ], null);
     drawTitleButtons();
     drawVersion();
+    drawQuit();
   } else if (state === 'over') {
     drawOverlay('RUNDE VORBEI!', [
       'Punkte: ' + saved + '   ·   Level ' + level,
@@ -2681,6 +2682,34 @@ function drawVersion() {
     drawButton(UPDATE_BTN, appUpdate.busy ? '⏳ Lädt …' : '🔄 Update: Version ' + appUpdate.info.number, '#16a34a', 18);
     ctx.restore();
   }
+}
+
+// ---------- Beenden ----------
+// Eine Web-App darf sich nicht immer selbst schliessen: zuerst Vollbild verlassen und Schliessen versuchen,
+// bleibt sie offen, erklärt ein Hinweis, wie man sie auf diesem Gerät schliesst.
+const QUIT_BTN = { x: 14, y: 14, w: 150, h: 46 };
+let quitHintUntil = 0, quitHintText = '';
+function quitApp() {
+  if (document.fullscreenElement && document.exitFullscreen) document.exitFullscreen().catch(() => {});
+  try { window.close(); } catch (e) { /* geht nur manchmal */ }
+  setTimeout(() => { // noch da: Hinweis zeigen
+    const installed = matchMedia('(display-mode: fullscreen), (display-mode: standalone)').matches || navigator.standalone;
+    const ios = /iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+    quitHintText = !installed ? 'Vollbild beendet – jetzt einfach den Tab schliessen.'
+      : ios ? 'Zum Beenden: vom unteren Rand nach oben wischen.'
+        : 'Zum Beenden: Zurück-Geste machen oder App wegwischen.';
+    quitHintUntil = performance.now() + 7000;
+  }, 300);
+}
+function drawQuit() {
+  drawButton(QUIT_BTN, '⏻ Beenden', 'rgba(60,64,76,0.85)', 18);
+  if (performance.now() > quitHintUntil) return;
+  ctx.font = 'bold 20px system-ui, sans-serif';
+  const w = Math.min(W - 60, ctx.measureText(quitHintText).width + 48), x = (W - w) / 2, y = 78;
+  ctx.fillStyle = 'rgba(15,17,23,0.92)';
+  rr(x, y, w, 52, 14); ctx.fill();
+  ctx.fillStyle = '#fff'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.fillText(quitHintText, W / 2, y + 27);
 }
 
 // ---------- Update-Check ----------
@@ -3774,7 +3803,8 @@ canvas.addEventListener('pointerdown', e => {
   if (state === 'title' || state === 'over') {
     if (state === 'over' && overTime < 0.8) return;
     if (state === 'title') {
-      if (appUpdate.info && inRect(px, py, UPDATE_BTN)) applyUpdate();
+      if (inRect(px, py, QUIT_BTN)) quitApp();
+      else if (appUpdate.info && inRect(px, py, UPDATE_BTN)) applyUpdate();
       else if (inRect(px, py, VERSION_AREA)) secretTap();
       else if (inRect(px, py, RACE_BTN)) openMenu('racemenu');
       else if (inRect(px, py, DRAG_BTN)) openDragMenu();
