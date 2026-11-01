@@ -96,7 +96,7 @@ function noise(dur, cutoff, vol) {
 }
 
 // ---------- Spielzustand ----------
-let state = 'title';   // title | select | play | over | shop | reveal
+let state = 'title';   // title | select | play | over | shop | reveal | admin
 let cars, presses, wrecks, particles, floaters;
 // Fahrzeuge dieser Runde: { entry, state: 'pool' | 'road' | 'crushed' }
 let roster = [], crushedOrder = [];
@@ -2385,6 +2385,7 @@ function draw() {
   if (state === 'select') { drawSelect(); return; }
   if (state === 'shop') { drawShop(); return; }
   if (state === 'reveal') { drawReveal(); return; }
+  if (state === 'admin') { drawAdmin(); return; }
   ctx.save();
   if (shake > 0) ctx.translate(rand(-shake, shake), rand(-shake, shake));
 
@@ -2964,6 +2965,91 @@ function drawReveal() {
   drawParticles();
 }
 
+// --- Verstecktes Admin-Menü: 5× schnell auf die Versionsnummer im Startbildschirm tippen ---
+const VERSION_AREA = { x: W - 300, y: H - 34, w: 300, h: 34 };
+const ADMIN_COIN_BTNS = [10, 100, 1000, 10000].map((n, i) => ({ n, x: 110 + i * 190, y: 140, w: 170, h: 56 }));
+const ADMIN_ZERO_BTN = { x: W / 2 - 150, y: 222, w: 300, h: 50 };
+const ADMIN_RESET_BTN = { x: W / 2 - 230, y: 330, w: 460, h: 60 };
+let adminTaps = [], adminConfirm = false;
+
+function secretTap() {
+  adminTaps = adminTaps.filter(t => time - t < 3);
+  adminTaps.push(time);
+  if (adminTaps.length >= 5) {
+    adminTaps = [];
+    adminConfirm = false;
+    openMenu('admin');
+  }
+}
+
+// Alles auf Anfang: 4 Startautos, keine Münzen, kein Rekord
+function resetProgress() {
+  fleet = START_FLEET.map(kind => makeVehicle(kind));
+  wallet = 0;
+  best = 0;
+  selectedIds = new Set(fleet.map(v => v.id));
+  storeJSON('autoRetterFleet', fleet);
+  storeJSON('autoRetterCoins', wallet);
+  storeBest();
+  saveSelection();
+}
+
+function drawAdmin() {
+  drawMenuBackdrop('🔧 ADMIN', true);
+  drawButton(BACK_BTN, '← Zurück', '#444b5c');
+  ctx.fillStyle = 'rgba(255,255,255,0.75)';
+  ctx.font = '18px system-ui, sans-serif';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText('Münzen geben', W / 2, 112);
+  for (const b of ADMIN_COIN_BTNS) drawButton(b, '+' + b.n.toLocaleString('de-CH') + ' 🪙', '#a67c00', 22);
+  drawButton(ADMIN_ZERO_BTN, 'Münzen auf 0', '#444b5c', 20);
+  ctx.fillStyle = 'rgba(255,255,255,0.75)';
+  ctx.font = '18px system-ui, sans-serif';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText('Fahrzeugpark: ' + fleet.length + ' Fahrzeuge   ·   Rekord: ' + best, W / 2, 304);
+  drawButton(ADMIN_RESET_BTN, adminConfirm ? '⚠️ Wirklich alles löschen? Nochmal tippen!' : '🗑️ Spielstand zurücksetzen',
+    adminConfirm ? '#b91c1c' : '#7f1d1d', 20);
+  drawMenuMsg('Zurücksetzen löscht Münzen, Rekord und Fahrzeugpark (danach wieder die 4 Startautos).', 420);
+  drawParticles();
+}
+
+function adminTap(px, py) {
+  if (inRect(px, py, BACK_BTN)) { openMenu('title'); return; }
+  for (const b of ADMIN_COIN_BTNS) {
+    if (!inRect(px, py, b)) continue;
+    wallet += b.n;
+    storeJSON('autoRetterCoins', wallet);
+    adminConfirm = false;
+    showMenuMsg('+' + b.n.toLocaleString('de-CH') + ' Münzen – jetzt ' + wallet.toLocaleString('de-CH'));
+    beep(1568, 0.07, 'square', 0.04);
+    beep(2093, 0.12, 'square', 0.04, 0.07);
+    return;
+  }
+  if (inRect(px, py, ADMIN_ZERO_BTN)) {
+    wallet = 0;
+    storeJSON('autoRetterCoins', wallet);
+    adminConfirm = false;
+    showMenuMsg('Münzen auf 0 gesetzt');
+    beep(300, 0.12, 'triangle', 0.06);
+    return;
+  }
+  if (inRect(px, py, ADMIN_RESET_BTN)) {
+    if (!adminConfirm) {
+      adminConfirm = true;
+      beep(440, 0.1, 'square', 0.05);
+      return;
+    }
+    adminConfirm = false;
+    resetProgress();
+    showMenuMsg('Spielstand zurückgesetzt – alles auf Anfang!');
+    beep(200, 0.3, 'sawtooth', 0.06);
+    return;
+  }
+  adminConfirm = false; // daneben getippt: Zurücksetzen abbrechen
+}
+
 // ---------- Eingabe ----------
 canvas.addEventListener('pointerdown', e => {
   e.preventDefault();
@@ -2973,10 +3059,12 @@ canvas.addEventListener('pointerdown', e => {
 
   if (state === 'title' || state === 'over') {
     if (state === 'over' && overTime < 0.8) return;
+    if (state === 'title' && inRect(px, py, VERSION_AREA)) { secretTap(); return; }
     openMenu(inRect(px, py, SHOP_BTN) ? 'shop' : 'select');
     return;
   }
   if (state === 'select') { selectTap(px, py); return; }
+  if (state === 'admin') { adminTap(px, py); return; }
   if (state === 'shop') { shopTap(px, py); return; }
   if (state === 'reveal') { if (reveal.t > REVEAL_AT + 0.2) openMenu('shop'); return; }
 
@@ -2991,7 +3079,7 @@ window.addEventListener('keydown', e => {
     if (state === 'title' || (state === 'over' && overTime > 0.8)) openMenu('select');
     else if (state === 'select') selectTap(GO_BTN.x + 1, GO_BTN.y + 1);
   }
-  if (e.code === 'Escape' && (state === 'select' || state === 'shop')) openMenu('title');
+  if (e.code === 'Escape' && (state === 'select' || state === 'shop' || state === 'admin')) openMenu('title');
 });
 
 // ---------- Hauptschleife ----------
