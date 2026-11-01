@@ -98,7 +98,7 @@ function noise(dur, cutoff, vol) {
 }
 
 // ---------- Spielzustand ----------
-let state = 'title';   // title | select | play | over | shop | reveal | admin | racemenu | raceload | race | raceresult | dragmenu | dragload | drag | dragresult
+let state = 'title';   // title | select | play | over | shop | reveal | admin | racemenu | raceload | race | raceresult | dragmenu | dragload | drag | dragresult | collection
 let cars, presses, wrecks, particles, floaters;
 // Fahrzeuge dieser Runde: { entry, state: 'pool' | 'road' | 'crushed' }
 let roster = [], crushedOrder = [];
@@ -2430,6 +2430,7 @@ function draw() {
   if (press3d && !in3D()) press3d.setVisible(false);
   if (state === 'select') { drawSelect(); return; }
   if (state === 'shop') { drawShop(); return; }
+  if (state === 'collection') { drawCollection(); return; }
   if (state === 'reveal') { drawReveal(); return; }
   if (state === 'admin') { drawAdmin(); return; }
   if (state === 'racemenu') { drawRaceMenu(); return; }
@@ -2842,6 +2843,7 @@ function drawGateDoor(x, y, w, h, color, open) {
 function drawShop() {
   drawMenuBackdrop('SHOP', true);
   drawButton(BACK_BTN, '← Zurück', '#444b5c');
+  drawButton(COLLECTION_BTN, '📖 SAMMLUNG', '#7c3aed', 20);
 
   for (const card of gateCards()) {
     const g = card.gate, can = wallet >= g.price;
@@ -2919,6 +2921,7 @@ function rollGate(g) {
 
 function shopTap(px, py) {
   if (inRect(px, py, BACK_BTN)) { openMenu('title'); return; }
+  if (inRect(px, py, COLLECTION_BTN)) { collectionPage = 0; openMenu('collection'); return; }
   for (const card of gateCards()) {
     if (!inRect(px, py, card)) continue;
     const g = card.gate;
@@ -2939,6 +2942,77 @@ function shopTap(px, py) {
     reveal = { v, gate: g, t: 0, burst: false };
     return;
   }
+}
+
+// --- Sammlung: alle Fahrzeugtypen, die man schon hat und die noch fehlen (nach Wert sortiert) ---
+const COLLECTION_BTN = { x: 172, y: 18, w: 190, h: 44 };
+let collectionPage = 0;
+
+function collectionKinds() {
+  return Object.keys(KINDS).sort((a, b) =>
+    TIER_VALUE[KINDS[b].tier] - TIER_VALUE[KINDS[a].tier] || KINDS[a].name.localeCompare(KINDS[b].name));
+}
+
+function drawCollection() {
+  const kinds = collectionKinds();
+  const owned = kind => fleet.filter(v => v.kind === kind);
+  const have = kinds.filter(kind => owned(kind).length).length;
+  drawMenuBackdrop('📖 SAMMLUNG  ' + have + ' / ' + kinds.length, true);
+  drawButton(BACK_BTN, '← Shop', '#444b5c');
+  const pages = pageCount(kinds.length);
+  collectionPage = Math.min(collectionPage, pages - 1);
+
+  for (const card of gridCards(kinds, collectionPage)) {
+    const kind = card.item, k = KINDS[kind], mine = owned(kind), got = mine.length > 0;
+    ctx.fillStyle = got ? 'rgba(46, 204, 113, 0.12)' : 'rgba(255, 255, 255, 0.04)';
+    rr(card.x, card.y, card.w, card.h, 12); ctx.fill();
+    ctx.strokeStyle = got ? '#2ecc71' : '#3a3f4b';
+    ctx.lineWidth = 2;
+    ctx.setLineDash(got ? [] : [6, 5]);
+    ctx.stroke();
+    ctx.setLineDash([]);
+
+    // Bild: eigenes Fahrzeug (das wertvollste) in Farbe, fehlende blass
+    const shown = got ? mine.sort((a, b) => vehicleValue(b) - vehicleValue(a))[0]
+      : { id: 'sammlung-' + kind, kind, special: null, color: k.color || '#8a8f99' };
+    ctx.save();
+    ctx.globalAlpha = got ? 1 : 0.22;
+    drawVehiclePreview(shown, card.x + card.w / 2, card.y + 78, 125, 0.8);
+    ctx.restore();
+
+    ctx.textBaseline = 'middle';
+    drawCoin(card.x + 16, card.y + 16, 8, 0);
+    ctx.fillStyle = '#ffd700';
+    ctx.font = 'bold 15px system-ui, sans-serif';
+    ctx.textAlign = 'left';
+    ctx.fillText(String(TIER_VALUE[k.tier]), card.x + 28, card.y + 17);
+    ctx.textAlign = 'right';
+    ctx.fillStyle = got ? '#7dffb0' : '#9aa0aa';
+    ctx.font = (got ? 'bold 16px' : '15px') + ' system-ui, sans-serif';
+    ctx.fillText(got ? '×' + mine.length : '🔒', card.x + card.w - 10, card.y + 17);
+
+    ctx.textAlign = 'center';
+    ctx.fillStyle = got ? '#fff' : '#8a8f99';
+    ctx.font = 'bold 16px system-ui, sans-serif';
+    ctx.fillText(k.name, card.x + card.w / 2, card.y + 94);
+    // Seltenheit und welche Spezial-Lacke man davon schon hat
+    const paints = ['gold', 'rainbow', 'diamond', 'obsidian'].filter(p => mine.some(v => v.special === p))
+      .map(p => ({ gold: '★', rainbow: '🌈', diamond: '💎', obsidian: '🖤' })[p]).join(' ');
+    ctx.fillStyle = got ? TIERS[k.tier].color : '#6b7280';
+    ctx.font = 'bold 13px system-ui, sans-serif';
+    ctx.fillText(got ? TIERS[k.tier].label + (paints ? '  ' + paints : '') : TIERS[k.tier].label + ' · fehlt noch', card.x + card.w / 2, card.y + 111);
+  }
+
+  if (collectionPage > 0) drawButton(PREV_BTN, '◀ Zurück', '#444b5c', 20);
+  if (collectionPage < pages - 1) drawButton(NEXT_BTN, 'Weiter ▶', '#3657b8', 20);
+  drawMenuMsg('Grün = hast du schon (×Anzahl)  ·  🔒 = fehlt noch  ·  Seite ' + (collectionPage + 1) + '/' + pages);
+}
+
+function collectionTap(px, py) {
+  const pages = pageCount(Object.keys(KINDS).length);
+  if (inRect(px, py, BACK_BTN)) openMenu('shop');
+  else if (collectionPage > 0 && inRect(px, py, PREV_BTN)) collectionPage--;
+  else if (collectionPage < pages - 1 && inRect(px, py, NEXT_BTN)) collectionPage++;
 }
 
 // --- Tor geht auf: das neue Fahrzeug wird enthüllt ---
@@ -3569,6 +3643,7 @@ canvas.addEventListener('pointerdown', e => {
   if (state === 'dragresult') { dragResultTap(px, py); return; }
   if (['race', 'raceload', 'drag', 'dragload'].includes(state)) return;
   if (state === 'shop') { shopTap(px, py); return; }
+  if (state === 'collection') { collectionTap(px, py); return; }
   if (state === 'reveal') { if (reveal.t > REVEAL_AT + 0.2) openMenu('shop'); return; }
 
   const coin = coinAt(px, py);
@@ -3582,7 +3657,8 @@ window.addEventListener('keydown', e => {
     if (state === 'title' || (state === 'over' && overTime > 0.8)) openMenu('select');
     else if (state === 'select') selectTap(GO_BTN.x + 1, GO_BTN.y + 1);
   }
-  if (e.code === 'Escape' && ['select', 'shop', 'admin', 'racemenu', 'raceresult', 'dragmenu', 'dragresult'].includes(state)) openMenu('title');
+  if (e.code === 'Escape' && state === 'collection') openMenu('shop');
+  else if (e.code === 'Escape' && ['select', 'shop', 'admin', 'racemenu', 'raceresult', 'dragmenu', 'dragresult'].includes(state)) openMenu('title');
 });
 
 // ---------- 3D-Presse laden; klappt das nicht (z.B. offline), bleibt alles in 2D ----------
