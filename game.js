@@ -15,18 +15,41 @@ const COLORS = ['#e63946', '#f4a261', '#2a9d8f', '#457b9d', '#9b5de5', '#00bbf9'
 const canvas = document.getElementById('game');
 const ctx = canvas.getContext('2d');
 let scale = 1, dpr = 1;
+let rotated = false; // Hochformat: das Spiel wird um 90° gedreht, damit es immer quer läuft
 
 function resize() {
   dpr = window.devicePixelRatio || 1;
-  scale = Math.min(window.innerWidth / W, window.innerHeight / H);
-  canvas.style.width = W * scale + 'px';
-  canvas.style.height = H * scale + 'px';
-  canvas.style.marginTop = (window.innerHeight - H * scale) / 2 + 'px';
-  canvas.width = Math.round(W * scale * dpr);
-  canvas.height = Math.round(H * scale * dpr);
+  const vw = window.innerWidth, vh = window.innerHeight;
+  rotated = vh > vw;
+  scale = rotated ? Math.min(vh / W, vw / H) : Math.min(vw / W, vh / H);
+  const cssW = W * scale, cssH = H * scale;
+  canvas.style.width = cssW + 'px';
+  canvas.style.height = cssH + 'px';
+  canvas.style.left = (vw - cssW) / 2 + 'px';
+  canvas.style.top = (vh - cssH) / 2 + 'px';
+  canvas.style.transform = rotated ? 'rotate(90deg)' : 'none';
+  canvas.width = Math.round(cssW * dpr);
+  canvas.height = Math.round(cssH * dpr);
 }
 window.addEventListener('resize', resize);
+window.addEventListener('orientationchange', resize);
 resize();
+
+// Bildschirmposition (z.B. Finger) in Spielkoordinaten umrechnen, auch wenn das Spiel gedreht ist
+function gamePoint(e) {
+  const r = canvas.getBoundingClientRect();
+  if (rotated) return { x: ((e.clientY - r.top) / r.height) * W, y: ((r.right - e.clientX) / r.width) * H };
+  return { x: ((e.clientX - r.left) / r.width) * W, y: ((e.clientY - r.top) / r.height) * H };
+}
+
+// Auf Handys (Android) Vollbild und Querformat erzwingen; geht nur nach einem Antippen
+function goLandscape() {
+  const el = document.documentElement;
+  if (document.fullscreenElement || !el.requestFullscreen) return;
+  el.requestFullscreen({ navigationUI: 'hide' })
+    .then(() => screen.orientation && screen.orientation.lock && screen.orientation.lock('landscape'))
+    .catch(() => { /* nicht unterstützt (z.B. iPhone): dann dreht resize() das Spiel */ });
+}
 
 // ---------- Sound ----------
 let actx = null;
@@ -2952,9 +2975,8 @@ function drawReveal() {
 canvas.addEventListener('pointerdown', e => {
   e.preventDefault();
   audio();
-  const r = canvas.getBoundingClientRect();
-  const px = ((e.clientX - r.left) / r.width) * W;
-  const py = ((e.clientY - r.top) / r.height) * H;
+  if (e.pointerType === 'touch' && state !== 'play') goLandscape();
+  const { x: px, y: py } = gamePoint(e);
 
   if (state === 'title' || state === 'over') {
     if (state === 'over' && overTime < 0.8) return;

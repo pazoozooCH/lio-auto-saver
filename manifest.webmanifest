@@ -1,0 +1,15 @@
+{
+  "name": "Auto-Retter",
+  "short_name": "Auto-Retter",
+  "description": "Rette die Autos vor der Presse!",
+  "lang": "de",
+  "start_url": "./",
+  "scope": "./",
+  "display": "fullscreen",
+  "orientation": "landscape",
+  "background_color": "#14161c",
+  "theme_color": "#14161c",
+  "icons": [
+    { "src": "icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }
+  ]
+}
