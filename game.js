@@ -165,8 +165,7 @@ reset();
 const KINDS = {
   car:       { name: 'Auto', tier: 'common', w: [88, 110], h: [40, 46] },
   mini:      { name: 'Mini', tier: 'common', w: [66, 76], h: [34, 38], speed: 1.1, wheel: 9 },
-  beetle:    { name: 'Käfer', tier: 'common', w: [78, 88], h: [42, 46], wheel: 10, lucky: true,
-               info: '🍀 Glückskäfer: wird er zerquetscht, darf er trotzdem weiterfahren.' },
+  beetle:    { name: 'Käfer', tier: 'common', w: [78, 88], h: [42, 46], wheel: 10 },
   pickup:    { name: 'Pickup', tier: 'common', w: [112, 126], h: [46, 50], points: 2,
                info: '📦 Pickup: bringt seine Kisten mit – 2 Punkte!' },
   taxi:      { name: 'Taxi', tier: 'common', w: [92, 104], h: [48, 52], color: '#ffc61a', points: 2,
@@ -241,8 +240,8 @@ const KINDS = {
                info: '🪝 Abschleppwagen: retten repariert ein zerquetschtes Fahrzeug!' },
   buggy:     { name: 'Strandbuggy', tier: 'uncommon', w: [86, 94], h: [46, 50], wheel: 13, speed: 1.2,
                info: '🏖️ Strandbuggy: flitzt über jeden Sand!' },
-  tuktuk:    { name: 'Tuk-Tuk', tier: 'uncommon', w: [72, 80], h: [56, 60], wheel: 9, lucky: true,
-               info: '🛺 Tuk-Tuk: bringt Glück – zerquetscht darf es weiterfahren!' },
+  tuktuk:    { name: 'Tuk-Tuk', tier: 'uncommon', w: [72, 80], h: [56, 60], wheel: 9,
+               info: '🛺 Tuk-Tuk: knattert fröhlich durch die Fabrik!' },
   doubledecker: { name: 'Doppeldecker', tier: 'rare', w: [140, 150], h: [74, 78], color: '#d62828', points: 5,
                info: '🚌 Doppeldecker: zwei Stockwerke voller Fahrgäste – 5 Punkte!' },
   cement:    { name: 'Betonmischer', tier: 'rare', w: [134, 144], h: [60, 64], armor: 1, points: 2,
@@ -257,8 +256,8 @@ const KINDS = {
                info: '🌭 Hotdog-Wagen: 2 Punkte und 1 Münze!' },
   policebike: { name: 'Polizei-Töff', tier: 'rare', w: [62, 68], h: [48, 52], wheel: 10, speed: 1.4, color: '#f4f6fb',
                ability: 'unstoppable', points: 2, info: '🏍️ Polizei-Töff: schnell und lässt sich NICHT anhalten!' },
-  amphibian: { name: 'Amphibienauto', tier: 'rare', w: [112, 122], h: [50, 54], lucky: true, points: 3,
-               info: '🚤 Amphibienauto: schwimmt sogar – 3 Punkte und Glück!' },
+  amphibian: { name: 'Amphibienauto', tier: 'rare', w: [112, 122], h: [50, 54], points: 3,
+               info: '🚤 Amphibienauto: schwimmt sogar – 3 Punkte!' },
   heli:      { name: 'Helikopter', tier: 'epic', w: [112, 122], h: [54, 58], color: '#2563eb', ability: 'rocket', points: 3,
                info: '🚁 Helikopter: Antippen = abheben! Fliegt direkt zum Ausgang.' },
   dragster:  { name: 'Dragster', tier: 'epic', w: [150, 160], h: [44, 48], wheel: 8, speed: 1.3, ability: 'turbo', points: 3,
@@ -275,8 +274,8 @@ const KINDS = {
                ability: 'rocket', points: 8, info: '🚀 Space-Shuttle: Antippen = Start ins All! 8 Punkte.' },
   timemachine: { name: 'Zeitmaschine', tier: 'legendary', w: [108, 118], h: [40, 44], color: '#c0c7d2', ability: 'timestop',
                points: 6, info: '⏳ Zeitmaschine: Antippen = Zeit anhalten! Alle Pressen 5 Sek. aus.' },
-  unicorn:   { name: 'Einhorn-Mobil', tier: 'legendary', w: [102, 112], h: [54, 58], color: '#fdf4ff', heal: 3, lucky: true,
-               points: 5, info: '🦄 Einhorn-Mobil: repariert 3 Fahrzeuge und bringt Glück!' },
+  unicorn:   { name: 'Einhorn-Mobil', tier: 'legendary', w: [102, 112], h: [54, 58], color: '#fdf4ff', heal: 3,
+               points: 5, info: '🦄 Einhorn-Mobil: repariert 3 zerquetschte Fahrzeuge!' },
   royal:     { name: 'Königskutsche', tier: 'legendary', w: [104, 114], h: [64, 68], wheel: 16, color: '#d4a017', coins: 5,
                points: 10, info: '👑 Königskutsche: 10 Punkte und 5 Münzen!' },
 };
@@ -672,11 +671,6 @@ function crush(c) {
   }
   noise(0.5, 1800, 0.5);
   beep(90, 0.4, 'sawtooth', 0.1);
-  if (KINDS[c.kind].lucky) {
-    floaters.push({ text: 'KRACH! 🍀 Glück gehabt!', x: c.x + c.w / 2, y: ROAD_Y - 120, t: 0, color: '#8dff8d', size: 26 });
-    c.slot.state = 'pool';
-    return;
-  }
   floaters.push({ text: 'KRACH!', x: c.x + c.w / 2, y: ROAD_Y - 120, t: 0, color: '#ff5d5d', size: 34 });
   c.slot.state = 'crushed';
   crushedOrder.push(c.slot);
@@ -1150,7 +1144,6 @@ function abilityIcon(c) {
   if (k.ability === 'horn') return '📯';
   if (k.coins) return '🪙';
   if (k.armor && c.armor > 0) return '🛡️';
-  if (k.lucky) return '🍀';
   if (k.heal) return '🔧';
   return null;
 }
