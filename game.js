@@ -294,13 +294,14 @@ let wallet = loadJSON('autoRetterCoins', 0);
 // Ein Fahrzeug im Fahrzeugpark: Typ, eigene Farbe und evtl. Gold-/Regenbogen-Lack
 // Start-PS eines Fahrzeugtyps: Seltenheit mal Tempo. In der Presse: retten +1 PS, zerquetscht −3 PS.
 const TIER_PS = { common: 40, uncommon: 55, rare: 70, epic: 85, legendary: 100 };
-function basePS(kind) { return Math.round(TIER_PS[KINDS[kind].tier] * (KINDS[kind].speed || 1)); }
+const PAINT_PS = { gold: 5, rainbow: 8, diamond: 12, obsidian: 20 };   // Spezial-Lack gibt Extra-PS
+function basePS(kind, special) { return Math.round(TIER_PS[KINDS[kind].tier] * (KINDS[kind].speed || 1)) + (PAINT_PS[special] || 0); }
 
 function makeVehicle(kind, special = null) {
   const k = KINDS[kind];
   return {
     id: Date.now().toString(36) + Math.random().toString(36).slice(2, 7),
-    kind, special, ps: basePS(kind),
+    kind, special, ps: basePS(kind, special), paintPS: true,
     color: { gold: '#ffcf33', diamond: '#bfefff', obsidian: '#1d1030' }[special] || k.color || pick(COLORS),
   };
 }
@@ -315,7 +316,10 @@ if (!fleet) {
   try { localStorage.removeItem('autoRetterUnlocked'); } catch (e) { /* egal */ }
 }
 fleet = fleet.filter(v => KINDS[v.kind]);
-for (const v of fleet) if (typeof v.ps !== 'number') v.ps = basePS(v.kind); // ältere Spielstände ohne PS
+for (const v of fleet) {
+  if (typeof v.ps !== 'number') v.ps = basePS(v.kind); // ältere Spielstände ohne PS
+  if (!v.paintPS) { v.ps += PAINT_PS[v.special] || 0; v.paintPS = true; } // Lack-Bonus einmal nachrüsten
+}
 storeJSON('autoRetterFleet', fleet);
 const MAX_SELECTED = 4;      // so viele Fahrzeuge darf man in eine Runde mitnehmen
 let selectedIds = new Set(loadJSON('autoRetterSelected', fleet.slice(0, MAX_SELECTED).map(v => v.id)));
@@ -3078,10 +3082,10 @@ function drawReveal() {
     ctx.font = '18px system-ui, sans-serif';
     ctx.fillText(k.info || 'Ein treues Fahrzeug ohne Spezialkraft.', W / 2, 446);
     const paintInfo = {
-      gold: '★ Gold-Lack: 3 Punkte und repariert 1 Fahrzeug',
-      rainbow: '🌈 Regenbogen-Lack: 5 Punkte und repariert 3 Fahrzeuge',
-      diamond: '💎 Diamant-Lack: 8 Punkte und hält einen Pressen-Schlag aus',
-      obsidian: '🖤 Obsidian-Lack: 12 Punkte und hält ZWEI Pressen-Schläge aus',
+      gold: '★ Gold-Lack: +5 PS, 3 Punkte und repariert 1 Fahrzeug',
+      rainbow: '🌈 Regenbogen-Lack: +8 PS, 5 Punkte und repariert 3 Fahrzeuge',
+      diamond: '💎 Diamant-Lack: +12 PS, 8 Punkte und hält einen Schlag aus',
+      obsidian: '🖤 Obsidian-Lack: +20 PS, 12 Punkte und hält ZWEI Schläge aus',
     }[v.special];
     if (paintInfo) ctx.fillText(paintInfo, W / 2, 472);
   }
@@ -3233,7 +3237,7 @@ function startRaceMode() {
   const names = [...RACER_NAMES].sort(() => Math.random() - 0.5).slice(0, 5);
   const opponents = names.map(name => {
     const paint = raceCup >= 2 && Math.random() < 0.3 ? pick(['gold', 'rainbow', 'diamond']) : null;
-    return { ...makeVehicle(pick(pool), paint), name, ps: Math.round(rand(cup.ps[0], cup.ps[1])) };
+    return { ...makeVehicle(pick(pool), paint), name, ps: Math.round(rand(cup.ps[0], cup.ps[1])) + (PAINT_PS[paint] || 0) };
   });
   state = 'raceload';
   import('./race.js')
@@ -3348,7 +3352,7 @@ function makeDragOpponents() {
     const kind = pick(Object.keys(KINDS).filter(kd => KINDS[kd].tier === tier));
     const paint = lv.tierShift > 0 && Math.random() < 0.3 ? pick(['gold', 'rainbow', 'diamond']) : null;
     const v = makeVehicle(kind, paint);
-    v.ps = Math.max(5, Math.round(mine.ps * rand(lv.ps[0], lv.ps[1])));
+    v.ps = Math.max(5, Math.round(mine.ps * rand(lv.ps[0], lv.ps[1]))) + (PAINT_PS[paint] || 0);
     return { ...v, name: names[i], level: lv };
   });
   dragPick = null;
@@ -3477,7 +3481,7 @@ function finishDrag(res) {
   const mine = dragVehicle(), opp = dragOpponents[dragPick];
   if (res.win) {
     // Das Gegnerauto gehört jetzt dir (mit seinen PS und seinem Lack)
-    const won = { id: makeVehicle(opp.kind).id, kind: opp.kind, special: opp.special, ps: opp.ps, color: opp.color };
+    const won = { id: makeVehicle(opp.kind).id, kind: opp.kind, special: opp.special, ps: opp.ps, color: opp.color, paintPS: true };
     fleet.push(won);
     if (selectedIds.size < MAX_SELECTED) selectedIds.add(won.id);
     dragResult = { win: true, car: won, opp, res };
