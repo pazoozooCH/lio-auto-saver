@@ -81,7 +81,9 @@ function instances(geo, material, list, shadow = true) {
 }
 
 // Zufällige Plätze neben der Strecke (zwischen dmin und dmax Meter weg)
-function scatter(ctx, r, count, dmin, dmax, radius, tries = count * 20) {
+function scatter(ctx, r, count, dmin, dmax, radius, tries) {
+  if (ctx.lite) count = Math.round(count * 0.45);
+  tries = tries || count * 20;
   const out = [], { cx, cz } = ctx;
   for (let k = 0; k < tries && out.length < count; k++) {
     const a = r() * Math.PI * 2, rr = Math.sqrt(r()) * radius;
@@ -155,7 +157,8 @@ function rivers(ctx, material, width = 18, len = 110) {
 }
 
 // Schneefall oder Asche: Flocken in einer Kiste um die Kamera, die langsam fallen
-function flakes(color, count, size, fall, opacity) {
+function flakes(color, count, size, fall, opacity, lite) {
+  if (lite) count = Math.round(count * 0.4);
   const pos = new Float32Array(count * 3), r = rng(5);
   for (let i = 0; i < count; i++) { pos[i * 3] = (r() - 0.5) * 160; pos[i * 3 + 1] = r() * 60; pos[i * 3 + 2] = (r() - 0.5) * 160; }
   const g = new THREE.BufferGeometry();
@@ -225,7 +228,7 @@ export function buildTheme(id, ctx) {
       return (rough + ridge) * flat(x, z) - 0.08;
     };
     const basaltA = C(0x2b2724), basaltB = C(0x463a32), ember = C(0x8a2e10), ash = C(0x6e6660);
-    land = terrain({ size: 4800, segments: 230, center: [ctx.cx, ctx.cz], height, detail: detailTex(190, 50), detailRepeat: 380,
+    land = terrain({ size: 4800, segments: ctx.lite ? 150 : 230, center: [ctx.cx, ctx.cz], height, detail: detailTex(190, 50), detailRepeat: 380,
       color: (x, z, y, steep, c) => {
         c.lerpColors(basaltA, basaltB, N.fbm(x / 60, z / 60, 3));
         c.lerp(ember, smoothstep(0.62, 0.7, N.fbm(x / 25 + 9, z / 25, 3)) * 0.6); // glühende Risse
@@ -255,7 +258,7 @@ export function buildTheme(id, ctx) {
     const glow = new THREE.Mesh(new THREE.CircleGeometry(100, 32), new THREE.MeshBasicMaterial({ color: 0xff6a1a, fog: false }));
     glow.rotation.x = -Math.PI / 2; glow.position.set(vx, 432, vz);
     add.push(volcano, glow);
-    const smoke = flakes(0x3a3330, 260, 60, -8, 0.5); // steigt (negativer Fall)
+    const smoke = flakes(0x3a3330, 260, 60, -8, 0.5, ctx.lite); // steigt (negativer Fall)
     smoke.userData.update = (() => {
       const pp = smoke.geometry.attributes.position.array;
       for (let i = 0; i < pp.length; i += 3) { pp[i] = (Math.random() - 0.5) * 120; pp[i + 1] = Math.random() * 500; pp[i + 2] = (Math.random() - 0.5) * 120; }
@@ -269,7 +272,7 @@ export function buildTheme(id, ctx) {
     add.push(smoke);
     updates.push(dt => smoke.userData.update(dt));
     // Asche, die vom Himmel rieselt
-    const ash2 = flakes(0x6a5a52, 500, 0.35, 1.2, 0.7);
+    const ash2 = flakes(0x6a5a52, 500, 0.35, 1.2, 0.7, ctx.lite);
     add.push(ash2); updates.push((dt, t, cam) => ash2.userData.update(dt, cam));
     // Felsnadeln und tote Bäume
     const spires = scatter(ctx, r, 160, 40, 600, 1500).map(p => ({ x: p.x, y: p.y + 2, z: p.z, s: 2 + r() * 4, sy: 4 + r() * 10, ry: r() * 6 }));
@@ -286,7 +289,7 @@ export function buildTheme(id, ctx) {
       return (roll + peaks) * flat(x, z) - 0.08;
     };
     const snowA = C(0xf6f9fc), snowB = C(0xdbe5ef), rock = C(0x6b6f76), rockD = C(0x4a4e55);
-    land = terrain({ size: 5200, segments: 240, center: [ctx.cx, ctx.cz], height, detail: detailTex(225, 30, 2), detailRepeat: 420,
+    land = terrain({ size: 5200, segments: ctx.lite ? 150 : 240, center: [ctx.cx, ctx.cz], height, detail: detailTex(225, 30, 2), detailRepeat: 420,
       color: (x, z, y, steep, c) => {
         c.lerpColors(snowA, snowB, N.fbm(x / 90, z / 90, 3));
         c.lerp(rock.clone().lerp(rockD, N.noise(x / 40, z / 40)), smoothstep(0.22, 0.42, steep));
@@ -299,7 +302,7 @@ export function buildTheme(id, ctx) {
     // zugefrorene Seen unter den Brücken
     const ice = new THREE.MeshStandardMaterial({ color: 0xbfe3f5, roughness: 0.08, metalness: 0.2 });
     add.push(...rivers(ctx, ice, 26, 70));
-    const fall = flakes(0xffffff, 1400, 0.45, 3, 0.9);
+    const fall = flakes(0xffffff, 1400, 0.45, 3, 0.9, ctx.lite);
     add.push(fall); updates.push((dt, t, cam) => fall.userData.update(dt, cam));
     shoulder = mat({ color: 0xf1f5fa, map: detailTex(220, 35).map });
     skirt = mat({ color: 0x8b9099, flatShading: true });
@@ -315,7 +318,7 @@ export function buildTheme(id, ctx) {
       const k = 222 + ripple * 10 + r() * 20;
       return [k, k - 4, k - 12, ripple * 0.5 + r() * 0.15];
     }, 2);
-    land = terrain({ size: 5600, segments: 240, center: [ctx.cx, ctx.cz], height, detail: sandDetail, detailRepeat: 560,
+    land = terrain({ size: 5600, segments: ctx.lite ? 150 : 240, center: [ctx.cx, ctx.cz], height, detail: sandDetail, detailRepeat: 560,
       color: (x, z, y, steep, c) => {
         c.lerpColors(sandA, sandB, N.fbm(x / 120, z / 120, 3));
         c.lerp(sandD, smoothstep(0.6, 0.75, N.fbm(x / 300 + 4, z / 300, 3)) * 0.55);
@@ -338,7 +341,7 @@ export function buildTheme(id, ctx) {
       return hills * flat(x, z) - 0.08;
     };
     const gA = C(0x3f7a2e), gB = C(0x2d5e22), moss = C(0x5a7a2a), mud = C(0x5b4632);
-    land = terrain({ size: 4800, segments: 230, center: [ctx.cx, ctx.cz], height, detail: detailTex(200, 40), detailRepeat: 380,
+    land = terrain({ size: 4800, segments: ctx.lite ? 150 : 230, center: [ctx.cx, ctx.cz], height, detail: detailTex(200, 40), detailRepeat: 380,
       color: (x, z, y, steep, c) => {
         c.lerpColors(gA, gB, N.fbm(x / 70, z / 70, 3));
         c.lerp(moss, smoothstep(0.55, 0.7, N.fbm(x / 200 + 5, z / 200, 3)) * 0.5);

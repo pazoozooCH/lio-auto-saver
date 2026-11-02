@@ -2636,9 +2636,9 @@ function openMenu(name) {
   particles = [];
 }
 
-function showMenuMsg(text) {
+function showMenuMsg(text, secs = 2.5) {
   menuMsg = text;
-  menuMsgT = 2.5;
+  menuMsgT = secs;
 }
 
 function drawButton(b, text, color, size = 24) {
@@ -3472,7 +3472,9 @@ function startRaceMode() {
     .catch(err => {
       console.error(err);
       openMenu('racemenu');
-      showMenuMsg('Die 3D-Rennstrecke konnte nicht geladen werden – braucht Internet.');
+      // Genauer Grund hilft bei der Fehlersuche (z.B. auf dem iPhone, wo man die Konsole nicht sieht)
+      showMenuMsg(/import|fetch|module/i.test(err.message) ? 'Die 3D-Rennstrecke konnte nicht geladen werden – braucht Internet.'
+        : 'Strecke konnte nicht starten: ' + String(err.message).slice(0, 90), 12);
     });
 }
 

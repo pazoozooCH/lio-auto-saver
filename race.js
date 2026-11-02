@@ -221,9 +221,27 @@ function billboardTexture(text, bg, fg) {
 }
 
 // ---------- Szene aufbauen ----------
+// Handys und Tablets: weniger Bäume, Felsen und Flocken, gröberes Gelände (weniger Speicher und Rechenarbeit)
+const LITE = matchMedia('(pointer: coarse)').matches || /iPhone|iPad|iPod|Android/.test(navigator.userAgent);
+
+// Strecke freigeben (Formen, Materialien, Bilder), damit nur die aktuelle Strecke Speicher braucht
+function disposeWorld(w) {
+  const done = new Set();
+  w.scene.traverse(o => {
+    if (o.geometry && !done.has(o.geometry)) { done.add(o.geometry); o.geometry.dispose(); }
+    for (const m of Array.isArray(o.material) ? o.material : o.material ? [o.material] : []) {
+      if (done.has(m)) continue;
+      done.add(m);
+      for (const v of Object.values(m)) if (v && v.isTexture && !done.has(v)) { done.add(v); v.dispose(); }
+      if (m.uniforms) for (const u of Object.values(m.uniforms)) if (u.value && u.value.isTexture) u.value.dispose();
+      m.dispose();
+    }
+  });
+}
+
 function makeRenderer() {
   const renderer = new THREE.WebGLRenderer({ antialias: true });
-  renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.5));
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, LITE ? 1.25 : 1.5));
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
   renderer.shadowMap.enabled = true;
   renderer.shadowMap.type = THREE.PCFShadowMap;
@@ -235,8 +253,7 @@ function buildWorld(def, renderer) {
   const TH = THEMES[def.theme], alps = def.theme === 'alps';
   const scene = new THREE.Scene();
   scene.fog = new THREE.Fog(...TH.fog);
-  const pmrem = new THREE.PMREMGenerator(renderer);
-  scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
+  scene.environment = R.env; // Umgebungslicht für alle Strecken gemeinsam (spart Grafikspeicher)
 
   const camera = new THREE.PerspectiveCamera(62, 16 / 9, 0.5, 8000);
   camera.layers.enable(1); // Ebene 1: ferne Kulisse (Bäume weit weg, Wolken), die der Rückspiegel weglässt
@@ -262,7 +279,7 @@ function buildWorld(def, renderer) {
   const T = makeTrack(def);
   const tex = makeTextures();
   const { trackDist, cx, cz } = makeTrackDist(T);
-  const theme = alps ? null : buildTheme(def.theme, { T, trackDist, cx, cz, mergeGeometries });
+  const theme = alps ? null : buildTheme(def.theme, { T, trackDist, cx, cz, mergeGeometries, lite: LITE });
   const land = alps ? makeLand(T) : { mesh: theme.land };
 
   const curvy = i => T.curv[i] > 0.012;
@@ -726,14 +743,26 @@ function layout() {
 // ---------- Rennen ----------
 // net (nur online): { mySlot, startAt, serverNow(), remotes: [{ slot, name, v }], send(state), latest(slot) } – siehe online.js
 export function startRace({ player, opponents, kinds, topSpeed, onFinish, net = null, track = 'gp' }) {
+  if (R && R.lost) { // Grafik ist abgestürzt (z.B. zu wenig Speicher auf dem Handy): alles neu aufbauen
+    R.renderer.domElement.remove();
+    R.ui.root.remove();
+    R = null;
+  }
   if (!R) {
     R = { renderer: makeRenderer(), worlds: {} };
+    R.env = new THREE.PMREMGenerator(R.renderer).fromScene(new RoomEnvironment(), 0.04).texture;
     R.ui = buildDom();
     R.renderer.domElement.className = 'r3d';
     R.ui.root.prepend(R.renderer.domElement);
+    R.renderer.domElement.addEventListener('webglcontextlost', e => {
+      e.preventDefault();
+      R.lost = true;
+      if (race) endRace(true);
+    });
     window.addEventListener('resize', () => R && !R.ui.root.hidden && layout());
   }
   const def = TRACKS.find(t => t.id === track) || TRACKS[0];
+  for (const id of Object.keys(R.worlds)) if (id !== def.id) { disposeWorld(R.worlds[id]); delete R.worlds[id]; } // nur eine Strecke im Speicher
   if (!R.worlds[def.id]) R.worlds[def.id] = buildWorld(def, R.renderer);
   Object.assign(R, R.worlds[def.id]); // aktuelle Strecke: Szene, Kamera, Sonne, Strecke …
   R.renderer.toneMappingExposure = THEMES[def.theme].exposure;
