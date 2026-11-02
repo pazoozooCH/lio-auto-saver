@@ -7,7 +7,7 @@ import { buildCar, animateCar, warmUp, makeQuality, mergeStatic } from './cars3d
 import { makeNoise, rng, smoothstep, surface, terrain, cloudDome } from './world3d.js';
 import { createCarSound, crash, gearbox, horn, createSiren } from './sound.js';
 
-const N = 5;                    // Blöcke pro Seite
+const N = 8;                    // Blöcke pro Seite
 const BLOCK = 64;               // Abstand der Kreuzungen (Meter)
 const ROAD = 14;                // Strassenbreite: eine Spur je Richtung
 const LANE = 3.5;               // Spurmitte rechts neben der Strassenmitte
@@ -15,7 +15,7 @@ const HALF = N * BLOCK / 2;     // halbe Stadtgrösse
 const LIMIT = HALF + 70;        // so weit darf man fahren
 const STOP = BLOCK - 12;        // Haltelinie (Abstand von der vorigen Kreuzung); die Wagenmitte hält eine halbe Länge davor
 const CYCLE = 22;               // Ampelzyklus in Sekunden
-const TRAFFIC = 26;             // so viele Autos fahren herum
+const TRAFFIC = 46;             // so viele Autos fahren herum
 const SEE = 140;                // weiter weg werden Autos nicht gezeichnet
 const DIRS = [[1, 0], [0, 1], [-1, 0], [0, -1]]; // +x, +z, −x, −z
 const POOL = ('car mini kombi kompakt taxi police van delivery pickup hatch coupe smart ecar minivan jeep postauto ' +
@@ -203,7 +203,12 @@ function buildWorld() {
   const walls = [['#d9c7a7', '#6b5a45'], ['#b0544a', '#f1e7da'], ['#9aa3ad', '#3b4350'], ['#e9e4d8', '#7a6a55'], ['#3c5a78', '#c7d6e6'], ['#c9a46a', '#4b3b2a']]
     .map(([wall, frame]) => mat({ map: facade(wall, frame, r), roughness: 0.75 }));
   const roofMat = mat({ color: 0x4b4f57, roughness: 0.9 }), metal = mat({ color: 0x9aa0aa, metalness: 0.6, roughness: 0.4 });
-  const parks = new Set(['0,3', '3,0', '4,4']);
+  const plaza = (N >> 1) + ',' + (N >> 1);
+  const parks = new Set(); // sieben Parks, über die Stadt verteilt
+  while (parks.size < 7) { const k = Math.floor(r() * N) + ',' + Math.floor(r() * N); if (k !== plaza) parks.add(k); }
+  const roofTiles = [mat({ color: 0x9b3b2b, roughness: 0.85 }), mat({ color: 0x5a4e4a, roughness: 0.85 }), mat({ color: 0xb4532a, roughness: 0.85 })];
+  const homeWalls = [['#f3eadb', '#7a6a55'], ['#e8d9b8', '#5b4a35'], ['#dfe7ea', '#4a5560'], ['#f0d9d0', '#7a4a3a']]
+    .map(([wall, frame]) => mat({ map: facade(wall, frame, r), roughness: 0.8 }));
   const block = 50, inner = 44;
   const trees = [];
   for (let bi = 0; bi < N; bi++) for (let bj = 0; bj < N; bj++) {
@@ -212,7 +217,7 @@ function buildWorld() {
     slab.position.set(cx, 0.08, cz); slab.receiveShadow = true;
     decor.add(slab);
     const key = bi + ',' + bj;
-    if (key === '2,2') { buildPlaza(decor, cx, cz, round); continue; }
+    if (key === plaza) { buildPlaza(decor, cx, cz, round); continue; }
     if (parks.has(key)) { // Park: Wiese mit Wegkreuz und Bäumen
       const g = quads(1 / 4), h = inner / 2, p = 1.6;
       g.add(cx - h, cz - h, cx - p, cz - p, 0.17); g.add(cx + p, cz - h, cx + h, cz - p, 0.17);
@@ -223,6 +228,31 @@ function buildWorld() {
         if (Math.abs(tx - cx) < 4 || Math.abs(tz - cz) < 4) continue;
         trees.push([tx, 0.16, tz, 0.8 + r() * 0.6]);
       }
+      continue;
+    }
+    // Aussenquartier: Einfamilienhäuser mit Giebeldach und Garten
+    const edge = bi === 0 || bj === 0 || bi === N - 1 || bj === N - 1;
+    if (edge && r() < 0.7) {
+      const g = quads(1 / 4), h = inner / 2;
+      g.add(cx - h, cz - h, cx + h, cz + h, 0.17);
+      decor.add(g.mesh(grassMat));
+      for (const ox of [-11, 11]) for (const oz of [-11, 11]) {
+        const turn = r() < 0.5, w = 8 + r() * 3, d = 7 + r() * 2, hgt = 3.6 + r() * 1.6;
+        const bx = cx + ox + (r() - 0.5) * 3, bz = cz + oz + (r() - 0.5) * 3, W = turn ? d : w, D = turn ? w : d;
+        const b = wallBox(W, hgt, D, homeWalls[Math.floor(r() * homeWalls.length)], 7);
+        b.position.set(bx, 0.17 + hgt / 2, bz);
+        decor.add(b);
+        const hw = W / 2 + 0.45, rh = 1.6 + r() * 1.2;
+        const shape = new THREE.Shape([new THREE.Vector2(-hw, 0), new THREE.Vector2(hw, 0), new THREE.Vector2(0, rh)]);
+        const rg = new THREE.ExtrudeGeometry(shape, { depth: D + 0.7, bevelEnabled: false });
+        rg.translate(0, 0, -(D + 0.7) / 2);
+        const roof = new THREE.Mesh(rg, roofTiles[Math.floor(r() * roofTiles.length)]);
+        roof.position.set(bx, 0.17 + hgt, bz); roof.castShadow = roof.receiveShadow = true;
+        decor.add(roof);
+        if (r() < 0.5) { const ch = new THREE.Mesh(new THREE.BoxGeometry(0.6, 1.6, 0.6), roofMat); ch.position.set(bx + hw * 0.4, 0.17 + hgt + rh * 0.6, bz + (r() - 0.5) * D * 0.5); ch.castShadow = true; decor.add(ch); }
+        solid.push({ x0: bx - W / 2, x1: bx + W / 2, z0: bz - D / 2, z1: bz + D / 2 });
+      }
+      for (let k = 0; k < 3; k++) trees.push([cx + (r() - 0.5) * 6, 0.17, cz + (r() - 0.5) * 6, 0.6 + r() * 0.4]);
       continue;
     }
     // Häuser: 2 × 2 Bauplätze; in der Mitte der Stadt höher (Skyline)
@@ -689,7 +719,7 @@ function startChase() {
 // Weg über das Strassengitter (Breitensuche von Kreuzung zu Kreuzung). Start ist die bessere der beiden
 // Kreuzungen an der Strasse, auf der der Streifenwagen gerade fährt (sonst würde er umkehren).
 function bfs(start, goal) {
-  const key = (i, j) => i * 10 + j, prev = new Map([[key(...start), null]]), queue = [start];
+  const key = (i, j) => i * 100 + j, prev = new Map([[key(...start), null]]), queue = [start];
   while (queue.length) {
     const [i, j] = queue.shift();
     if (i === goal[0] && j === goal[1]) break;
@@ -879,7 +909,7 @@ function buildDom() {
   root.id = 'city';
   root.hidden = true;
   root.innerHTML = `
-    <canvas class="minimap" width="160" height="160"></canvas>
+    <canvas class="minimap" width="190" height="190"></canvas>
     <button class="quit" title="Stadt verlassen">✕</button>
     <button class="horn" title="Hupen (H)">📯</button>
     <div class="msg"></div>
@@ -956,7 +986,7 @@ function showMsg(text, secs = 1.6) {
 }
 
 // Minikarte: Strassen grau, Parks grün, Brunnen blau, Autos weiss, du gelb
-const MAP = 160, mapScale = (MAP - 12) / (2 * (HALF + 12));
+const MAP = 190, mapScale = (MAP - 12) / (2 * (HALF + 12));
 const mx = x => MAP / 2 + x * mapScale;
 function drawMinimapBase() {
   const c = document.createElement('canvas');
