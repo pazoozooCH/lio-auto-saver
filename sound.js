@@ -366,3 +366,16 @@ export function crash(intensity, kind = 'car') {
     for (let k = 0; k < 9; k++) tone(2600 + Math.random() * 3800, 0.08 + Math.random() * 0.15, 0.04, 'sine', null, 0.04 + Math.random() * 0.35);
   }
 }
+
+// Hupe: zwei leicht verstimmte Töne (wie eine echte Autohupe); vol 0…1, z.B. leiser für ferne Autos
+export function horn(vol = 1, dur = 0.45, pitch = 1) {
+  if (!setup()) return;
+  const t = now(), g = gain(0), f = filter('bandpass', 900 * pitch, 0.9);
+  g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(0.22 * vol, t + 0.02);
+  g.gain.setValueAtTime(0.22 * vol, t + dur - 0.05); g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+  chain(f, g, A.out);
+  for (const hz of [410 * pitch, 518 * pitch]) {
+    const o = A.ctx.createOscillator(); o.type = 'square'; o.frequency.value = hz;
+    o.connect(f); o.start(t); o.stop(t + dur + 0.02);
+  }
+}

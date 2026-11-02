@@ -9,6 +9,8 @@ Browser-Spiel ohne Build: `index.html` + `game.js` (Spiellogik, Menüs und 2D-Ze
 - `drag.js`: 3D-Dragster-Bahn (1 gegen 1, Startampel, selber schalten); Gewinner bekommt das Auto des Verlierers.
 - `cars3d.js`: 3D-Fahrzeuge für alle Modi; jedes Fahrzeug hat in `BUILD` eine eigene Bauanleitung. Neuere Fahrzeuge
   haben in `KINDS` ein `look` (wird in 2D wie dieses Fahrzeug gezeichnet) und ein `badge` (Bildchen auf der Seite).
+- `city.js`: 3D-Stadt zum freien Herumfahren (Strassengitter, Häuser, Parks, Ampeln, Verkehr mit Abbiegen und Halten).
+  Testen: `startCityMode()`, dann `window.__city()` (`me`, `cars`, `input`).
 - `online.js`: Online-Spiel (Lobby, Räume, Live-Daten) über Firebase Realtime Database mit anonymer Anmeldung.
   Regeln in `database.rules.json`, Einrichtung und Admin-Befehle im README. Freundes-Schlüssel nie ins Repo schreiben.
 - `sound.js`: Geräusche aus dem Synthesizer (Motor mit Gängen, Reifen, Gras/Kies/Randstein, Wind, Crashs), ohne Tondateien.
