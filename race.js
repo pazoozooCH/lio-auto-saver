@@ -414,8 +414,11 @@ function buildTunnels(scene, T) {
   const lamp = new THREE.MeshStandardMaterial({ color: 0xffffff, emissive: 0xfff1c4, emissiveIntensity: 1.6 });
   const SEG = 14;
   for (const [i0, i1] of T.tunnels) {
+    // jeder zweite Punkt, aber in Einerschritten zählen: sonst wird bei ungeradem Abstand das Ende
+    // übersprungen und der Tunnel geht um die ganze Strecke herum
     const idxs = [];
-    for (let i = i0; i !== i1; i = (i + 2) % T.n) idxs.push(i);
+    for (let i = i0, k = 0; i !== i1; i = (i + 1) % T.n, k++) if (k % 2 === 0) idxs.push(i);
+    idxs.push(i1);
     for (const [radius, m, lift] of [[T.wallOff[0][idxs[0]] + 0.3, inner, 0], [T.wallOff[0][idxs[0]] + 5, rock, 0]]) {
       const pos = [], idx = [];
       idxs.forEach((i, k) => {
