@@ -379,3 +379,19 @@ export function horn(vol = 1, dur = 0.45, pitch = 1) {
     o.connect(f); o.start(t); o.stop(t + dur + 0.02);
   }
 }
+
+// Polizeisirene „Tatü-tata“: zwei Töne im Wechsel; set(0…1) = Lautstärke (z.B. nach Entfernung)
+export function createSiren() {
+  if (!setup()) return null;
+  const { ctx } = A;
+  const o = ctx.createOscillator(), lfo = ctx.createOscillator(), vol = gain(0);
+  o.type = 'square'; o.frequency.value = 544;
+  lfo.type = 'square'; lfo.frequency.value = 0.8;
+  chain(lfo, gain(78), o.frequency); // 466 Hz ↔ 622 Hz
+  chain(o, filter('lowpass', 1700, 0.7), vol, A.out);
+  o.start(); lfo.start();
+  return {
+    set(v) { smooth(vol.gain, clamp(v) * 0.13, 0.15); },
+    stop() { vol.gain.setTargetAtTime(0, now(), 0.05); o.stop(now() + 0.4); lfo.stop(now() + 0.4); },
+  };
+}

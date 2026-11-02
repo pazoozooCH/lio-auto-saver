@@ -3397,7 +3397,8 @@ function startCityMode() {
   import('./city.js')
     .then(m => {
       state = 'city';
-      m.startCity({ player: { ...v, name: 'Du' }, kinds: KINDS, topSpeed: raceTopSpeed, onExit: () => openMenu('title') });
+      m.startCity({ player: { ...v, name: 'Du' }, kinds: KINDS, topSpeed: raceTopSpeed, onExit: () => openMenu('title'),
+        pay: n => { const paid = Math.min(wallet, n); wallet -= paid; storeJSON('autoRetterCoins', wallet); return paid; } });
     })
     .catch(err => {
       console.error(err);

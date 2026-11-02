@@ -5,7 +5,7 @@ import { Sky } from 'three/addons/objects/Sky.js';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 import { buildCar, animateCar, warmUp, makeQuality, mergeStatic } from './cars3d.js';
 import { makeNoise, rng, smoothstep, surface, terrain, cloudDome } from './world3d.js';
-import { createCarSound, crash, gearbox, horn } from './sound.js';
+import { createCarSound, crash, gearbox, horn, createSiren } from './sound.js';
 
 const N = 5;                    // Blöcke pro Seite
 const BLOCK = 64;               // Abstand der Kreuzungen (Meter)
@@ -392,6 +392,7 @@ function followLimit(c, me) {
     if (v < lim) { lim = v; byMe = isMe; }
   };
   for (const o of city.cars) if (o !== c) check(o.x, o.z, o.len, false);
+  if (city.police) check(city.police.pos.x, city.police.pos.z, 5, false);
   check(me.pos.x, me.pos.z, me.len, true);
   return { lim, byMe };
 }
@@ -455,7 +456,8 @@ function stepTraffic(dt) {
 // ---------- Selber fahren ----------
 const GRIP = 12, BRAKE = 20;
 function stepMe(dt) {
-  const me = city.me, input = city.input;
+  const stopped = city.pulled > 0 || city.ticket || (city.police && city.police.state === 'stop');
+  const me = city.me, input = stopped ? { brake: true } : city.input; // von der Polizei angehalten: nur bremsen
   const gas = input.gas, brake = input.brake;
   const steerTarget = (input.left ? -1 : 0) + (input.right ? 1 : 0);
   me.steer += (steerTarget - me.steer) * Math.min(1, dt * 7);
@@ -517,7 +519,7 @@ function stepMe(dt) {
   const inX = inGrid(ni, nj) && Math.abs(me.pos.x - node(ni)) < ROAD / 2 && Math.abs(me.pos.z - node(nj)) < ROAD / 2;
   if (inX && !city.inCross && hasLights(ni, nj) && Math.abs(me.speed) > 5) {
     const ax = Math.abs(Math.cos(me.heading)) > Math.abs(Math.sin(me.heading)) ? 'x' : 'z';
-    if (lightState(ax, city.t) === 'red') showMsg('🚦 Über Rot gefahren!', 1.6);
+    if (lightState(ax, city.t) === 'red') { showMsg('🚦 Über Rot gefahren!', 1.6); startChase(); }
   }
   city.inCross = inX;
   const m = me.mesh;
@@ -528,6 +530,159 @@ function stepMe(dt) {
     if (w.position.x > 0) w.rotation.y = -me.steer * 0.4;
   }
   animateCar(m, city.t, me.v.special);
+}
+
+// ---------- Polizei ----------
+// Über Rot gefahren: hinter dir taucht ein Streifenwagen auf und folgt dir über die Strassen (Weg über die
+// Kreuzungen), in der Nähe direkt. Bleibt er ein paar Sekunden dicht dran, zieht er dich raus → Strafzettel.
+// Fährst du weit genug weg, gibt er auf.
+function startChase() {
+  if (city.police || city.ticket) return;
+  const me = city.me, fx = Math.cos(me.heading), fz = Math.sin(me.heading);
+  // Kreuzung etwa 70 m hinter dir
+  let best = null, bd = Infinity;
+  for (let i = 0; i <= N; i++) for (let j = 0; j <= N; j++) {
+    const x = node(i), z = node(j), dx = x - me.pos.x, dz = z - me.pos.z, dist = Math.hypot(dx, dz);
+    const behind = -(dx * fx + dz * fz);
+    const score = Math.abs(dist - 75) + (behind > 0 ? 0 : 200);
+    if (score < bd) { bd = score; best = [i, j]; }
+  }
+  const mesh = buildCar({ kind: 'police', color: city.kinds.police.color, special: null }, city.kinds);
+  const pos = new THREE.Vector3(node(best[0]), 0, node(best[1]));
+  S.scene.add(mesh);
+  city.police = { mesh, pos, heading: Math.atan2(me.pos.z - pos.z, me.pos.x - pos.x), speed: 8, state: 'chase', closeT: 0, farT: 0, t: 0,
+    maxV: Math.max(24, Math.min(46, me.maxV * 0.92)), radius: Math.max(1.3, mesh.userData.radius * 0.8), siren: createSiren(), path: [] };
+  S.ui.chase.hidden = false;
+  showMsg('🚨 Polizei! Sie verfolgt dich!', 2.2);
+}
+
+// Weg über das Strassengitter (Breitensuche von Kreuzung zu Kreuzung). Start ist die bessere der beiden
+// Kreuzungen an der Strasse, auf der der Streifenwagen gerade fährt (sonst würde er umkehren).
+function bfs(start, goal) {
+  const key = (i, j) => i * 10 + j, prev = new Map([[key(...start), null]]), queue = [start];
+  while (queue.length) {
+    const [i, j] = queue.shift();
+    if (i === goal[0] && j === goal[1]) break;
+    for (const [dx, dz] of DIRS) {
+      const ni = i + dx, nj = j + dz;
+      if (!inGrid(ni, nj) || prev.has(key(ni, nj))) continue;
+      prev.set(key(ni, nj), [i, j]); queue.push([ni, nj]);
+    }
+  }
+  const path = [];
+  for (let p = goal; p; p = prev.get(key(...p))) path.unshift(p);
+  return path;
+}
+function pathTo(fromX, fromZ, toX, toZ) {
+  const clampI = v => Math.max(0, Math.min(N, v)), gx = fromX / BLOCK + N / 2, gz = fromZ / BLOCK + N / 2;
+  const goal = [clampI(Math.round(toX / BLOCK + N / 2)), clampI(Math.round(toZ / BLOCK + N / 2))];
+  const onX = Math.abs(fromX - node(Math.round(gx))) < Math.abs(fromZ - node(Math.round(gz))); // auf einer Strasse entlang z
+  const starts = onX ? [[Math.round(gx), Math.floor(gz)], [Math.round(gx), Math.ceil(gz)]] : [[Math.floor(gx), Math.round(gz)], [Math.ceil(gx), Math.round(gz)]];
+  let best = null, cost = Infinity;
+  for (const st of starts.map(([i, j]) => [clampI(i), clampI(j)])) {
+    const path = bfs(st, goal), c = Math.hypot(node(st[0]) - fromX, node(st[1]) - fromZ) + (path.length - 1) * BLOCK;
+    if (c < cost) { cost = c; best = path; }
+  }
+  return best.map(([i, j]) => [node(i), node(j)]);
+}
+
+function stepPolice(dt) {
+  const P = city.police;
+  if (!P) return;
+  const me = city.me;
+  P.t += dt;
+  const dx = me.pos.x - P.pos.x, dz = me.pos.z - P.pos.z, dist = Math.hypot(dx, dz);
+  let tx, tz, want = P.maxV;
+  if (P.state === 'leave') { // fährt davon und verschwindet
+    tx = P.pos.x + Math.cos(P.heading) * 50; tz = P.pos.z + Math.sin(P.heading) * 50;
+    want = 16;
+    if (P.t > 6) { removePolice(); return; }
+  } else if (P.state === 'stop') {
+    tx = me.pos.x; tz = me.pos.z; want = 0;
+  } else if (dist < 40) { // nah: direkt hinter dir her, etwas vorausschauend
+    tx = me.pos.x + Math.cos(me.heading) * me.speed * 0.4; tz = me.pos.z + Math.sin(me.heading) * me.speed * 0.4;
+    want = dist < 9 ? Math.max(0, Math.abs(me.speed) - 1) : Math.min(P.maxV, Math.abs(me.speed) + 8 + dist * 0.4);
+  } else { // weit: von Kreuzung zu Kreuzung
+    if ((P.pathT = (P.pathT || 0) - dt) <= 0 || !P.path.length) { P.path = pathTo(P.pos.x, P.pos.z, me.pos.x, me.pos.z); P.pathT = 1; }
+    while (P.path.length > 1 && Math.hypot(P.path[0][0] - P.pos.x, P.path[0][1] - P.pos.z) < 9) P.path.shift();
+    [tx, tz] = P.path[0] || [me.pos.x, me.pos.z];
+  }
+  // Lenken wie ein Auto, in engen Kurven langsamer
+  let diff = Math.atan2(tz - P.pos.z, tx - P.pos.x) - P.heading;
+  diff = Math.atan2(Math.sin(diff), Math.cos(diff));
+  if (Math.abs(diff) > 0.7) want = Math.min(want, 9);
+  P.speed = P.speed < want ? Math.min(want, P.speed + 9 * dt) : Math.max(want, P.speed - 14 * dt);
+  const yawMax = Math.min(2, GRIP * 1.3 / Math.max(P.speed, 0.1));
+  if (P.speed > 0.3) P.heading += Math.max(-1, Math.min(1, diff * 2.5)) * yawMax * dt;
+  P.pos.x += Math.cos(P.heading) * P.speed * dt;
+  P.pos.z += Math.sin(P.heading) * P.speed * dt;
+  // Häuser, Bäume, Autos und du schieben den Streifenwagen weg
+  for (const b of S.solid) {
+    const qx = Math.max(b.x0, Math.min(P.pos.x, b.x1)), qz = Math.max(b.z0, Math.min(P.pos.z, b.z1));
+    const ex = P.pos.x - qx, ez = P.pos.z - qz, d = Math.hypot(ex, ez);
+    if (d < P.radius && d > 0.001) { P.pos.x += ex / d * (P.radius - d); P.pos.z += ez / d * (P.radius - d); P.speed *= 0.7; }
+  }
+  for (const o of [...city.cars.map(c => ({ x: c.x, z: c.z, r: c.mesh.userData.radius })), { x: me.pos.x, z: me.pos.z, r: me.radius, me: true }]) {
+    const ex = P.pos.x - o.x, ez = P.pos.z - o.z, d = Math.hypot(ex, ez), min = (P.radius + o.r) * 0.8;
+    if (d < min && d > 0.001) {
+      P.pos.x += ex / d * (min - d); P.pos.z += ez / d * (min - d);
+      if (o.me && Math.abs(P.speed - me.speed) > 4 && city.crashT <= 0) { crash(0.3, 'car'); city.crashT = 0.5; }
+    }
+  }
+  // Erwischt? Dicht dran bleiben = rausziehen; freiwillig anhalten geht auch
+  if (P.state === 'chase') {
+    P.closeT = dist < 9 ? P.closeT + dt : Math.max(0, P.closeT - dt * 0.5);
+    P.farT = dist > 160 ? P.farT + dt : 0;
+    if (P.closeT > 3 || (dist < 14 && Math.abs(me.speed) < 1.5 && P.t > 2)) {
+      P.state = 'stop';
+      city.pulled = 1.4;
+      showMsg('🚓 Rechts ranfahren und anhalten!', 1.8);
+      horn(0.8, 0.3, 0.8);
+    } else if (P.farT > 8) {
+      showMsg('😎 Entkommen! Die Polizei gibt auf.', 2.5);
+      P.state = 'leave'; P.t = 0;
+      S.ui.chase.hidden = true;
+      P.siren.set(0);
+    }
+  }
+  if (P.state === 'stop' && city.pulled <= 0 && Math.abs(me.speed) < 0.5 && !city.ticket) giveTicket();
+  if (P.siren) P.siren.set(P.state === 'chase' || P.state === 'stop' ? 1 - dist / 220 : 0);
+  const m = P.mesh;
+  m.position.set(P.pos.x, 0, P.pos.z);
+  m.rotation.y = -P.heading;
+  for (const w of m.userData.wheels) w.rotation.z -= P.speed * dt / 0.35;
+  animateCar(m, city.t, null);
+}
+
+// Strafzettel: 10 Münzen, bei jedem weiteren Mal 10 mehr (höchstens 50); ohne Münzen nur eine Verwarnung
+function giveTicket() {
+  city.fines++;
+  const amount = Math.min(50, 10 * city.fines), paid = city.pay(amount);
+  city.ticket = true;
+  const T = S.ui.ticket;
+  T.querySelector('.amount').textContent = paid ? paid + ' 🪙' : 'Verwarnung';
+  T.querySelector('.note').textContent = paid === amount ? 'Die Münzen wurden abgezogen.'
+    : paid ? 'Du hattest nur noch ' + paid + ' Münzen – Glück gehabt!' : 'Keine Münzen dabei – diesmal nur eine Verwarnung!';
+  T.querySelector('.count').textContent = city.fines > 1 ? 'Schon ' + city.fines + '× erwischt!' : '';
+  T.hidden = false;
+  window.beep && window.beep(660, 0.12, 'square', 0.05);
+}
+function closeTicket() {
+  if (!city || !city.ticket) return;
+  city.ticket = false;
+  S.ui.ticket.hidden = true;
+  S.ui.chase.hidden = true;
+  const P = city.police;
+  if (P) { P.state = 'leave'; P.t = 0; P.siren.set(0); }
+  showMsg('Gute Fahrt! Und bei Rot anhalten 😉', 2);
+}
+function removePolice() {
+  const P = city.police;
+  if (!P) return;
+  P.siren.stop();
+  S.scene.remove(P.mesh);
+  city.police = null;
+  S.ui.chase.hidden = true;
 }
 
 function surfaceAt(x, z) {
@@ -568,6 +723,16 @@ const CSS = `
 #city .ctl.gas { border-color: #4ade80; } #city .ctl.brake { border-color: #f87171; font-size: 18px; }
 #city .horn { position: absolute; top: 10px; left: 12px; width: 58px; height: 58px; border-radius: 50%; border: 3px solid rgba(255,255,255,.65);
   background: rgba(0,0,0,.4); font-size: 28px; }
+#city .chase { position: absolute; top: 76px; left: 12px; background: #b91c1c; border-radius: 12px; padding: 6px 12px;
+  font-weight: 900; font-size: 18px; animation: cityblink 0.6s infinite alternate; }
+@keyframes cityblink { from { background: #b91c1c; } to { background: #1d4ed8; } }
+#city .ticket { position: absolute; inset: 0; background: rgba(0,0,0,.55); display: flex; align-items: center; justify-content: center; }
+#city .ticket[hidden], #city .chase[hidden] { display: none; }
+#city .ticket .card { background: #fff8dc; color: #222; border-radius: 16px; padding: 18px 26px; width: min(420px, 80%);
+  box-shadow: 0 10px 40px rgba(0,0,0,.6); transform: rotate(-2deg); font-size: 18px; border-top: 14px solid #1d4ed8; }
+#city .ticket h2 { margin: 0 0 10px; font-size: 28px; letter-spacing: 1px; }
+#city .ticket p { margin: 6px 0; } #city .ticket .note { color: #555; font-size: 15px; } #city .ticket .count { color: #b91c1c; font-weight: 800; }
+#city .ticket .pay { margin-top: 10px; font: 800 20px system-ui, sans-serif; color: #fff; background: #16a34a; border: none; border-radius: 12px; padding: 10px 22px; }
 #city .hint { position: absolute; bottom: 86px; left: 50%; transform: translateX(-50%); font-size: 15px; opacity: .85;
   background: rgba(0,0,0,.45); padding: 4px 12px; border-radius: 10px; white-space: nowrap; }
 `;
@@ -584,6 +749,13 @@ function buildDom() {
     <button class="quit" title="Stadt verlassen">✕</button>
     <button class="horn" title="Hupen (H)">📯</button>
     <div class="msg"></div>
+    <div class="chase" hidden>🚨 Polizei!</div>
+    <div class="ticket" hidden><div class="card">
+      <h2>🚔 STRAFZETTEL</h2>
+      <p>Grund: <b>Über Rot gefahren 🚦</b></p>
+      <p>Busse: <b class="amount"></b></p>
+      <p class="note"></p><p class="count"></p>
+      <button class="pay">Okay 👍</button></div></div>
     <div class="speed"><span class="kmh">0</span> km/h<small class="ps"></small></div>
     <div class="hint">⬅️ ➡️ lenken · ⬆️ Gas · ⬇️ Bremse/rückwärts · H hupen</div>
     <button class="ctl" data-k="left" style="left:16px">◀</button>
@@ -592,7 +764,9 @@ function buildDom() {
     <button class="ctl gas" data-k="gas" style="right:16px">GAS</button>`;
   document.body.appendChild(root);
   const $ = s => root.querySelector(s);
-  const ui = { root, kmh: $('.kmh'), ps: $('.ps'), msg: $('.msg'), hint: $('.hint'), minimap: $('.minimap'), ctls: [...root.querySelectorAll('.ctl')] };
+  const ui = { root, kmh: $('.kmh'), ps: $('.ps'), msg: $('.msg'), hint: $('.hint'), minimap: $('.minimap'), ctls: [...root.querySelectorAll('.ctl')],
+    chase: $('.chase'), ticket: $('.ticket') };
+  $('.pay').addEventListener('pointerdown', e => { e.preventDefault(); closeTicket(); });
   const touch = matchMedia('(pointer: coarse)').matches || 'ontouchstart' in window;
   for (const b of ui.ctls) {
     b.style.display = touch ? '' : 'none';
@@ -671,6 +845,10 @@ function drawMinimap() {
   g.drawImage(S.mapBase, 0, 0);
   g.fillStyle = '#ffffff';
   for (const c of city.cars) g.fillRect(mx(c.x) - 1.5, mx(c.z) - 1.5, 3, 3);
+  if (city.police) {
+    g.fillStyle = Math.floor(city.t * 6) % 2 ? '#3b82f6' : '#ef4444';
+    g.beginPath(); g.arc(mx(city.police.pos.x), mx(city.police.pos.z), 4.5, 0, Math.PI * 2); g.fill();
+  }
   const me = city.me, x = mx(me.pos.x), y = mx(me.pos.z), h = me.heading;
   g.fillStyle = '#ffe066'; g.strokeStyle = '#000'; g.lineWidth = 1.5;
   g.beginPath();
@@ -681,7 +859,7 @@ function drawMinimap() {
 }
 
 // ---------- Start, Schleife, Ende ----------
-export function startCity({ player, kinds, topSpeed, onExit }) {
+export function startCity({ player, kinds, topSpeed, onExit, pay = () => 0 }) {
   if (!S) {
     S = buildWorld();
     S.ui = buildDom();
@@ -695,7 +873,7 @@ export function startCity({ player, kinds, topSpeed, onExit }) {
     maxV: Math.min(55, topSpeed(player.ps)), acc: 4 + player.ps * 0.06, radius: Math.max(1.3, mesh.userData.radius * 0.8),
     len: mesh.userData.length, slip: 0, surface: 'asphalt' };
   city = { me, cars: spawnTraffic(kinds), input: {}, t: Math.random() * CYCLE, msgT: 0, crashT: 0, hornT: 0, inCross: false,
-    gears: gearbox(player.kind), onExit, last: performance.now() };
+    gears: gearbox(player.kind), onExit, last: performance.now(), kinds, pay, fines: 0, police: null, pulled: 0, ticket: false };
   S.scene.add(mesh);
   for (const c of city.cars) S.scene.add(c.mesh);
   warmUp(S.renderer, S.scene, S.camera);
@@ -723,7 +901,9 @@ function loop(now) {
   if (city.msgT > 0 && (city.msgT -= dt) <= 0) S.ui.msg.textContent = '';
   city.hornT -= dt;
   stepLights();
+  if (city.pulled > 0) city.pulled -= dt;
   stepMe(dt);
+  stepPolice(dt);
   stepTraffic(dt);
   updateHud(dt);
   render(dt);
@@ -759,6 +939,8 @@ function render(dt) {
 }
 
 function endCity() {
+  removePolice();
+  S.ui.ticket.hidden = true;
   const c = city;
   city = null;
   if (S.snd) { S.snd.stop(); S.snd = null; }
