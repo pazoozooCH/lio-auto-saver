@@ -65,20 +65,20 @@ const PROFILES = {
 };
 const KIND_SOUND = {};
 const group = (name, kinds) => { for (const k of kinds.split(' ')) KIND_SOUND[k] = name; };
-group('diesel', 'van postauto doubledecker schoolbus policebus delivery umzug bakery armored treasure hotdog icecream ambulance garbage camper firetruck dumper cement crane tanker carrier sweeper taco parcel watercannon popcorn circus towtruck snowplow jeep safari offroad rescue pirate');
+group('diesel', 'van postauto doubledecker schoolbus policebus delivery umzug bakery armored treasure hotdog icecream ambulance garbage camper firetruck dumper cement crane tanker carrier sweeper taco parcel watercannon popcorn circus candy towtruck snowplow jeep safari offroad rescue pirate');
 group('heavy', 'tractor excavator dozer groomer');
-group('muscle', 'muscle pickup monster polar dragon limo lowrider firework robot');
-group('race', 'racer dragster stockcar rally sports nightracer shark phoenix policebike');
+group('muscle', 'muscle pickup monster polar dragon limo lowrider firework robot dino racetruck');
+group('race', 'racer dragster stockcar rally sports nightracer shark phoenix policebike hyper');
 group('small', 'mini smart isetta hatch kompakt');
-group('boxer', 'beetle buggy hippie');
-group('twostroke', 'scooter pizza moped tuktuk gokart quad');
-group('electric', 'ecar tram golfcart forklift cargobike rover sub');
+group('boxer', 'beetle buggy hippie snail');
+group('twostroke', 'scooter pizza moped tuktuk gokart quad snowmobile mower');
+group('electric', 'ecar tram golfcart forklift cargobike rover sub bobbycar');
 group('magic', 'ufo timemachine unicorn ghost');
 group('turbine', 'jet shuttle rocketcar');
 group('rotor', 'heli');
 group('prop', 'hovercraft zeppelin');
 group('steam', 'train');
-group('carriage', 'royal pumpkin');
+group('carriage', 'royal pumpkin sleigh');
 export const soundOf = kind => PROFILES[KIND_SOUND[kind] || 'car'];
 
 // Verbrennungsmotor: Zündfrequenz = Drehzahl/60 × Zylinder/2, viele Obertöne (Auspuff), leicht verstimmt,

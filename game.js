@@ -362,6 +362,27 @@ const KINDS = {
                info: '🦈 Hai-Mobil: lässt sich NICHT anhalten! 7 Punkte.' },
   pumpkin:   { name: 'Kürbiskutsche', tier: 'legendary', w: [104, 114], h: [64, 68], wheel: 16, color: '#f97316', coins: 6, points: 8, look: 'royal', badge: '🎃',
                info: '🎃 Kürbiskutsche: Zauberei! 8 Punkte und 6 Münzen.' },
+  // --- Neue Fahrzeuge (Runde 5) ---
+  bobbycar:  { name: 'Bobbycar', tier: 'common', w: [52, 58], h: [36, 40], wheel: 7, speed: 0.9, color: '#e11d48', look: 'isetta', badge: '🧸',
+               info: '🧸 Bobbycar: das kleinste Auto von allen!' },
+  mower:     { name: 'Rasenmäher', tier: 'common', w: [66, 74], h: [46, 50], wheel: 9, speed: 0.8, color: '#16a34a', coins: 1, look: 'golfcart', badge: '🌱',
+               info: '🌱 Rasenmäher: mäht gemütlich und bringt 1 Münze mit!' },
+  caravan:   { name: 'Wohnwagen-Gespann', tier: 'common', w: [165, 175], h: [46, 50], points: 3, look: 'camper', badge: '🧳',
+               info: '🧳 Wohnwagen-Gespann: ab in die Ferien – 3 Punkte!' },
+  snowmobile: { name: 'Schneetöff', tier: 'uncommon', w: [72, 80], h: [46, 50], speed: 1.2, color: '#0ea5e9', ability: 'freeze', look: 'scooter', badge: '❄️',
+               info: '❄️ Schneetöff: Antippen = Schnee! ALLE Pressen frieren 3 Sek. ein.' },
+  candy:     { name: 'Zuckerwatte-Wagen', tier: 'uncommon', w: [116, 126], h: [58, 62], color: '#f9a8d4', points: 2, coins: 1, look: 'icecream', badge: '🍭',
+               info: '🍭 Zuckerwatte-Wagen: süss! 2 Punkte und 1 Münze.' },
+  racetruck: { name: 'Renn-Truck', tier: 'rare', w: [124, 134], h: [54, 58], wheel: 13, speed: 1.3, color: '#2563eb', ability: 'turbo', armor: 1, look: 'pickup', badge: '🏁',
+               info: '🏁 Renn-Truck: Antippen = TURBO! Und hält einen Schlag aus.' },
+  dino:      { name: 'Dino-Truck', tier: 'epic', w: [116, 126], h: [74, 78], wheel: 20, color: '#65a30d', armor: 2, points: 4, look: 'monster', badge: '🦖',
+               info: '🦖 Dino-Truck: ROAAAR! Hält ZWEI Pressen-Schläge aus.' },
+  snail:     { name: 'Schnecken-Auto', tier: 'epic', w: [100, 110], h: [58, 62], speed: 0.6, color: '#d97706', armor: 2, points: 5, look: 'beetle', badge: '🐌',
+               info: '🐌 Schnecken-Auto: gaaanz langsam, aber das Haus hält ZWEI Schläge aus! 5 Punkte.' },
+  hyper:     { name: 'Hypercar', tier: 'epic', w: [112, 122], h: [32, 36], wheel: 11, speed: 1.55, ability: 'turbo', look: 'sports', badge: '💨',
+               info: '💨 Hypercar: Antippen = TURBO! Fast so schnell wie ein Rennauto.' },
+  sleigh:    { name: 'Samichlaus-Schlitten', tier: 'legendary', w: [140, 150], h: [58, 62], color: '#b91c1c', ability: 'rocket', coins: 5, points: 8, look: 'royal', badge: '🎅',
+               info: '🎅 Samichlaus-Schlitten: Antippen = fliegt davon! 8 Punkte und 5 Münzen.' },
 };
 
 // Münzen und Fahrzeugpark bleiben gespeichert

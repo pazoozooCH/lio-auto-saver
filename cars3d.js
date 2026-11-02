@@ -1547,6 +1547,246 @@ for (const kd of ['coupe', 'ecar', 'roadster', 'stockcar']) SPEC_HINT[kd] = { ar
 for (const kd of ['hatch', 'rally']) SPEC_HINT[kd] = { arch: 'hatch' };
 SPEC_HINT.smart = { arch: 'compact' };
 
+// ---------- Runde 5 ----------
+// Spirale (Schneckenhaus) als Aufkleber
+const spiral = color => (g, w, h) => {
+  g.strokeStyle = color; g.lineWidth = w * 0.045; g.lineCap = 'round';
+  g.beginPath();
+  for (let a = 0; a < PI * 6; a += 0.1) {
+    const r = w * 0.46 * a / (PI * 6);
+    g.lineTo(w / 2 + Math.cos(a) * r, h / 2 + Math.sin(a) * r);
+  }
+  g.stroke();
+};
+
+Object.assign(BUILD, {
+  bobbycar: C => {
+    C.W = 0.9;
+    const { X, L, M } = C, r = 0.17;
+    C.bodyMesh = C.ext(roundPoly([[X(0.02), r + 0.05], [X(0), 0.5], [X(0.2), 0.56], [X(0.3), 0.46], [X(0.7), 0.46], [X(0.9), 0.62], [X(1), 0.46], [X(0.98), r + 0.05]], 0.08), 0.6, C.paint, 0.08);
+    C.box(0.4, 0.1, 0.44, mat(0x111111), X(0.2), 0.6, 0); // Sitz
+    tube(C, X(0.82), 0.6, X(0.74), 0.85, 0.025, M.dark);
+    C.cyl(0.14, 0.14, 0.04, mat(0x111111), X(0.74), 0.87, 0, [0, 0, 0.7], 16); // Lenkrad
+    rider(C, X(0.24), 0.62, 0, 0xfacc15);
+    for (const s of [-1, 1]) { // runde Scheinwerfer wie Augen
+      C.sph(0.08, M.white, L / 2 - 0.04, 0.5, s * 0.2);
+      C.sph(0.04, mat(0x111111), L / 2 + 0.03, 0.5, s * 0.2);
+    }
+    C.wheelPair(X(0.18), r, 0.12, M.white, 5); C.wheelPair(X(0.84), r, 0.12, M.white, 5);
+  },
+  mower: C => {
+    C.W = 1.3;
+    const { X, L, M } = C, yellow = mat(0xfacc15);
+    C.bodyMesh = C.ext(roundPoly([[X(0.04), 0.4], [X(0.04), 0.66], [X(0.42), 0.68], [X(0.56), 0.9], [X(0.98), 0.84], [X(1), 0.4]], 0.08), 0.95, C.paint, 0.08);
+    C.box(L * 0.46, 0.2, 1.4, M.dark, X(0.55), 0.24, 0); // Mähwerk
+    C.decal(L * 0.44, 0.16, X(0.55), 0.24, stripes(['#4d7c0f', '#65a30d']), 0.05);
+    C.box(0.45, 0.25, 0.3, C.paint, X(0.55), 0.3, C.W / 2 + 0.12); // Grasauswurf
+    C.box(0.5, 0.12, 0.6, mat(0x111111), X(0.24), 0.98, 0); // Sitz
+    C.box(0.1, 0.5, 0.6, mat(0x111111), X(0.1), 1.2, 0); // Lehne
+    tube(C, X(0.6), 0.85, X(0.52), 1.3, 0.03, M.dark);
+    C.cyl(0.2, 0.2, 0.04, mat(0x111111), X(0.52), 1.32, 0, [0, 0, 0.6], 16); // Lenkrad
+    rider(C, X(0.26), 1.0, 0, 0xf97316);
+    C.box(0.06, 0.1, 0.7, M.head, L / 2 + 0.01, 0.7, 0); // Lampe
+    C.wheelPair(X(0.2), 0.45, 0.32, yellow, 6); C.wheelPair(X(0.86), 0.28, 0.22, yellow, 6);
+  },
+  caravan: C => {
+    // vorne ein Kombi, hinten der Wohnwagen an der Deichsel
+    const L = C.L, body = C.body, X0 = C.X, Lc = L * 0.48, off = L / 2 - Lc / 2;
+    const car = new THREE.Group();
+    car.position.x = off;
+    body.add(car);
+    const nW = C.wheels.length;
+    Object.assign(C, { body: car, L: Lc, X: f => f * Lc - Lc / 2 });
+    profileBody(C, 'kombi');
+    sideDetails(C);
+    delete C.side;
+    for (const w of C.wheels.slice(nW)) w.position.x += off;
+    C.axles = C.axles.map(([x, r]) => [x + off, r]);
+    Object.assign(C, { body, L, X: X0, roofX: C.roofX + off });
+    const { M } = C, cl = L * 0.45, cx = -L / 2 + cl / 2, y0 = 0.42, ch = 2.3, white = mat(0xf8fafc, { roughness: 0.5 });
+    C.ext(roundPoly([[cx - cl / 2, y0], [cx - cl / 2, y0 + ch - 0.1], [cx - cl / 2 + 0.25, y0 + ch], [cx + cl / 2 - 0.4, y0 + ch], [cx + cl / 2, y0 + ch - 0.45], [cx + cl / 2, y0]], 0.2), 2.0, white, 0.1);
+    const zw = 1.12 - C.W / 2; // Aufkleber aussen am Wohnwagen
+    C.decal(cl * 0.96, 0.14, cx, y0 + 0.75, band('#0ea5e9'), zw);
+    C.decal(cl * 0.96, 0.06, cx, y0 + 0.95, band('#38bdf8'), zw);
+    C.decal(cl * 0.9, 1.1, cx, y0 + 1.5, (g, w, h) => { // Fenster und Tür
+      const sc = w / (cl * 0.9);
+      g.fillStyle = '#1e293b';
+      for (const fx of [0.12, 0.62]) { g.beginPath(); g.roundRect(w * fx, h * 0.12, w * 0.26, h * 0.42, 6); g.fill(); }
+      g.strokeStyle = 'rgba(0,0,0,0.5)'; g.lineWidth = 3;
+      g.strokeRect(w * 0.44, h * 0.08, w * 0.13, h * 0.95);
+      g.fillStyle = '#1e293b'; g.fillRect(w * 0.465, h * 0.18, w * 0.08, h * 0.25);
+      g.fillStyle = '#cbd5e1'; g.fillRect(w * 0.53, h * 0.55, 0.12 * sc, 0.04 * sc);
+    }, zw);
+    C.box(0.6, 0.15, 0.6, M.glass, cx, y0 + ch + 0.06, 0); // Dachluke
+    tube(C, cx + cl / 2, 0.55, off - Lc / 2 + 0.05, 0.5, 0.05, M.dark); // Deichsel
+    C.box(0.35, 0.3, 0.6, mat(0x9ca3af), cx + cl / 2 + 0.2, 0.75, 0); // Gasflaschen-Kasten
+    for (const s of [-1, 1]) C.box(0.06, 0.16, 0.3, M.tail, -L / 2 - 0.02, y0 + 0.3, s * 0.75);
+    const W = C.W;
+    C.W = 2.5; C.wheelPair(cx + 0.2, C.r, 0.28); C.W = W;
+  },
+  snowmobile: C => {
+    C.W = 1.1;
+    const { X, L, M } = C;
+    C.bodyMesh = C.ext(roundPoly([[X(0.06), 0.45], [X(0.06), 0.78], [X(0.55), 0.82], [X(0.74), 1.08], [X(0.98), 0.78], [X(1), 0.48], [X(0.7), 0.38]], 0.1), 0.85, C.paint, 0.1);
+    C.box(L * 0.42, 0.16, 0.62, mat(0x111111), X(0.32), 0.9, 0); // Sitzbank
+    C.ext([[X(0.68), 1.02], [X(0.62), 1.5], [X(0.7), 1.5], [X(0.8), 1.04]], 0.7, M.glass, 0.02); // Windschild
+    rider(C, X(0.38), 0.95, 0, 0x0ea5e9);
+    C.box(0.06, 0.06, 0.85, M.dark, X(0.64), 1.25, 0); // Lenker
+    tracks(C, X(0.32), L * 0.5, 0.5, 0.45); // Raupe
+    for (const s of [-1, 1]) { // Kufen vorne
+      C.box(1.2, 0.05, 0.2, M.steel, X(0.86), 0.05, s * 0.5);
+      const tip = C.box(0.35, 0.05, 0.2, M.steel, X(0.86) + 0.7, 0.13, s * 0.5);
+      tip.rotation.z = 0.5;
+      tube(C, X(0.86), 0.08, X(0.82), 0.5, 0.04, M.dark, s * 0.45);
+    }
+    C.box(0.06, 0.14, 0.5, M.head, L / 2 + 0.01, 0.68, 0);
+    C.decal(L * 0.4, 0.2, X(0.8), 0.62, text('❄ ❄', '#ffffff'), -0.02);
+  },
+  candy: C => {
+    profileBody(C, 'box');
+    const { X, H, L, M } = C;
+    C.decal(L * 0.72, H * 0.6, X(0.36), H * 0.62, stripes(['#f9a8d4', '#ffffff']));
+    C.decal(L * 0.6, 0.42, X(0.36), H * 0.62, band('rgba(255,255,255,0.95)', 'ZUCKERWATTE', '#db2777'), 0.004);
+    const pink = mat(0xf9a8d4, { roughness: 1 }), x0 = X(0.36), y0 = H + 1.25;
+    C.cyl(0.04, 0.04, 1.1, mat(0xf5f5f4), x0, H + 0.55, 0); // Stab
+    for (let i = 0; i < 12; i++) { // Wolke aus Zuckerwatte
+      const a = i * 2.4, rr = 0.2 + (i % 3) * 0.2;
+      C.sph(0.3 + (i % 2) * 0.1, i % 3 ? pink : mat(0xfbcfe8, { roughness: 1 }), x0 + Math.cos(a) * rr, y0 + (i % 4) * 0.12 - 0.15, Math.sin(a) * rr * 0.9);
+    }
+    for (const [x, col] of [[X(0.08), 0x38bdf8], [X(0.64), 0xfacc15]]) { // Lutscher auf dem Dach
+      C.cyl(0.025, 0.025, 0.6, M.white, x, H + 0.3, 0);
+      C.cyl(0.28, 0.28, 0.08, mat(col), x, H + 0.75, 0, [PI / 2, 0, 0], 24);
+      C.decal(0.5, 0.5, x, H + 0.75, spiral('#ffffff'), 0.045 - C.W / 2);
+    }
+  },
+  racetruck: C => {
+    profileBody(C, 'pickup');
+    const { X, H, L, W, M } = C, deck = H * 0.56;
+    C.cyl(0.5, 0.5, 0.08, M.dark, X(0.25), deck + 0.04, 0, [0, 0, 0], 24); // Sattelplatte
+    C.ext([[X(0.5), C.roofY - 0.05], [X(0.53), C.roofY + 0.6], [X(0.72), C.roofY - 0.05]], W - 0.5, C.paint, 0.06); // Windabweiser
+    for (const s of [-1, 1]) {
+      C.cyl(0.08, 0.08, 1.6, M.chrome, X(0.49), C.roofY + 0.1, s * 0.75, [0, 0, 0], 12); // Auspuffrohre
+      C.box(L * 0.38, 0.22, 0.08, M.dark, X(0.3), H * 0.3, s * (W / 2 + 0.02)); // Seitenschweller
+    }
+    C.box(0.12, 0.35, W * 0.95, M.chrome, L / 2 + 0.04, H * 0.38, 0); // Frontbügel
+    C.decal(L * 0.98, 0.16, 0, H * 0.33, band('#facc15'), 0.004);
+    C.decal(0.75, 0.75, X(0.66), H * 0.48, numberDisc('7'), 0.004);
+  },
+  dino: C => {
+    liftedTruck(C, mat(0x3f3f46, { metalness: 0.6, roughness: 0.3 }));
+    const { X, L, M } = C, y = C.bedY;
+    const skin = mat(0x3f6212, { roughness: 0.7 }), belly = mat(0xa3b86c, { roughness: 0.8 });
+    C.sph(0.75, skin, X(0.22), y + 0.8, 0, [1.25, 0.85, 0.75]); // Körper
+    C.sph(0.62, belly, X(0.26), y + 0.66, 0, [1.1, 0.7, 0.68]);
+    for (const s of [-1, 1]) C.box(0.4, 0.7, 0.22, skin, X(0.2), y + 0.3, s * 0.42); // Beine
+    C.cyl(0.3, 0.42, 1.0, skin, X(0.32), y + 1.4, 0, [0, 0, -0.6]); // Hals
+    const hx = X(0.38) + 0.35, hy = y + 2.0;
+    C.box(1.0, 0.48, 0.62, skin, hx, hy, 0); // Kopf
+    C.box(0.7, 0.14, 0.46, mat(0x7f1d1d), hx + 0.1, hy - 0.26, 0); // Maul
+    const jaw = C.box(0.85, 0.16, 0.52, skin, hx + 0.02, hy - 0.42, 0); // Unterkiefer
+    jaw.rotation.z = -0.22;
+    for (let i = 0; i < 6; i++) for (const s of [-1, 1]) {
+      const t = C.add(new THREE.Mesh(new THREE.ConeGeometry(0.045, 0.14, 4), M.white), hx - 0.2 + i * 0.13, hy - 0.27, s * 0.24);
+      t.rotation.z = PI;
+    }
+    for (const s of [-1, 1]) {
+      C.sph(0.09, mat(0xfacc15, { emissive: 0x7a5200, emissiveIntensity: 0.4 }), hx + 0.12, hy + 0.17, s * 0.29); // Augen
+      C.sph(0.045, mat(0x111111), hx + 0.17, hy + 0.18, s * 0.33);
+      const arm = C.box(0.4, 0.1, 0.1, skin, X(0.32), y + 0.95, s * 0.4); // kleine Ärmchen
+      arm.rotation.z = -0.7;
+    }
+    for (let i = 0; i < 6; i++) C.add(new THREE.Mesh(new THREE.ConeGeometry(0.11, 0.3, 4), mat(0xea580c)), X(0.06) + i * 0.3, y + 1.35 - Math.abs(i - 2.5) * 0.07, 0); // Rückenzacken
+    C.cyl(0.05, 0.42, 1.6, skin, X(0.02) - 0.45, y + 0.85, 0, [0, 0, PI / 2 - 0.15], 12); // Schwanz
+    C.decal(L * 0.4, 0.35, X(0.75), y - 0.25, text('ROAAAR!', '#facc15'), -0.045);
+  },
+  snail: C => {
+    C.W = 1.8;
+    const { X, H, M } = C;
+    const slug = mat(0x9fae7a, { roughness: 0.45 }); // glänzt ein bisschen schleimig
+    C.bodyMesh = C.ext(roundPoly([[X(-0.02), 0.3], [X(0), 0.55], [X(0.6), 0.75], [X(0.84), 1.15], [X(1), 1.08], [X(1.02), 0.6], [X(0.96), 0.3]], 0.2), 1.3, slug, 0.15);
+    // Schneckenhaus: dicker Ring mit gefüllter Mitte, Spirale auf beiden Seiten
+    const cx = X(0.38), R = Math.min(1.05, H * 0.45), cy = 0.75 + R * 0.9, t = 0.55;
+    C.add(new THREE.Mesh(new THREE.TorusGeometry(R - t, t, 16, 40), C.paint), cx, cy, 0);
+    C.cyl(R - t + 0.02, R - t + 0.02, 2 * t, C.paint, cx, cy, 0, [PI / 2, 0, 0], 32);
+    C.decal(2 * R * 0.95, 2 * R * 0.95, cx, cy, spiral('rgba(70,30,0,0.75)'), t + 0.01 - C.W / 2);
+    for (const s of [-1, 1]) { // Fühler mit Augen
+      tube(C, X(0.9), 1.0, X(0.98), 1.85, 0.045, slug, s * 0.25);
+      C.sph(0.12, M.white, X(0.98), 1.9, s * 0.25);
+      C.sph(0.06, mat(0x111111), X(0.98) + 0.08, 1.92, s * 0.27);
+      tube(C, X(0.97), 0.75, X(1.04), 0.98, 0.035, slug, s * 0.3);
+    }
+    C.decal(0.5, 0.2, X(0.97), 0.6, (g, w, h) => { g.strokeStyle = '#3f3f2a'; g.lineWidth = h * 0.18; g.beginPath(); g.arc(w / 2, 0, h * 0.8, 0.5, PI - 0.5); g.stroke(); }, -0.09); // Lächeln
+    C.wheelPair(X(0.2), C.r, 0.3); C.wheelPair(X(0.82), C.r, 0.3);
+  },
+  hyper: C => {
+    profileBody(C, 'sport', { tinted: true, noGrille: true, spokes: 10, rim: mat(0x1f1f23, { metalness: 0.8, roughness: 0.3 }) });
+    const { X, H, L, W } = C;
+    const carbon = mat(0x111214, { roughness: 0.35, metalness: 0.3 });
+    for (const s of [-1, 1]) {
+      C.box(0.12, 0.45, 0.06, carbon, X(0.06), H * 0.68, s * 0.5); // Flügelstützen
+      C.box(0.6, 0.3, 0.04, carbon, X(0.05), H * 0.92, s * (W / 2 + 0.06)); // Endplatten
+    }
+    C.box(0.6, 0.06, W + 0.1, carbon, X(0.05), H * 0.95, 0); // Heckflügel
+    C.box(0.4, 0.05, W * 0.95, carbon, L / 2 - 0.05, H * 0.13, 0); // Frontsplitter
+    for (let i = -2; i <= 2; i++) C.box(0.4, 0.2, 0.03, carbon, -L / 2 + 0.15, H * 0.24, i * 0.3); // Diffusor
+    C.decal(L * 0.28, H * 0.2, X(0.3), H * 0.36, (g, w, h) => { g.fillStyle = 'rgba(0,0,0,0.85)'; g.beginPath(); g.moveTo(0, h); g.lineTo(w, h * 0.15); g.lineTo(w, h); g.fill(); }, 0.004); // Lufteinlass
+    C.decal(L * 0.92, 0.05, 0, H * 0.27, band('#f43f5e'), 0.004);
+    C.box(0.04, 0.04, W * 0.75, new THREE.MeshStandardMaterial({ color: 0xffffff, emissive: 0xe0f2fe, emissiveIntensity: 1.5 }), L / 2 - 0.12, H * 0.4, 0); // Lichtband
+    C.box(0.6, 0.16, 0.35, carbon, C.roofX - 0.25, C.roofY + 0.04, 0); // Dachhutze
+  },
+  sleigh: C => {
+    C.W = 1.5;
+    const { X, M } = C, gold = M.gold, red = mat(0xc81e1e, { roughness: 0.6 }), white = mat(0xf8fafc, { roughness: 0.9 });
+    // Schlitten mit hoher Lehne und Goldkufen
+    C.bodyMesh = C.ext(roundPoly([[X(0.02), 0.5], [X(0), 1.75], [X(0.07), 1.9], [X(0.13), 1.65], [X(0.2), 1.1], [X(0.42), 1.0], [X(0.49), 1.3], [X(0.55), 1.22], [X(0.5), 0.5]], 0.14), 1.3, C.paint, 0.1);
+    C.decal(1.6, 0.4, X(0.3), 0.8, text('✦ ✦ ✦', '#facc15'), 0.004);
+    for (const s of [-1, 1]) {
+      const runner = new THREE.CatmullRomCurve3([[-0.02, 0.18], [0.02, 0.06], [0.44, 0.06], [0.54, 0.2], [0.53, 0.44], [0.48, 0.4]].map(([f, y]) => new THREE.Vector3(X(f), y, s * 0.6)));
+      C.add(new THREE.Mesh(new THREE.TubeGeometry(runner, 48, 0.05, 8), gold));
+      for (const f of [0.1, 0.25, 0.4]) C.box(0.06, 0.45, 0.06, gold, X(f), 0.3, s * 0.6);
+    }
+    C.box(0.7, 0.2, 1.2, mat(0x14532d, { roughness: 0.9 }), X(0.25), 1.08, 0); // Sitzkissen
+    // Samichlaus
+    const sx = X(0.27);
+    C.add(new THREE.Mesh(new THREE.CapsuleGeometry(0.32, 0.4, 4, 12), red), sx, 1.5, 0);
+    C.cyl(0.33, 0.33, 0.1, mat(0x111111), sx, 1.35, 0);
+    C.box(0.1, 0.12, 0.12, gold, sx + 0.33, 1.35, 0); // Gürtelschnalle
+    C.sph(0.22, M.skin, sx + 0.02, 2.05, 0);
+    C.sph(0.2, white, sx + 0.1, 1.9, 0, [0.8, 1.15, 1.1]); // Bart
+    C.cyl(0.24, 0.24, 0.09, white, sx + 0.02, 2.2, 0); // Mützenrand
+    C.cyl(0, 0.22, 0.48, red, sx + 0.06, 2.45, 0, [0, 0, -0.35]);
+    C.sph(0.08, white, sx + 0.14, 2.68, 0);
+    // Sack mit Geschenken
+    C.sph(0.55, mat(0x7c4a1e, { roughness: 0.95 }), X(0.08), 1.75, 0, [0.85, 1.05, 0.95]);
+    [[0x22c55e, 0.1, 0.25], [0x3b82f6, -0.1, -0.2], [0xfacc15, 0.05, 0.02]].forEach(([col, dx, z], i) => {
+      const b = C.box(0.32, 0.32, 0.32, mat(col), X(0.08) + dx, 2.3 + i * 0.06, z);
+      b.rotation.y = i * 0.5;
+      C.box(0.34, 0.06, 0.34, red, X(0.08) + dx, 2.3 + i * 0.06, z).rotation.y = i * 0.5;
+    });
+    // Rentier mit roter Nase
+    const fur = mat(0x7c4a1e, { roughness: 0.85 }), rx = X(0.8);
+    for (const s of [-1, 1]) tube(C, X(0.53), 0.55, rx - 0.4, 1.15, 0.035, mat(0x5b3a1a), s * 0.3); // Deichsel
+    tube(C, sx + 0.3, 1.55, rx + 0.6, 1.7, 0.015, M.dark, 0.12); // Zügel
+    const torso = C.add(new THREE.Mesh(new THREE.CapsuleGeometry(0.32, 0.9, 4, 12), fur), rx, 1.25, 0);
+    torso.rotation.z = PI / 2;
+    for (const dx of [-0.42, 0.42]) for (const s of [-1, 1]) C.cyl(0.07, 0.06, 1.0, fur, rx + dx, 0.5, s * 0.17, [0, 0, dx * 0.15]);
+    C.cyl(0.13, 0.17, 0.65, fur, rx + 0.6, 1.62, 0, [0, 0, -0.6]); // Hals
+    C.sph(0.2, fur, rx + 0.85, 1.92, 0, [1.4, 0.9, 0.9]); // Kopf
+    C.sph(0.1, new THREE.MeshStandardMaterial({ color: 0xff2020, emissive: 0xff0000, emissiveIntensity: 1.4 }), rx + 1.13, 1.88, 0); // rote Nase
+    C.sph(0.12, white, rx - 0.75, 1.35, 0); // Schwänzchen
+    const antler = mat(0xd6c29a, { roughness: 0.8 });
+    for (const s of [-1, 1]) {
+      C.sph(0.04, mat(0x111111), rx + 0.98, 1.98, s * 0.13);
+      tube(C, rx + 0.78, 2.05, rx + 0.62, 2.55, 0.03, antler, s * 0.14);
+      tube(C, rx + 0.69, 2.3, rx + 0.85, 2.52, 0.025, antler, s * 0.16);
+      tube(C, rx + 0.65, 2.45, rx + 0.5, 2.62, 0.025, antler, s * 0.15);
+    }
+  },
+});
+SPEC_HINT.candy = { arch: 'box' };
+SPEC_HINT.racetruck = { arch: 'pickup' };
+SPEC_HINT.hyper = { arch: 'sport' };
+
 // Bewegte Details: Rotor, Propeller, Mischtrommel, Drachenflügel, Blaulicht, Regenbogen-Lack
 export function animateCar(mesh, t, special, flying = false) {
   mesh.userData.body.traverse(o => {
