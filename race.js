@@ -98,11 +98,19 @@ function makeTrack(def) {
 
 // Höhe der Fahrbahn bei Index i und o Metern rechts der Mitte (Steilkurven heben die Aussenseite an)
 const groundY = (T, i, o) => T.h[i] + o * T.slope[i];
+// Wie weit eine Position vom Punkt i zum nächsten Punkt j liegt (0…1): damit Höhe und Neigung fliessend
+// zwischen den Punkten (alle 1,5 m) verlaufen, statt in kleinen Stufen zu springen (das zittert bei Tempo)
+function between(T, pos, i) {
+  const p = T.pts[i], t = T.tan[i];
+  const along = (pos.x - p.x) * t.x + (pos.z - p.z) * t.z;
+  return { j: (i + (along >= 0 ? 1 : -1) + T.n) % T.n, f: Math.min(1, Math.abs(along) / T.ds) };
+}
+const mix = (a, i, j, f) => a[i] + (a[j] - a[i]) * f;
 
 function trackPoint(T, s) {
   const u = (((s % T.length) + T.length) % T.length) / T.ds;
   const i = Math.floor(u) % T.n, j = (i + 1) % T.n, f = u - Math.floor(u);
-  return { i, p: T.pts[i].clone().lerp(T.pts[j], f), t: T.tan[i].clone().lerp(T.tan[j], f).normalize(), nrm: T.nor[i], y: T.h[i] + (T.h[j] - T.h[i]) * f };
+  return { i, j, f, p: T.pts[i].clone().lerp(T.pts[j], f), t: T.tan[i].clone().lerp(T.tan[j], f).normalize(), nrm: T.nor[i], y: T.h[i] + (T.h[j] - T.h[i]) * f };
 }
 
 function nearestIndex(T, pos, hint) {
@@ -1040,28 +1048,31 @@ function latOf(c) {
 
 function aiPos(c) {
   const tp = trackPoint(race.T, c.prog);
-  return { x: tp.p.x + tp.nrm.x * c.lat, z: tp.p.z + tp.nrm.z * c.lat, t: tp.t, y: tp.y + c.lat * race.T.slope[tp.i], i: tp.i };
+  return { x: tp.p.x + tp.nrm.x * c.lat, z: tp.p.z + tp.nrm.z * c.lat, t: tp.t, y: tp.y + c.lat * mix(race.T.slope, tp.i, tp.j, tp.f), i: tp.i, j: tp.j, f: tp.f };
 }
 
 // Neigung unter einem Auto: grade = Steigung in Fahrtrichtung, right = Neigung nach rechts
-function tilt(c, idx = c.idx, heading = c.heading) {
+// (j, f: fliessend zwischen Punkt i und j, siehe between)
+function tilt(c, idx = c.idx, heading = c.heading, j = idx, f = 0) {
   const T = race.T, i = idx, d = heading - Math.atan2(T.tan[i].z, T.tan[i].x);
-  const cd = Math.cos(d), sd = Math.sin(d);
-  return { grade: T.grade[i] * cd + T.slope[i] * sd, right: -T.grade[i] * sd + T.slope[i] * cd };
+  const cd = Math.cos(d), sd = Math.sin(d), gr = mix(T.grade, i, j, f), sl = mix(T.slope, i, j, f);
+  return { grade: gr * cd + sl * sd, right: -gr * sd + sl * cd };
 }
 
 function placeCars() {
   for (const c of race.cars) {
     const m = c.mesh;
-    let x, z, heading, y, idx;
+    let x, z, heading, y, idx, j, f;
     if (c.ai) {
       const p = c.wp || (c.wp = aiPos(c));
-      x = p.x; z = p.z; heading = Math.atan2(p.t.z, p.t.x); y = p.y; idx = p.i;
+      x = p.x; z = p.z; heading = Math.atan2(p.t.z, p.t.x); y = p.y; idx = p.i; j = p.j; f = p.f;
     } else {
       x = c.pos.x; z = c.pos.z; heading = c.heading; idx = c.idx;
-      y = c.y = groundY(race.T, idx, latOf(c));
+      ({ j, f } = between(race.T, c.pos, idx));
+      const T = race.T, o = latOf(c);
+      y = c.y = mix(T.h, idx, j, f) + o * mix(T.slope, idx, j, f);
     }
-    const tl = tilt(c, idx, heading);
+    const tl = tilt(c, idx, heading, j, f);
     m.position.set(x, y, z);
     m.rotation.order = 'YZX';
     m.rotation.set(-Math.atan(tl.right), -heading, Math.atan(tl.grade));
@@ -1128,10 +1139,18 @@ const mirrorSize = new THREE.Vector2();
 function renderMirror(me) {
   const r = R.renderer;
   if (!R.mirror) {
-    const rt = new THREE.WebGLRenderTarget(360, 120, { type: THREE.HalfFloatType });
-    rt.texture.repeat.x = -1; rt.texture.offset.x = 1; // links und rechts tauschen = Spiegel
+    // Gleiche Farbe und Belichtung wie der Bildschirm (sonst wechselt three.js bei jedem Bild für jedes Material
+    // zweimal das Shader-Programm – das ruckelt). Das Bild wird darum unverändert hingezeichnet.
+    const rt = new THREE.WebGLRenderTarget(360, 120);
+    rt.isXRRenderTarget = true;
+    rt.texture.colorSpace = THREE.SRGBColorSpace;
     const scene = new THREE.Scene();
-    scene.add(new THREE.Mesh(new THREE.PlaneGeometry(2, 2), new THREE.MeshBasicMaterial({ map: rt.texture })));
+    scene.add(new THREE.Mesh(new THREE.PlaneGeometry(2, 2), new THREE.ShaderMaterial({
+      uniforms: { map: { value: rt.texture } },
+      vertexShader: 'varying vec2 vUv; void main() { vUv = vec2(1.0 - uv.x, uv.y); gl_Position = vec4(position.xy, 0.0, 1.0); }', // links und rechts tauschen = Spiegel
+      fragmentShader: 'uniform sampler2D map; varying vec2 vUv; void main() { gl_FragColor = texture2D(map, vUv); }',
+      depthTest: false, depthWrite: false,
+    })));
     const cam = new THREE.PerspectiveCamera(50, 3, 0.5, 6000); // nur Ebene 0: ohne ferne Bäume und Wolken
     R.mirror = { rt, scene, cam, flat: new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1), frame: 0 };
   }
