@@ -5,7 +5,9 @@ Browser-Spiel ohne Build: `index.html` + `game.js` (Spiellogik, Menüs und 2D-Ze
 - `press3d.js`: zeichnet die Presse als 3D-Fabrikhalle. Die Logik bleibt in `game.js` (2D-Koordinaten);
   `press3d.project()` rechnet Positionen für Texte, Symbole und Antippen um. Ohne three.js (offline) zeichnet
   `game.js` die Presse wie früher in 2D.
-- `race.js`: 3D-Rennstrecke, erst beim ersten Rennen geladen.
+- `race.js`: 3D-Rennstrecke, erst beim ersten Rennen geladen. Höhe, Steilkurven, Brücken, Tunnel; je Strecke eine eigene Szene.
+- `tracks.js`: die Rennstrecken (Kontrollpunkte `[x, z, Höhe]`, Runden, Neigung) und ihre Landschaften (Vulkan, Gletscher, Wüste, Dschungel).
+  Neue Strecke: hier eintragen und in `RACE_TRACKS` in `game.js` (Menü).
 - `drag.js`: 3D-Dragster-Bahn (1 gegen 1, Startampel, selber schalten); Gewinner bekommt das Auto des Verlierers.
 - `cars3d.js`: 3D-Fahrzeuge für alle Modi; jedes Fahrzeug hat in `BUILD` eine eigene Bauanleitung. Neuere Fahrzeuge
   haben in `KINDS` ein `look` (wird in 2D wie dieses Fahrzeug gezeichnet) und ein `badge` (Bildchen auf der Seite).

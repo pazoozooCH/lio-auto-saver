@@ -3,7 +3,8 @@
 Ein Browser-Spiel: Autos fahren durch eine Fabrik mit hydraulischen Pressen. Tippe ein Auto an, damit es anhält,
 und nochmals, damit es weiterfährt – so kommen alle heil zum Ausgang.
 
-- 3D-Rennstrecke im F1-Stil: lenken, Gas, Bremse – vier Cups mit Pokalen, mehr PS = schneller
+- 3D-Rennstrecken im F1-Stil: lenken, Gas, Bremse – vier Cups mit Pokalen, mehr PS = schneller;
+  fünf Strecken (Alpen, Vulkan, Gletscher mit Tunnel, Wüsten-Canyon mit Brücken-Kreuzung, Dschungel) mit Steilkurven, Hügeln und Brücken
 - 3D-Stadt zum freien Herumfahren: Häuser, Parks, Brunnen, Ampeln und viel Verkehr, der abbiegt, an Rot hält und hupt,
   Driften mit Handbremse (Rauch, Bremsspuren, Drift-Punkte) und Polizei, die bei Rot verfolgt und Strafzettel verteilt
 - 3D-Dragster-Bahn: 402 m geradeaus, Startampel und selber schalten – der Gewinner bekommt das Auto des Verlierers
@@ -18,7 +19,7 @@ und nochmals, damit es weiterfährt – so kommen alle heil zum Ausgang.
 **Online spielen:** https://pazoozooch.github.io/lio-auto-saver/
 
 Läuft ohne Build: `index.html` + `game.js`, dazu `press3d.js`, `race.js`, `drag.js`, `cars3d.js` und `world3d.js` für die 3D-Grafik
-sowie `city.js` für die Stadt, `online.js` für das Online-Spiel und `sound.js` für die Geräusche
+sowie `tracks.js` für die Rennstrecken, `city.js` für die Stadt, `online.js` für das Online-Spiel und `sound.js` für die Geräusche
 (three.js wird aus dem Internet geladen; ohne Internet läuft die Presse in 2D). Der Spielstand liegt im `localStorage` des Browsers.
 
 ## Starten

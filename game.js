@@ -2719,7 +2719,7 @@ function drawQuit() {
 // auf dem Startbildschirm ein Update-Knopf; kommt man auf dem Startbildschirm in die App zurück, wird gleich aktualisiert.
 // APP_FILES: alle Dateien des Spiels (beim Hinzufügen einer Datei hier ergänzen).
 const APP_FILES = ['./', 'index.html', 'game.js', 'version.js', 'press3d.js', 'race.js', 'drag.js', 'cars3d.js', 'world3d.js',
-  'online.js', 'sound.js', 'city.js', 'manifest.webmanifest', 'icon-192.png', 'icon-512.png', 'apple-touch-icon.png', 'favicon.png'];
+  'online.js', 'sound.js', 'city.js', 'tracks.js', 'manifest.webmanifest', 'icon-192.png', 'icon-512.png', 'apple-touch-icon.png', 'favicon.png'];
 const UPDATE_BTN = { x: W - 262, y: 14, w: 248, h: 46 };
 const appUpdate = { info: null, busy: false, last: 0 };
 
@@ -3294,10 +3294,20 @@ const RACER_NAMES = ['Blitz-Bert', 'Turbo-Tina', 'Speedy Sam', 'Rakete Rosi', 'D
   'Kurven-Karla', 'Vollgas-Vreni', 'Brumm-Beni', 'Düsen-Dora'];
 let trophies = loadJSON('autoRetterTrophies', {});   // { cupId: { gold, silver, bronze } }
 let raceCup = 0, raceVehicleId = loadJSON('autoRetterRaceCar', null), raceResult = null;
+// Rennstrecken (die Formen und Landschaften stehen in tracks.js)
+const RACE_TRACKS = [
+  { id: 'gp', name: 'Alpen-Grand-Prix', emoji: '🏔️', km: 1.8, laps: 3 },
+  { id: 'lava', name: 'Vulkan-Ring', emoji: '🌋', km: 3.9, laps: 2 },
+  { id: 'snow', name: 'Gletscher-Pass', emoji: '❄️', km: 4.4, laps: 2 },
+  { id: 'desert', name: 'Wüsten-Canyon', emoji: '🏜️', km: 6.0, laps: 2 },
+  { id: 'jungle', name: 'Dschungel-Schlucht', emoji: '🌴', km: 4.4, laps: 2 },
+];
+let raceTrack = Math.max(0, RACE_TRACKS.findIndex(t => t.id === loadJSON('autoRetterRaceTrack', 'gp')));
+const TRACK_PREV_BTN = { x: 30, y: 384, w: 56, h: 44 }, TRACK_NEXT_BTN = { x: 224, y: 384, w: 56, h: 44 };
 
 const CUP_CARDS = CUPS.map((cup, i) => ({ cup, i, x: 42 + i * 222, y: 76, w: 210, h: 166 }));
-const RACE_PREV_BTN = { x: 196, y: 300, w: 64, h: 80 };
-const RACE_NEXT_BTN = { x: 700, y: 300, w: 64, h: 80 };
+const RACE_PREV_BTN = { x: 318, y: 300, w: 64, h: 80 };
+const RACE_NEXT_BTN = { x: 872, y: 300, w: 64, h: 80 };
 const RACE_GO_BTN = { x: W / 2 - 160, y: 470, w: 320, h: 54 };
 const RESULT_AGAIN_BTN = { x: W / 2 - 250, y: 462, w: 240, h: 56 };
 const RESULT_MENU_BTN = { x: W / 2 + 10, y: 462, w: 240, h: 56 };
@@ -3340,21 +3350,37 @@ function drawRaceMenu() {
     ctx.globalAlpha = 1;
   }
 
-  // Gewählter Rennwagen
-  const v = raceVehicle(), k = KINDS[v.kind];
+  // Gewählte Strecke
+  const tr = RACE_TRACKS[raceTrack];
   ctx.fillStyle = 'rgba(255, 255, 255, 0.06)';
-  rr(180, 256, 600, 180, 14); ctx.fill();
+  rr(20, 256, 270, 180, 14); ctx.fill();
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.fillStyle = '#fff'; ctx.font = 'bold 16px system-ui, sans-serif';
+  ctx.fillText('Strecke ' + (raceTrack + 1) + '/' + RACE_TRACKS.length, 155, 276);
+  ctx.font = '48px system-ui, sans-serif';
+  ctx.fillText(tr.emoji, 155, 318);
+  ctx.font = 'bold 19px system-ui, sans-serif';
+  ctx.fillText(tr.name, 155, 356);
+  ctx.fillStyle = 'rgba(255,255,255,0.75)'; ctx.font = '15px system-ui, sans-serif';
+  ctx.fillText(tr.km.toFixed(1) + ' km · ' + tr.laps + ' Runden', 155, 406);
+  drawButton(TRACK_PREV_BTN, '◀', '#444b5c', 24);
+  drawButton(TRACK_NEXT_BTN, '▶', '#444b5c', 24);
+
+  // Gewählter Rennwagen
+  const v = raceVehicle(), k = KINDS[v.kind], vx = 627;
+  ctx.fillStyle = 'rgba(255, 255, 255, 0.06)';
+  rr(306, 256, 642, 180, 14); ctx.fill();
   ctx.fillStyle = '#fff';
   ctx.font = 'bold 20px system-ui, sans-serif';
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
-  ctx.fillText('Dein Rennwagen: ' + k.name + (v.special ? '  ' + specialLabel(v) : ''), W / 2, 278);
-  drawVehiclePreview(v, W / 2, 392, 260, 1.15);
+  ctx.fillText('Dein Rennwagen: ' + k.name + (v.special ? '  ' + specialLabel(v) : ''), vx, 278);
+  drawVehiclePreview(v, vx, 392, 260, 1.15);
   ctx.fillStyle = '#7dd3fc';
   ctx.font = 'bold 18px system-ui, sans-serif';
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
-  ctx.fillText('⚡ ' + v.ps + ' PS   ·   bis ' + Math.round(raceTopSpeed(v.ps) * 3.6) + ' km/h', W / 2, 418);
+  ctx.fillText('⚡ ' + v.ps + ' PS   ·   bis ' + Math.round(raceTopSpeed(v.ps) * 3.6) + ' km/h', vx, 418);
   if (fleet.length > 1) {
     drawButton(RACE_PREV_BTN, '◀', '#444b5c', 30);
     drawButton(RACE_NEXT_BTN, '▶', '#444b5c', 30);
@@ -3376,6 +3402,13 @@ function raceMenuTap(px, py) {
       showMenuMsg('Gewinne zuerst den ' + CUPS[card.i - 1].name + ', dann ist dieser Cup frei!');
       beep(200, 0.15, 'square', 0.05);
     }
+    return;
+  }
+  const tstep = inRect(px, py, TRACK_PREV_BTN) ? -1 : inRect(px, py, TRACK_NEXT_BTN) ? 1 : 0;
+  if (tstep) {
+    raceTrack = (raceTrack + tstep + RACE_TRACKS.length) % RACE_TRACKS.length;
+    storeJSON('autoRetterRaceTrack', RACE_TRACKS[raceTrack].id);
+    beep(620, 0.06, 'triangle', 0.05);
     return;
   }
   const list = fleetByPS();
@@ -3434,7 +3467,7 @@ function startRaceMode() {
   import('./race.js')
     .then(m => {
       state = 'race';
-      m.startRace({ player: { ...v, name: 'Du' }, opponents, kinds: KINDS, topSpeed: raceTopSpeed, onFinish: finishRace });
+      m.startRace({ player: { ...v, name: 'Du' }, opponents, kinds: KINDS, topSpeed: raceTopSpeed, onFinish: finishRace, track: RACE_TRACKS[raceTrack].id });
     })
     .catch(err => {
       console.error(err);
