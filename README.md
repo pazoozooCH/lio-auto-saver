@@ -4,7 +4,8 @@ Ein Browser-Spiel: Autos fahren durch eine Fabrik mit hydraulischen Pressen. Tip
 und nochmals, damit es weiterfährt – so kommen alle heil zum Ausgang.
 
 - 3D-Rennstrecke im F1-Stil: lenken, Gas, Bremse – vier Cups mit Pokalen, mehr PS = schneller
-- 3D-Stadt zum freien Herumfahren: Häuser, Parks, Brunnen, Ampeln und viel Verkehr, der abbiegt, an Rot hält und hupt
+- 3D-Stadt zum freien Herumfahren: Häuser, Parks, Brunnen, Ampeln und viel Verkehr, der abbiegt, an Rot hält und hupt,
+  Driften mit Handbremse (Rauch, Bremsspuren, Drift-Punkte) und Polizei, die bei Rot verfolgt und Strafzettel verteilt
 - 3D-Dragster-Bahn: 402 m geradeaus, Startampel und selber schalten – der Gewinner bekommt das Auto des Verlierers
 - Presse in einer 3D-Fabrikhalle: Autos retten bringt Münzen und +1 PS, zerquetscht kostet −3 PS
 - Fahrzeugpark mit 60 Fahrzeugen in fünf Seltenheitsstufen, viele mit Spezialkräften

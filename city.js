@@ -458,7 +458,7 @@ const GRIP = 12, BRAKE = 20;
 function stepMe(dt) {
   const stopped = city.pulled > 0 || city.ticket || (city.police && city.police.state === 'stop');
   const me = city.me, input = stopped ? { brake: true } : city.input; // von der Polizei angehalten: nur bremsen
-  const gas = input.gas, brake = input.brake;
+  const gas = input.gas, brake = input.brake, hand = !!input.drift && !stopped; // Handbremse zum Driften
   const steerTarget = (input.left ? -1 : 0) + (input.right ? 1 : 0);
   me.steer += (steerTarget - me.steer) * Math.min(1, dt * 7);
   me.surface = surfaceAt(me.pos.x, me.pos.z);
@@ -469,13 +469,31 @@ function stepMe(dt) {
   } else if (!brake) me.speed -= Math.sign(me.speed) * Math.min(Math.abs(me.speed), 2.5 * dt);
   if (brake) me.speed = me.speed > 0 ? Math.max(0, me.speed - BRAKE * dt) : Math.max(-8, me.speed - 6 * dt);
   if (me.speed > maxV) me.speed = Math.max(maxV, me.speed - 12 * dt);
-  const yawMax = Math.min(1.6, GRIP / Math.max(Math.abs(me.speed), 0.1));
-  if (Math.abs(me.speed) > 0.3) me.heading += me.steer * yawMax * dt * Math.sign(me.speed);
-  me.pos.x += Math.cos(me.heading) * me.speed * dt;
-  me.pos.z += Math.sin(me.heading) * me.speed * dt;
+  if (hand) me.speed -= Math.sign(me.speed) * Math.min(Math.abs(me.speed), 3.5 * dt); // blockierte Hinterräder bremsen etwas
+  // Drehen: mit Handbremse oder im Drift dreht das Auto viel stärker (das Heck bricht aus)
+  // Drift-Modus: beginnt mit der Handbremse (oder starkem Rutschen) und hält, solange das Auto quer rutscht
+  if ((hand && Math.abs(me.speed) > 8) || Math.abs(me.vl) > 3.5) me.driftMode = true;
+  else if (Math.abs(me.vl) < 1.2 || Math.abs(me.speed) < 5) me.driftMode = false;
+  const sliding = me.driftMode;
+  const total = Math.hypot(me.speed, me.vl); // Tempo in alle Richtungen (auch seitwärts)
+  const yawMax = hand || sliding ? Math.min(1.9, 30 / Math.max(total, 0.1)) : Math.min(1.6, GRIP / Math.max(Math.abs(me.speed), 0.1));
+  const turn = Math.abs(me.speed) > 0.3 ? me.steer * yawMax * dt * Math.sign(me.speed) : 0;
+  me.heading += turn;
+  // Die Bewegung bleibt in der alten Richtung (Trägheit): vorwärts (speed) und seitwärts (vl) neu aufteilen
+  const c = Math.cos(turn), s = Math.sin(turn), vf = me.speed * c + me.vl * s;
+  me.vl = -me.speed * s + me.vl * c;
+  me.speed = vf;
+  // Reifen greifen: seitliches Rutschen wird abgebaut – normal schnell, im Drift mit Gas langsam, mit Handbremse kaum
+  const grip = hand ? 0.8 : sliding ? (gas ? 1.3 : 2.4) : me.surface === 'grass' ? 4 : 9;
+  me.vl *= Math.exp(-grip * dt);
+  const fx = Math.cos(me.heading), fz = Math.sin(me.heading);
+  me.pos.x += (fx * me.speed - fz * me.vl) * dt;
+  me.pos.z += (fz * me.speed + fx * me.vl) * dt;
+  me.drifting = Math.abs(me.vl) > 2.5 && Math.abs(me.speed) > 5;
   const latA = Math.abs(me.steer) * yawMax * Math.abs(me.speed);
   me.slip = 0.7 * Math.min(1, Math.max(0, (latA - 10.8) / 1.2)) * Math.min(1, Math.max(0, (Math.abs(me.speed) - 16) / 8));
   if (brake && me.speed > 6) me.slip = Math.max(me.slip, 0.45 + 0.55 * Math.min(1, me.speed / 40));
+  if (me.drifting) me.slip = Math.max(me.slip, Math.min(1, Math.abs(me.vl) / 7));
 
   // Häuser, Bäume und der Brunnen sind fest
   const R = me.radius;
@@ -500,12 +518,14 @@ function stepMe(dt) {
       me.pos.x += dx / dd * (min - dd); me.pos.z += dz / dd * (min - dd);
       const rel = Math.abs(me.speed - c.speed);
       if (rel > 2 && city.crashT <= 0) { crash(0.15 + rel / 18, 'car'); city.crashT = 0.5; c.blocked = 2; c.honkT = 0.4; c.waitMe = 2; }
-      me.speed *= 0.6;
+      me.speed *= 0.6; me.vl *= 0.5;
     }
   }
   if (hit > 3) {
     if (city.crashT <= 0) { crash(hit / 25, 'car'); city.crashT = 0.5; }
     me.speed *= -0.15; // abprallen
+    me.vl *= 0.2;
+    if (city.drift > 0) bankDrift(true);
   }
   city.crashT -= dt;
   // Am Stadtrand ist Schluss
@@ -530,6 +550,116 @@ function stepMe(dt) {
     if (w.position.x > 0) w.rotation.y = -me.steer * 0.4;
   }
   animateCar(m, city.t, me.v.special);
+}
+
+// ---------- Reifenrauch und Bremsspuren ----------
+function makeEffects(scene) {
+  // Rauch: Punkte mit eigener Grösse und Durchsichtigkeit (kleiner eigener Shader)
+  const MAXP = 180, pos = new Float32Array(MAXP * 3), alpha = new Float32Array(MAXP), size = new Float32Array(MAXP);
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+  geo.setAttribute('alpha', new THREE.BufferAttribute(alpha, 1));
+  geo.setAttribute('psize', new THREE.BufferAttribute(size, 1));
+  const dot = document.createElement('canvas');
+  dot.width = dot.height = 64;
+  const dg = dot.getContext('2d'), rg = dg.createRadialGradient(32, 32, 0, 32, 32, 32);
+  rg.addColorStop(0, 'rgba(255,255,255,1)'); rg.addColorStop(0.6, 'rgba(255,255,255,0.5)'); rg.addColorStop(1, 'rgba(255,255,255,0)');
+  dg.fillStyle = rg; dg.fillRect(0, 0, 64, 64);
+  const smokeMat = new THREE.ShaderMaterial({
+    transparent: true, depthWrite: false,
+    uniforms: { map: { value: new THREE.CanvasTexture(dot) }, scale: { value: 600 } },
+    vertexShader: `attribute float alpha; attribute float psize; uniform float scale; varying float vA;
+      void main() { vA = alpha; vec4 mv = modelViewMatrix * vec4(position, 1.0); gl_PointSize = psize * scale / -mv.z; gl_Position = projectionMatrix * mv; }`,
+    fragmentShader: `uniform sampler2D map; varying float vA;
+      void main() { float a = texture2D(map, gl_PointCoord).a * vA; if (a < 0.01) discard; gl_FragColor = vec4(0.86, 0.86, 0.88, a); }`,
+  });
+  const smoke = new THREE.Points(geo, smokeMat);
+  smoke.frustumCulled = false;
+  scene.add(smoke);
+  const parts = Array.from({ length: MAXP }, () => ({ life: 1, max: 1, x: 0, y: -50, z: 0, vx: 0, vz: 0 }));
+  let next = 0;
+  // Bremsspuren: Ringspeicher aus dunklen Streifen auf dem Boden (älteste werden überschrieben)
+  const MAXS = 1200, sp = new Float32Array(MAXS * 12), sIdx = [];
+  for (let k = 0; k < MAXS; k++) { const b = k * 4; sIdx.push(b, b + 2, b + 1, b, b + 3, b + 2); }
+  const sGeo = new THREE.BufferGeometry();
+  sGeo.setAttribute('position', new THREE.BufferAttribute(sp, 3));
+  sGeo.setIndex(sIdx);
+  const marks = new THREE.Mesh(sGeo, new THREE.MeshBasicMaterial({ color: 0x141414, transparent: true, opacity: 0.55, depthWrite: false,
+    side: THREE.DoubleSide, polygonOffset: true, polygonOffsetFactor: -4, polygonOffsetUnits: -4 }));
+  marks.frustumCulled = false;
+  scene.add(marks);
+  let sNext = 0;
+  const last = [null, null];
+  return {
+    puff(x, y, z, vx, vz) {
+      const p = parts[next]; next = (next + 1) % MAXP;
+      Object.assign(p, { life: 0, max: 1 + Math.random() * 0.8, x, y, z, vx: vx * 0.3 + (Math.random() - 0.5), vz: vz * 0.3 + (Math.random() - 0.5) });
+    },
+    // k: 0 = linkes, 1 = rechtes Hinterrad; on = Reifen rutschen gerade
+    mark(k, x, y, z, on) {
+      const L = last[k];
+      if (!on) { last[k] = null; return; }
+      if (L && Math.hypot(x - L[0], z - L[2]) < 0.35) return;
+      if (L && Math.hypot(x - L[0], z - L[2]) < 3) {
+        const dx = x - L[0], dz = z - L[2], d = Math.hypot(dx, dz), nx = -dz / d * 0.16, nz = dx / d * 0.16, o = sNext * 12;
+        sp.set([L[0] - nx, L[1], L[2] - nz, L[0] + nx, L[1], L[2] + nz, x + nx, y, z + nz, x - nx, y, z - nz], o);
+        sNext = (sNext + 1) % MAXS;
+        sGeo.attributes.position.needsUpdate = true;
+      }
+      last[k] = [x, y, z];
+    },
+    update(dt, camera, renderer) {
+      for (let i = 0; i < MAXP; i++) {
+        const p = parts[i];
+        p.life += dt;
+        const t = Math.min(1, p.life / p.max);
+        p.x += p.vx * dt; p.z += p.vz * dt; p.y += 0.7 * dt;
+        p.vx *= 0.97; p.vz *= 0.97;
+        pos[i * 3] = p.x; pos[i * 3 + 1] = p.y; pos[i * 3 + 2] = p.z;
+        alpha[i] = t >= 1 ? 0 : 0.55 * (1 - t);
+        size[i] = 1.2 + t * 3.5;
+      }
+      geo.attributes.position.needsUpdate = geo.attributes.alpha.needsUpdate = geo.attributes.psize.needsUpdate = true;
+      smokeMat.uniforms.scale.value = renderer.domElement.height / (2 * Math.tan(camera.fov * Math.PI / 360));
+    },
+    clear() { sp.fill(0); sGeo.attributes.position.needsUpdate = true; for (const p of parts) p.life = p.max; last[0] = last[1] = null; },
+  };
+}
+
+// Rauch, Spuren und Drift-Punkte nach jedem Schritt
+function stepDrift(dt) {
+  const me = city.me, fx = Math.cos(me.heading), fz = Math.sin(me.heading);
+  const skid = me.drifting || (city.input.brake && me.speed > 10) || (city.input.drift && Math.abs(me.speed) > 6);
+  const onRoad = surfaceAt(me.pos.x, me.pos.z) === 'asphalt';
+  const ni = node(Math.round(me.pos.x / BLOCK + N / 2)), nj = node(Math.round(me.pos.z / BLOCK + N / 2));
+  const inCity = Math.abs(me.pos.x) < HALF + ROAD / 2 && Math.abs(me.pos.z) < HALF + ROAD / 2;
+  const y = !inCity ? 0.01 : Math.abs(me.pos.x - ni) < ROAD / 2 || Math.abs(me.pos.z - nj) < ROAD / 2 ? 0.035 : 0.175;
+  const back = me.len * 0.32, side = 0.8;
+  for (const k of [0, 1]) {
+    const sx = k ? 1 : -1, wx = me.pos.x - fx * back - fz * side * sx, wz = me.pos.z - fz * back + fx * side * sx;
+    S.fx.mark(k, wx, y, wz, skid && onRoad);
+    if (me.drifting && Math.random() < dt * 22) S.fx.puff(wx, y + 0.3, wz, fx * me.speed - fz * me.vl, fz * me.speed + fx * me.vl);
+  }
+  // Drift-Punkte: je schneller und je quer, desto mehr
+  if (me.drifting) {
+    city.drift += Math.abs(me.vl) * Math.abs(me.speed) * dt * 0.8;
+    city.driftT = 0.7;
+    S.ui.drift.hidden = false;
+    S.ui.drift.textContent = '🔥 DRIFT ' + Math.round(city.drift);
+  } else if (city.drift > 0 && (city.driftT -= dt) <= 0) bankDrift();
+}
+
+function bankDrift(crashed = false) {
+  const pts = Math.round(city.drift);
+  city.drift = 0;
+  S.ui.drift.hidden = true;
+  if (crashed) { if (pts > 100) showMsg('💥 Drift kaputt!', 1.4); return; }
+  if (pts < 60) return;
+  const coins = Math.min(5, Math.floor(pts / 1500));
+  if (coins) city.earn(coins);
+  let rec = '';
+  if (pts > city.driftBest) { city.driftBest = pts; rec = '  🏆 Rekord!'; try { localStorage.setItem('autoRetterDriftBest', String(pts)); } catch (e) { /* egal */ } }
+  showMsg('🔥 ' + pts + ' Drift-Punkte' + (coins ? '  +' + coins + ' 🪙' : '') + rec, 2.2);
 }
 
 // ---------- Polizei ----------
@@ -723,6 +853,10 @@ const CSS = `
 #city .ctl.gas { border-color: #4ade80; } #city .ctl.brake { border-color: #f87171; font-size: 18px; }
 #city .horn { position: absolute; top: 10px; left: 12px; width: 58px; height: 58px; border-radius: 50%; border: 3px solid rgba(255,255,255,.65);
   background: rgba(0,0,0,.4); font-size: 28px; }
+#city .drift { position: absolute; top: 14%; left: 50%; transform: translateX(-50%); background: linear-gradient(90deg, #f97316, #dc2626);
+  border-radius: 14px; padding: 6px 18px; font-weight: 900; font-size: 28px; box-shadow: 0 4px 16px rgba(0,0,0,.4); }
+#city .drift[hidden] { display: none; }
+#city .ctl.hand { width: 84px; height: 84px; font-size: 16px; border-color: #fb923c; }
 #city .chase { position: absolute; top: 76px; left: 12px; background: #b91c1c; border-radius: 12px; padding: 6px 12px;
   font-weight: 900; font-size: 18px; animation: cityblink 0.6s infinite alternate; }
 @keyframes cityblink { from { background: #b91c1c; } to { background: #1d4ed8; } }
@@ -750,6 +884,7 @@ function buildDom() {
     <button class="horn" title="Hupen (H)">📯</button>
     <div class="msg"></div>
     <div class="chase" hidden>🚨 Polizei!</div>
+    <div class="drift" hidden></div>
     <div class="ticket" hidden><div class="card">
       <h2>🚔 STRAFZETTEL</h2>
       <p>Grund: <b>Über Rot gefahren 🚦</b></p>
@@ -757,15 +892,16 @@ function buildDom() {
       <p class="note"></p><p class="count"></p>
       <button class="pay">Okay 👍</button></div></div>
     <div class="speed"><span class="kmh">0</span> km/h<small class="ps"></small></div>
-    <div class="hint">⬅️ ➡️ lenken · ⬆️ Gas · ⬇️ Bremse/rückwärts · H hupen</div>
+    <div class="hint">⬅️ ➡️ lenken · ⬆️ Gas · ⬇️ Bremse/rückwärts · Leertaste driften · H hupen</div>
     <button class="ctl" data-k="left" style="left:16px">◀</button>
     <button class="ctl" data-k="right" style="left:124px">▶</button>
     <button class="ctl brake" data-k="brake" style="right:124px">BREMSE</button>
-    <button class="ctl gas" data-k="gas" style="right:16px">GAS</button>`;
+    <button class="ctl gas" data-k="gas" style="right:16px">GAS</button>
+    <button class="ctl hand" data-k="drift" style="right:70px; bottom:120px">DRIFT</button>`;
   document.body.appendChild(root);
   const $ = s => root.querySelector(s);
   const ui = { root, kmh: $('.kmh'), ps: $('.ps'), msg: $('.msg'), hint: $('.hint'), minimap: $('.minimap'), ctls: [...root.querySelectorAll('.ctl')],
-    chase: $('.chase'), ticket: $('.ticket') };
+    chase: $('.chase'), ticket: $('.ticket'), drift: $('.drift') };
   $('.pay').addEventListener('pointerdown', e => { e.preventDefault(); closeTicket(); });
   const touch = matchMedia('(pointer: coarse)').matches || 'ontouchstart' in window;
   for (const b of ui.ctls) {
@@ -791,7 +927,8 @@ function honk() {
   }
 }
 
-const KEYS = { ArrowLeft: 'left', KeyA: 'left', ArrowRight: 'right', KeyD: 'right', ArrowUp: 'gas', KeyW: 'gas', ArrowDown: 'brake', KeyS: 'brake', Space: 'brake' };
+const KEYS = { ArrowLeft: 'left', KeyA: 'left', ArrowRight: 'right', KeyD: 'right', ArrowUp: 'gas', KeyW: 'gas', ArrowDown: 'brake', KeyS: 'brake',
+  Space: 'drift', ShiftLeft: 'drift', ShiftRight: 'drift' };
 function onKey(e) {
   if (!city) return;
   if (e.code === 'KeyH' && e.type === 'keydown') { honk(); e.preventDefault(); return; }
@@ -859,21 +996,24 @@ function drawMinimap() {
 }
 
 // ---------- Start, Schleife, Ende ----------
-export function startCity({ player, kinds, topSpeed, onExit, pay = () => 0 }) {
+export function startCity({ player, kinds, topSpeed, onExit, pay = () => 0, earn = () => {} }) {
   if (!S) {
     S = buildWorld();
     S.ui = buildDom();
     S.ui.root.prepend(S.renderer.domElement);
     S.mapBase = drawMinimapBase();
+    S.fx = makeEffects(S.scene);
     window.addEventListener('resize', () => S && !S.ui.root.hidden && layout());
   }
   const mesh = buildCar(player, kinds);
   // Start: auf der rechten Spur einer Strasse am Stadtrand, Richtung Zentrum
-  const me = { v: player, mesh, pos: new THREE.Vector3(node(1) + 20, 0, node(0) + LANE), heading: 0, speed: 0, steer: 0,
+  const me = { v: player, mesh, pos: new THREE.Vector3(node(1) + 20, 0, node(0) + LANE), heading: 0, speed: 0, vl: 0, steer: 0,
     maxV: Math.min(55, topSpeed(player.ps)), acc: 4 + player.ps * 0.06, radius: Math.max(1.3, mesh.userData.radius * 0.8),
     len: mesh.userData.length, slip: 0, surface: 'asphalt' };
   city = { me, cars: spawnTraffic(kinds), input: {}, t: Math.random() * CYCLE, msgT: 0, crashT: 0, hornT: 0, inCross: false,
-    gears: gearbox(player.kind), onExit, last: performance.now(), kinds, pay, fines: 0, police: null, pulled: 0, ticket: false };
+    gears: gearbox(player.kind), onExit, last: performance.now(), kinds, pay, fines: 0, police: null, pulled: 0, ticket: false,
+    earn, drift: 0, driftT: 0, driftBest: (() => { try { return +localStorage.getItem('autoRetterDriftBest') || 0; } catch (e) { return 0; } })() };
+  S.fx.clear();
   S.scene.add(mesh);
   for (const c of city.cars) S.scene.add(c.mesh);
   warmUp(S.renderer, S.scene, S.camera);
@@ -903,6 +1043,7 @@ function loop(now) {
   stepLights();
   if (city.pulled > 0) city.pulled -= dt;
   stepMe(dt);
+  stepDrift(dt);
   stepPolice(dt);
   stepTraffic(dt);
   updateHud(dt);
@@ -935,6 +1076,7 @@ function render(dt) {
   S.sun.position.set(me.pos.x + 70, 110, me.pos.z - 40);
   S.sun.target.position.set(me.pos.x, 0, me.pos.z);
   S.clouds.position.set(cam.position.x, 0, cam.position.z);
+  S.fx.update(dt, cam, S.renderer);
   S.renderer.render(S.scene, cam);
 }
 

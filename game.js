@@ -3398,7 +3398,8 @@ function startCityMode() {
     .then(m => {
       state = 'city';
       m.startCity({ player: { ...v, name: 'Du' }, kinds: KINDS, topSpeed: raceTopSpeed, onExit: () => openMenu('title'),
-        pay: n => { const paid = Math.min(wallet, n); wallet -= paid; storeJSON('autoRetterCoins', wallet); return paid; } });
+        pay: n => { const paid = Math.min(wallet, n); wallet -= paid; storeJSON('autoRetterCoins', wallet); return paid; },
+        earn: n => { wallet += n; storeJSON('autoRetterCoins', wallet); } });
     })
     .catch(err => {
       console.error(err);
