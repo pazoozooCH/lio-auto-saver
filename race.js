@@ -913,12 +913,25 @@ function step(dt) {
   const nrm = T.nor[me.idx], p = T.pts[me.idx];
   const lat2 = (me.pos.x - p.x) * nrm.x + (me.pos.z - p.z) * nrm.z;
   const limit = lat2 > 0 ? T.wallOff[1][me.idx] - 1.2 : -(T.wallOff[0][me.idx] - 1.2);
+  // Nur beim Aufprall bremsen (je frontaler, desto mehr), danach an der Wand entlang drehen:
+  // sonst bleibt das Auto mit Gas an der Wand kleben und kann nicht mehr weglenken
   if (Math.abs(lat2) > Math.abs(limit)) {
     me.pos.x -= nrm.x * (lat2 - limit);
     me.pos.z -= nrm.z * (lat2 - limit);
-    if (Math.abs(me.speed) > 8 && race.crashT <= 0) { crash(Math.abs(me.speed) / 35, 'tyres'); race.crashT = 0.4; }
-    me.speed *= 0.55;
-  }
+    const move = Math.sign(me.speed || 1); // rückwärts fährt man in die andere Richtung
+    const into = (Math.cos(me.heading) * nrm.x + Math.sin(me.heading) * nrm.z) * Math.sign(lat2) * move;
+    if (into > 0) {
+      if (!me.atWall) {
+        if (Math.abs(me.speed) > 8 && race.crashT <= 0) { crash(Math.abs(me.speed) / 35 * (0.4 + into), 'tyres'); race.crashT = 0.4; }
+        me.speed *= 1 - 0.7 * into;
+      }
+      let along = Math.atan2(T.tan[me.idx].z, T.tan[me.idx].x);
+      if (Math.cos(me.heading - along) < 0) along += Math.PI;
+      me.heading += Math.atan2(Math.sin(along - me.heading), Math.cos(along - me.heading)) * Math.min(1, dt * 5);
+      me.speed -= move * Math.min(Math.abs(me.speed), 4 * dt); // Schleifen an der Wand
+    }
+    me.atWall = true;
+  } else me.atWall = false;
 
   // Falsche Richtung?
   const fwdDot = Math.cos(me.heading) * T.tan[me.idx].x + Math.sin(me.heading) * T.tan[me.idx].z;
@@ -1113,6 +1126,7 @@ function snapCamera() {
   camPos.set(me.pos.x - Math.cos(me.heading) * 9, my + 3.4, me.pos.z - Math.sin(me.heading) * 9);
   camLook.set(me.pos.x, my + 1.2, me.pos.z);
   R.camera.position.copy(camPos);
+  R.camera.fov = 62;
 }
 
 function render(dt) {
@@ -1124,7 +1138,9 @@ function render(dt) {
   R.camera.position.lerp(want, 1 - Math.exp(-dt * 6));
   camLook.lerp(camAhead.set(me.pos.x + fx * 6, my + 1.2, me.pos.z + fz * 6), 1 - Math.exp(-dt * 10));
   R.camera.lookAt(camLook);
-  R.camera.fov = 62 + Math.min(18, Math.abs(me.speed) * 0.16);
+  // Weiterer Blickwinkel bei Tempo, aber weich nachgeführt: bei einem plötzlichen Stopp (Wand, Unfall)
+  // springt das Bild sonst so, als würde man heranzoomen
+  R.camera.fov += (62 + Math.min(14, Math.abs(me.speed) * 0.12) - R.camera.fov) * (1 - Math.exp(-dt * 1.5));
   R.camera.updateProjectionMatrix();
   // Sonne folgt dem Spieler, damit Schatten scharf bleiben
   R.sun.position.set(me.pos.x + R.sunDir.x * 150, my + Math.max(40, R.sunDir.y * 150), me.pos.z + R.sunDir.z * 150);
