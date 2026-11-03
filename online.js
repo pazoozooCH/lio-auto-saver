@@ -278,7 +278,8 @@ function showRoom() {
     ${isHost ? `<button class="go" data-act="start"${ready ? '' : ' disabled'}>▶ ${room.results ? 'Nochmal fahren' : 'Start'}</button>`
       : '<p class="hint">Warte, bis 👑 das Rennen startet …</p>'}
     <button class="grey" data-act="leave">Raum verlassen</button>
-    ${isHost && !ready ? `<p class="hint">${d.mode === 'drag' ? 'Für den Dragster braucht es genau 2 Spieler.' : 'Es braucht mindestens 2 Spieler.'}</p>` : ''}`;
+    ${isHost && !ready ? `<p class="hint">${d.mode === 'drag' ? 'Für den Dragster braucht es genau 2 Spieler.' : 'Es braucht mindestens 2 Spieler.'}</p>` : ''}
+    ${d.mode === 'race' && n < max ? `<p class="hint">🤖 Die ${max - n} freien Plätze fahren Bots – es sind immer 6 Autos auf der Strecke.</p>` : ''}`;
 }
 
 function resultsHtml() {
@@ -308,12 +309,39 @@ function vehicleOf(p) {
   return { kind, color: p.color, special: p.special || null, ps: p.ps };
 }
 
+// Bots für die freien Startplätze im Rennen (bis 6 Autos). Alle Geräte rechnen sie aus Raum-Code und Runde
+// gleich aus: gleiche Fahrzeuge, PS wie die Spieler im Schnitt, gleicher Zufall beim Fahren (seed)
+const BOT_NAMES = ['🤖 Robo-Ruedi', '🤖 Turbo-Tina', '🤖 Chip-Chiara', '🤖 Bolt-Beni', '🤖 Pixel-Pia', '🤖 Byte-Bruno'];
+const BOT_COLORS = ['#e63946', '#2a9d8f', '#f4a261', '#3a86ff', '#8338ec', '#ffbe0b', '#06d6a0', '#ef476f'];
+function seedOf(text) {
+  let h = 2166136261;
+  for (let i = 0; i < text.length; i++) h = Math.imul(h ^ text.charCodeAt(i), 16777619);
+  return h >>> 0;
+}
+function botsFor(players, code, round) {
+  const taken = new Set(Object.keys(players).map(Number));
+  let a = seedOf('bots:' + code + ':' + round);
+  const rnd = () => { a = Math.imul(a ^ (a >>> 15), 2246822507) + 0x9e3779b9 >>> 0; return (a >>> 8) / 16777216; };
+  const pool = Object.keys(api.kinds).filter(k => api.kinds[k].tier !== 'legendary').sort();
+  const ps = Object.values(players).map(p => p.ps || 0), avg = ps.reduce((x, y) => x + y, 0) / Math.max(1, ps.length);
+  const names = [...BOT_NAMES];
+  const bots = [];
+  for (let slot = 0; slot < MAX_PLAYERS.race; slot++) {
+    if (taken.has(slot)) continue;
+    const kind = pool[Math.floor(rnd() * pool.length)];
+    const name = names.splice(Math.floor(rnd() * names.length), 1)[0];
+    bots.push({ slot, name, kind, color: api.kinds[kind].color || BOT_COLORS[Math.floor(rnd() * BOT_COLORS.length)], special: null,
+      ps: Math.max(30, Math.round(avg * (0.8 + rnd() * 0.3))) });
+  }
+  return bots;
+}
+
 async function launch(data) {
   const round = data.round, players = data.players, mySlot = room.slot, code = room.code;
   const others = Object.keys(players).filter(s => +s !== mySlot).map(s => ({ slot: +s, name: players[s].name, v: vehicleOf(players[s]) }));
   const myV = { ...vehicleOf(players[mySlot]), id: 'online', name: players[mySlot].name };
   const net = {
-    mySlot, startAt: data.start, round, serverNow, remotes: others,
+    mySlot, startAt: data.start, round, serverNow, remotes: others, seed: seedOf('race:' + code + ':' + round),
     send(s) { fb.set(roomRef(code, 'live/' + mySlot), { ...s, r: round, t: fb.serverTimestamp() }).catch(() => {}); },
     latest(slot) {
       const l = room && room.data && room.data.live && room.data.live[slot];
@@ -333,7 +361,7 @@ async function launch(data) {
   try {
     if (data.mode === 'race') {
       const m = await import('./race.js');
-      m.startRace({ player: myV, opponents: [], kinds: api.kinds, topSpeed: api.topSpeed, onFinish: done, net });
+      m.startRace({ player: myV, opponents: botsFor(players, code, round), kinds: api.kinds, topSpeed: api.topSpeed, onFinish: done, net });
     } else {
       const m = await import('./drag.js');
       const opp = others[0];
@@ -358,6 +386,7 @@ function resultRows(res, data, round) {
     if (+s === room.slot) time = res.myTime !== undefined ? res.myTime : (res.order || []).find(o => o.isPlayer)?.time || time;
     return { name: p.name, kind: api.kinds[p.kind] ? api.kinds[p.kind].name : p.kind, time, me: +s === room.slot };
   });
+  for (const o of res.order || []) if (o.isBot) rows.push({ name: o.name, kind: api.kinds[o.kind] ? api.kinds[o.kind].name : o.kind, time: o.time || null });
   return rows.sort((a, b) => (a.time || 1e9) - (b.time || 1e9));
 }
 

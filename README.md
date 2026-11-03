@@ -14,7 +14,7 @@ und nochmals, damit es weiterfährt – so kommen alle heil zum Ausgang.
 - Münzen sammeln, Fahrzeuge verkaufen, Level werden schnell schwieriger
 - Echte Geräusche aus dem Synthesizer: jedes Fahrzeug klingt nach seinem Antrieb (Diesel, V8, Rennmotor, Elektro, Düse …),
   dazu quietschende Reifen, Gras, Kies, Curbs, Wind und Crashs
-- Online mit Freunden: Rennen (2–6 Spieler, mit Remplern und Rückspiegel) und Dragster 1 gegen 1 über einen 4-stelligen Raum-Code
+- Online mit Freunden: Rennen (2–6 Spieler, freie Plätze fahren Bots, mit Remplern und Rückspiegel) und Dragster 1 gegen 1 über einen 4-stelligen Raum-Code
 
 **Online spielen:** https://pazoozooch.github.io/lio-auto-saver/
 
@@ -56,6 +56,9 @@ Online spielen läuft ohne eigenen Server: Das Spiel verbindet sich direkt mit e
   10× pro Sekunde. Die Autos der anderen werden geglättet und vorausberechnet angezeigt.
 - **Kollisionen:** Berühren sich zwei Autos, schiebt jedes Gerät sein eigenes Auto weg.
   Wer auffährt, wird langsamer, wer angeschoben wird, bekommt Schwung.
+- **Bots:** Sind weniger als 6 Spieler im Rennen, füllen Bots (🤖) die freien Startplätze. Sie werden nicht übers Netz
+  geschickt: Jedes Gerät rechnet sie selbst, mit demselben Zufall (aus Raum-Code und Runde) und im festen Takt der
+  gemeinsamen Uhr, darum fahren sie überall gleich. Spieler prallen an Bots ab, die Bots bleiben auf Kurs.
 - Dragster: gemeinsame Startampel. Ein Frühstart kostet 1 Sekunde, die Zeiten werden verglichen.
 - Online werden **keine Autos gewonnen oder verloren** und keine Pokale vergeben, es geht nur um Ruhm.
 - Verlässt ein Spieler den Raum oder bricht seine Verbindung ab, löscht Firebase seinen Platz

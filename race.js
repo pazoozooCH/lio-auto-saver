@@ -98,6 +98,16 @@ function makeTrack(def) {
 
 // Höhe der Fahrbahn bei Index i und o Metern rechts der Mitte (Steilkurven heben die Aussenseite an)
 const groundY = (T, i, o) => T.h[i] + o * T.slope[i];
+// Zufall mit Startwert: online rechnen alle Geräte damit genau die gleichen Bots
+function seeded(seed) {
+  let a = seed >>> 0;
+  return () => {
+    a = (a + 0x6D2B79F5) >>> 0;
+    let t = Math.imul(a ^ (a >>> 15), a | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
 // Wie weit eine Position vom Punkt i zum nächsten Punkt j liegt (0…1): damit Höhe und Neigung fliessend
 // zwischen den Punkten (alle 1,5 m) verlaufen, statt in kleinen Stufen zu springen (das zittert bei Tempo)
 function between(T, pos, i) {
@@ -781,12 +791,14 @@ export function startRace({ player, opponents, kinds, topSpeed, onFinish, net = 
   const accelFor = ps => 4 + ps * 0.06;
 
   // Startaufstellung: der Stärkste auf der Pole, du ganz hinten
-  const grid = [...opponents].sort((a, b) => b.ps - a.ps);
+  // Online füllen Bots die freien Startplätze (v.slot); sie fahren auf allen Geräten gleich (gleicher Zufall, fester Takt)
+  const rnd = net ? seeded(net.seed || 1) : Math.random;
+  const grid = net ? opponents : [...opponents].sort((a, b) => b.ps - a.ps);
   const cars = grid.map((v, k) => {
-    const g = gridSlot(T, k);
-    return { v, name: v.name, ai: true, prog: g.s, lat: g.lat, laneTarget: g.lat, laneT: 2 + Math.random() * 3,
-      speed: 0, maxV: topSpeed(v.ps) * (0.94 + Math.random() * 0.05), acc: accelFor(v.ps) * (0.9 + Math.random() * 0.1),
-      corner: 0.9 + Math.random() * 0.07, mesh: buildCar(v, kinds), finished: null, color: v.special ? '#ffd700' : v.color };
+    const g = gridSlot(T, v.slot ?? k);
+    return { v, name: v.name, ai: true, bot: !!net, prog: g.s, lat: g.lat, laneTarget: g.lat, laneT: 2 + rnd() * 3,
+      speed: 0, maxV: topSpeed(v.ps) * (0.94 + rnd() * 0.05), acc: accelFor(v.ps) * (0.9 + rnd() * 0.1),
+      corner: 0.9 + rnd() * 0.07, mesh: buildCar(v, kinds), finished: null, color: v.special ? '#ffd700' : v.color };
   });
   if (net) for (const p of net.remotes) { // Mitspieler: Position kommt übers Netz
     const g = gridSlot(T, p.slot);
@@ -805,7 +817,7 @@ export function startRace({ player, opponents, kinds, topSpeed, onFinish, net = 
   window.__race = () => race; // für Tests im Browser
   window.__raceR = () => R;
   race = { cars, me, T, t: 0, phase: 'lights', lightsOut: net ? 4 : 3.4 + Math.random() * 0.8, clock: 0, input: {}, onFinish,
-    lastLights: 0, msgT: 0, endT: 0, lastLap: 1, last: performance.now(), net, sendT: 0, bumpT: 0, waitT: 0, crashT: 0, gears: gearbox(player.kind), laps: T.laps };
+    lastLights: 0, msgT: 0, endT: 0, lastLap: 1, last: performance.now(), net, sendT: 0, bumpT: 0, waitT: 0, crashT: 0, gears: gearbox(player.kind), laps: T.laps, rnd, botT: 0 };
   R.ui.root.hidden = false;
   R.ui.lightBox.style.display = '';
   R.ui.lights.forEach(l => l.classList.remove('on'));
@@ -939,27 +951,17 @@ function step(dt) {
   if (me.wrongT > 1.2 && race.msgT <= 0) showMsg('⚠️ Falsche Richtung!', 1.2);
 
   // --- Gegner: fahren die Strecke ab und bremsen vor Kurven ---
-  for (const c of race.cars) {
-    if (!c.ai) continue;
-    const tp = trackPoint(T, c.prog);
-    let target = Math.min(c.maxV, T.safe[tp.i] * c.corner);
-    for (const o of race.cars) { // nicht auffahren
-      if (o === c) continue;
-      const gap = (o.ai ? o.prog : o.prog) - c.prog;
-      const olat = o.ai ? o.lat : latOf(o);
-      if (gap > 0 && gap < 9 && Math.abs(olat - c.lat) < 2.6) {
-        target = Math.min(target, (o.speed || 0) - 0.5);
-        if (c.laneT > 0.6) { c.laneTarget = Math.max(-4.5, Math.min(4.5, c.lat + (c.lat > olat ? 3.5 : -3.5))); c.laneT = 0.6; }
+  if (race.net) { // Bots online: in festen Schritten nach der gemeinsamen Uhr, damit sie überall gleich fahren
+    const STEP = 1 / 60, total = race.laps * T.length;
+    for (let n = 0; race.botT + STEP <= race.clock && n < 1200; n++) {
+      race.botT += STEP;
+      for (const c of race.cars) if (c.ai) {
+        aiStep(c, STEP, true);
+        if (!c.finished && c.prog >= total) c.finished = race.botT;
       }
     }
-    if (c.speed < target) c.speed += c.acc * Math.max(0, 1 - c.speed / c.maxV) * dt;
-    else c.speed = Math.max(target, c.speed - BRAKE * 0.8 * dt);
-    c.speed = Math.max(0, c.speed);
-    c.prog += c.speed * dt;
-    if ((c.laneT -= dt) <= 0) { c.laneTarget = (Math.random() - 0.5) * 8; c.laneT = 3 + Math.random() * 4; }
-    c.lat += Math.sign(c.laneTarget - c.lat) * Math.min(Math.abs(c.laneTarget - c.lat), 1.6 * dt);
-    c.wp = aiPos(c);
-  }
+    for (const c of race.cars) if (c.ai) c.wp = aiPos(c);
+  } else for (const c of race.cars) if (c.ai) { aiStep(c, dt, false); c.wp = aiPos(c); }
 
   // Zusammenstoss mit Gegnern: wegschieben und abbremsen
   for (const c of race.cars) {
@@ -971,7 +973,7 @@ function step(dt) {
     if (dd < minD && dd > 0.01) {
       me.pos.x += dx / dd * (minD - dd);
       me.pos.z += dz / dd * (minD - dd);
-      if (me.prog < c.prog) me.speed *= 0.97; else c.speed *= 0.97;
+      if (me.prog < c.prog || c.bot) me.speed *= 0.97; else c.speed *= 0.97; // Bots bleiben auf Kurs (sonst fahren sie überall anders)
       if (race.crashT <= 0) { crash(0.15 + Math.abs(me.speed - c.speed) / 20, 'car'); race.crashT = 0.5; }
     }
   }
@@ -1055,6 +1057,28 @@ function bumpRemotes(dt) {
     else if (ahead < 0 && c.speed > me.speed) me.speed += (c.speed - me.speed) * 0.35;
     if (race.bumpT <= 0) { race.bumpT = 0.5; crash(0.15 + Math.abs(me.speed - c.speed) / 20, 'car'); }
   }
+}
+
+// Ein Gegner fährt einen Schritt. onlyBots: nur auf andere Bots achten (online wissen nicht alle Geräte
+// genau gleich, wo die Spieler sind) und den gemeinsamen Zufall nehmen
+function aiStep(c, dt, onlyBots) {
+  const T = race.T, tp = trackPoint(T, c.prog);
+  let target = Math.min(c.maxV, T.safe[tp.i] * c.corner);
+  for (const o of race.cars) { // nicht auffahren
+    if (o === c || (onlyBots && !o.ai)) continue;
+    const gap = o.prog - c.prog;
+    const olat = o.ai ? o.lat : latOf(o);
+    if (gap > 0 && gap < 9 && Math.abs(olat - c.lat) < 2.6) {
+      target = Math.min(target, (o.speed || 0) - 0.5);
+      if (c.laneT > 0.6) { c.laneTarget = Math.max(-4.5, Math.min(4.5, c.lat + (c.lat > olat ? 3.5 : -3.5))); c.laneT = 0.6; }
+    }
+  }
+  if (c.speed < target) c.speed += c.acc * Math.max(0, 1 - c.speed / c.maxV) * dt;
+  else c.speed = Math.max(target, c.speed - BRAKE * 0.8 * dt);
+  c.speed = Math.max(0, c.speed);
+  c.prog += c.speed * dt;
+  if ((c.laneT -= dt) <= 0) { c.laneTarget = (race.rnd() - 0.5) * 8; c.laneT = 3 + race.rnd() * 4; }
+  c.lat += Math.sign(c.laneTarget - c.lat) * Math.min(Math.abs(c.laneTarget - c.lat), 1.6 * dt);
 }
 
 function latOf(c) {
@@ -1299,6 +1323,6 @@ function endRace(quit) {
   });
   r.onFinish({
     place: order.indexOf(r.me) + 1,
-    order: order.map(c => ({ name: c.name, kind: c.v.kind, ps: c.v.ps, isPlayer: c === r.me, time: c.finished })),
+    order: order.map(c => ({ name: c.name, kind: c.v.kind, ps: c.v.ps, isPlayer: c === r.me, isBot: !!c.bot, time: c.finished })),
   });
 }
