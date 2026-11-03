@@ -72,6 +72,15 @@
             "$other": { ".validate": false }
           }
         },
+        "chat": {
+          "$slot": {
+            ".write": "auth != null && root.child('rooms').child($code).child('players').child($slot).child('uid').val() === auth.uid",
+            ".validate": "newData.hasChildren(['m', 't']) && newData.child('t').val() === now && (!data.exists() || now - data.child('t').val() >= 1000)",
+            "m": { ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() < 64 && newData.val() % 1 === 0" },
+            "t": { ".validate": "newData.isNumber()" },
+            "$other": { ".validate": false }
+          }
+        },
         "$other": { ".validate": false }
       }
     }

@@ -7,6 +7,7 @@ import { buildCar, animateCar, warmUp, makeQuality, mergeStatic } from './cars3d
 import { makeNoise, rng, smoothstep, surface, terrain, cloudDome } from './world3d.js';
 import { createCarSound, crash, gearbox, horn, createSiren } from './sound.js';
 import { makeNetCars } from './netcars.js';
+import { makeChat } from './chat.js';
 
 const N = 8;                    // Blöcke pro Seite
 const BLOCK = 64;               // Abstand der Kreuzungen (Meter)
@@ -1082,6 +1083,7 @@ export function startCity({ player, kinds, topSpeed, onExit, pay = () => 0, earn
   for (const c of city.cars) S.scene.add(c.mesh);
   warmUp(S.renderer, S.scene, S.camera);
   if (!S.quality) S.quality = makeQuality(S.renderer, layout);
+  if (net) city.chat = makeChat({ parent: S.ui.root, net, mode: 'city', onSay: (slot, text) => city.netCars.say(slot, text) });
   S.ui.root.hidden = false;
   S.ui.ps.textContent = '⚡ ' + player.ps + ' PS';
   layout();
@@ -1117,6 +1119,7 @@ function loop(now) {
       if (Math.abs(me.speed) > 5 && city.crashT <= 0) { crash(0.25, 'car'); city.crashT = 0.5; }
     }
     city.netCars.update(dt, city.t, { x: me.pos.x, y: 0, z: me.pos.z, h: me.heading, v: me.speed });
+    city.chat.update(dt);
   }
   updateHud(dt);
   render(dt);
@@ -1163,6 +1166,7 @@ function endCity() {
   S.scene.remove(c.me.mesh);
   for (const car of c.cars) S.scene.remove(car.mesh); // Formen gehören den Vorlagen in cars3d.js
   if (c.netCars) c.netCars.dispose();
+  if (c.chat) c.chat.dispose();
   S.ui.root.hidden = true;
   c.onExit();
 }

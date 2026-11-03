@@ -24,16 +24,38 @@ function nameTag(text, color) {
   return s;
 }
 
+// Sprechblase (Chat) über dem Namensschild
+function bubble(text) {
+  const c = document.createElement('canvas');
+  c.width = 512; c.height = 96;
+  const g = c.getContext('2d');
+  g.font = 'bold 40px system-ui, sans-serif';
+  const w = Math.min(500, g.measureText(text).width + 40);
+  g.fillStyle = '#ffffff';
+  g.beginPath(); g.roundRect((512 - w) / 2, 6, w, 68, 22); g.fill();
+  g.beginPath(); g.moveTo(240, 72); g.lineTo(272, 72); g.lineTo(256, 92); g.fill();
+  g.fillStyle = '#111'; g.textAlign = 'center'; g.textBaseline = 'middle';
+  g.fillText(text, 256, 42);
+  const tex = new THREE.CanvasTexture(c);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, depthTest: false, transparent: true }));
+  s.scale.set(6, 1.125, 1);
+  s.renderOrder = 11;
+  return s;
+}
+
 export function makeNetCars({ scene, kinds, net }) {
   const cars = new Map(); // slot → { mesh, tag, x, y, z, h, a, b, v, key }
   let sendT = 0;
   const wrap = a => Math.atan2(Math.sin(a), Math.cos(a));
+  const dropBubble = c => { if (!c.bubble) return; scene.remove(c.bubble); c.bubble.material.map.dispose(); c.bubble.material.dispose(); c.bubble = null; };
 
   function remove(slot) {
     const c = cars.get(slot);
     if (!c) return;
     scene.remove(c.mesh, c.tag);
     c.tag.material.map.dispose(); c.tag.material.dispose();
+    dropBubble(c);
     cars.delete(slot);
   }
 
@@ -81,6 +103,10 @@ export function makeNetCars({ scene, kinds, net }) {
         for (const w of c.mesh.userData.wheels) w.rotation.z -= c.v * dt / 0.35;
         animateCar(c.mesh, t, p.special || null, false);
         c.tag.position.set(c.x, c.y + 4, c.z);
+        if (c.bubble) {
+          c.bubble.position.set(c.x, c.y + 5.4, c.z);
+          if ((c.bubbleT -= dt) <= 0) dropBubble(c);
+        }
       }
     },
     // Mitspieler in der Nähe (für Zusammenstösse und die Karte)
@@ -100,6 +126,15 @@ export function makeNetCars({ scene, kinds, net }) {
         hit = true;
       }
       return hit;
+    },
+    // Chat-Nachricht als Sprechblase über dem Auto (5 Sekunden)
+    say(slot, text) {
+      const c = cars.get(slot);
+      if (!c) return;
+      dropBubble(c);
+      c.bubble = bubble(text);
+      c.bubbleT = 5;
+      scene.add(c.bubble);
     },
     dispose() { for (const slot of [...cars.keys()]) remove(slot); },
   };

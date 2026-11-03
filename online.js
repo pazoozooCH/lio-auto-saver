@@ -259,6 +259,7 @@ async function enterRoom(code, slot, host, lastRound = 0, isPublic = false) {
   // Bricht die Verbindung ab, räumt Firebase selbst auf: eigener Platz weg, als Gastgeber der ganze Raum
   await fb.onDisconnect(roomRef(code, 'live/' + slot)).remove();
   await fb.onDisconnect(roomRef(code, 'players/' + slot)).remove();
+  await fb.onDisconnect(roomRef(code, 'chat/' + slot)).remove().catch(() => {}); // (ohne neue Regeln abgelehnt – egal)
   if (host) await fb.onDisconnect(roomRef(code)).remove();
   room.unsub = fb.onValue(roomRef(code), snap => onRoom(snap.val()), err => { console.error(err); leaveRoom(false, 'Verbindung zum Raum verloren.'); });
 }
@@ -327,8 +328,12 @@ async function leaveRoom(byUser, msg = '') {
     if (r.data && r.data.host === fb.uid) {
       if (r.public) { await fb.remove(publicRef(r.code)); await fb.onDisconnect(publicRef(r.code)).cancel(); }
       await fb.remove(roomRef(r.code));
-    } else { await fb.remove(roomRef(r.code, 'live/' + r.slot)); await fb.remove(roomRef(r.code, 'players/' + r.slot)); }
+    } else {
+      await fb.remove(roomRef(r.code, 'chat/' + r.slot)).catch(() => {});
+      await fb.remove(roomRef(r.code, 'live/' + r.slot)); await fb.remove(roomRef(r.code, 'players/' + r.slot));
+    }
     for (const p of ['live/' + r.slot, 'players/' + r.slot, '']) await fb.onDisconnect(roomRef(r.code, p)).cancel();
+    await fb.onDisconnect(roomRef(r.code, 'chat/' + r.slot)).cancel().catch(() => {});
   } catch (e) { /* Raum ist vielleicht schon weg */ }
   if (!r.racing) showHome(msg);
 }
@@ -415,6 +420,8 @@ async function launchFree(data) {
   const net = {
     mySlot, serverNow,
     players: () => (room && room.data && room.data.players) || {},
+    chats: () => (room && room.data && room.data.chat) || {},
+    chat(m) { fb.set(roomRef(code, 'chat/' + mySlot), { m, t: fb.serverTimestamp() }).catch(() => {}); }, // nur die Nummer eines Spruchs (chat.js)
     send(s) { fb.set(roomRef(code, 'live/' + mySlot), { ...s, r: 0, t: fb.serverTimestamp() }).catch(() => {}); },
     latest(slot) {
       const l = room && room.data && room.data.live && room.data.live[slot];

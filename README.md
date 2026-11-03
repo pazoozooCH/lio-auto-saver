@@ -66,6 +66,9 @@ Online spielen läuft ohne eigenen Server: Das Spiel verbindet sich direkt mit e
 - **Stadt und Stuntpark** (freies Fahren): kein gemeinsamer Start – jeder tippt „Losfahren“, wann er will, und sieht
   alle, die gerade fahren (mit Namensschild, auf der Karte, im Stuntpark mit Punkteliste). Verkehr und Polizei rechnet
   jedes Gerät für sich. Wer zurück in den Raum geht, verschwindet bei den anderen.
+- **Chat** (nur Stadt und Stuntpark online): feste Schnell-Nachrichten und Emojis, kein freier Text – auch in
+  öffentlichen Räumen mit Fremden kann niemand etwas Gemeines schreiben. Gespeichert wird nur die Nummer des Spruchs
+  (Liste `QUICK` in `chat.js`), höchstens eine Nachricht pro Sekunde und Spieler; sie erscheint als Sprechblase über dem Auto.
 - Dragster: gemeinsame Startampel. Ein Frühstart kostet 1 Sekunde, die Zeiten werden verglichen.
 - Online werden **keine Autos gewonnen oder verloren** und keine Pokale vergeben, es geht nur um Ruhm.
 - Verlässt ein Spieler den Raum oder bricht seine Verbindung ab, löscht Firebase seinen Platz
@@ -79,6 +82,7 @@ public/<CODE>: mode, name (Gastgeber), n (Spieler), state, created   Liste der �
 rooms/<CODE>/  host, key, created, mode (race|drag|city|stunt), state (lobby|running), start,
                round (= Rennen × 8 + Strecke: so wählt der Gastgeber die Strecke ohne eigenes Feld in den Regeln)
 rooms/<CODE>/players/<0–5>: uid, name, kind, color, special, ps
+rooms/<CODE>/chat/<0–5>:    m (Nummer der Schnell-Nachricht 0–63), t (Serverzeit)
 rooms/<CODE>/live/<0–5>:    x, z, h, v, p, g, fin, r (Runde), t (Serverzeit); freies Fahren: y (Höhe), a/b (Neigung), p (Stunt-Punkte), r = 0
 ```
 

@@ -8,6 +8,7 @@ import { buildCar, animateCar, warmUp, makeQuality } from './cars3d.js';
 import { makeNoise, rng, smoothstep, surface, terrain, cloudDome } from './world3d.js';
 import { createCarSound, crash, gearbox } from './sound.js';
 import { makeNetCars } from './netcars.js';
+import { makeChat } from './chat.js';
 
 const G = 9.81;
 const EDGE = 188;               // so weit geht der Platz (±)
@@ -550,6 +551,7 @@ export function startStunt({ player, kinds, topSpeed, onExit, earn = () => {}, n
   S.ui.root.hidden = false;
   S.ui.ps.textContent = '⚡ ' + player.ps + ' PS';
   S.ui.board.hidden = !net;
+  if (net) P.chat = makeChat({ parent: S.ui.root, net, mode: 'stunt', onSay: (slot, text) => P.netCars.say(slot, text) });
   layout();
   showMsg(net ? '🤸 Stuntpark online – zeig, was du kannst!' : '🤸 Rampen, Schanzen, Looping – los geht’s!', 2.6);
   window.addEventListener('keydown', onKey);
@@ -576,6 +578,7 @@ function loop(now) {
     const o = { x: me.x, y: me.y, z: me.z };
     if (!me.air && !me.loop && P.netCars.bump(o, me.radius)) { me.x = o.x; me.z = o.z; me.speed *= 0.97; }
     P.netCars.update(dt, P.t, { x: me.x, y: me.y, z: me.z, h: me.heading, v: me.speed, a: me.pitch, b: me.roll, p: P.score });
+    P.chat.update(dt);
   }
   updateHud(dt);
   render(dt);
@@ -644,6 +647,7 @@ function endStunt() {
   window.removeEventListener('keyup', onKey);
   S.scene.remove(p.me.mesh);
   if (p.netCars) p.netCars.dispose();
+  if (p.chat) p.chat.dispose();
   S.ui.root.hidden = true;
   const coins = p.net ? 0 : Math.floor(p.score / 250); // offline: Punkte geben Münzen
   if (coins) p.earn(coins);
