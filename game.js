@@ -2550,6 +2550,7 @@ function draw() {
   if (state === 'raceresult') { drawRaceResult(); return; }
   if (state === 'raceload') { drawLoading('🏁 RENNSTRECKE', 'Lade 3D-Rennstrecke'); return; }
   if (state === 'cityload') { drawLoading('🏙️ STADT', 'Baue die Stadt'); return; }
+  if (state === 'stuntload') { drawLoading('🤸 STUNTPARK', 'Baue Rampen und Looping'); return; }
   if (state === 'dragmenu') { drawDragMenu(); return; }
   if (state === 'dragresult') { drawDragResult(); return; }
   if (state === 'dragload') { drawLoading('🔥 DRAGSTER-BAHN', 'Lade 3D-Dragster-Bahn'); return; }
@@ -2740,7 +2741,7 @@ function drawQuit() {
 // auf dem Startbildschirm ein Update-Knopf; kommt man auf dem Startbildschirm in die App zurück, wird gleich aktualisiert.
 // APP_FILES: alle Dateien des Spiels (beim Hinzufügen einer Datei hier ergänzen).
 const APP_FILES = ['./', 'index.html', 'game.js', 'version.js', 'press3d.js', 'race.js', 'drag.js', 'cars3d.js', 'world3d.js',
-  'online.js', 'sound.js', 'city.js', 'tracks.js', 'manifest.webmanifest', 'icon-192.png', 'icon-512.png', 'apple-touch-icon.png', 'favicon.png'];
+  'online.js', 'sound.js', 'city.js', 'tracks.js', 'stunt.js', 'netcars.js', 'manifest.webmanifest', 'icon-192.png', 'icon-512.png', 'apple-touch-icon.png', 'favicon.png'];
 const UPDATE_BTN = { x: W - 262, y: 14, w: 248, h: 46 };
 const appUpdate = { info: null, busy: false, last: 0 };
 
@@ -3283,8 +3284,8 @@ function drawReveal() {
 }
 
 // --- Startbildschirm: Rennen, Presse, Shop ---
-const titleBtn = i => ({ x: 13 + i * 157, y: 420, w: 147, h: 62 });
-const RACE_BTN = titleBtn(0), DRAG_BTN = titleBtn(1), CITY_BTN = titleBtn(2), ONLINE_BTN = titleBtn(3), PRESS_BTN = titleBtn(4), TITLE_SHOP_BTN = titleBtn(5);
+const titleBtn = i => ({ x: 12 + i * 134, y: 420, w: 126, h: 62 });
+const RACE_BTN = titleBtn(0), DRAG_BTN = titleBtn(1), CITY_BTN = titleBtn(2), STUNT_BTN = titleBtn(3), ONLINE_BTN = titleBtn(4), PRESS_BTN = titleBtn(5), TITLE_SHOP_BTN = titleBtn(6);
 
 function drawTitleButtons() {
   const pulse = 1 + 0.03 * Math.sin(time * 4);
@@ -3292,13 +3293,14 @@ function drawTitleButtons() {
   ctx.translate(RACE_BTN.x + RACE_BTN.w / 2, RACE_BTN.y + RACE_BTN.h / 2);
   ctx.scale(pulse, pulse);
   ctx.translate(-(RACE_BTN.x + RACE_BTN.w / 2), -(RACE_BTN.y + RACE_BTN.h / 2));
-  drawButton(RACE_BTN, '🏁 RENNEN', '#c0392b', 17);
+  drawButton(RACE_BTN, '🏁 RENNEN', '#c0392b', 15);
   ctx.restore();
-  drawButton(DRAG_BTN, '🔥 DRAGSTER', '#d35400', 17);
-  drawButton(CITY_BTN, '🏙️ STADT', '#6d28d9', 17);
-  drawButton(ONLINE_BTN, '🌍 ONLINE', '#0e7490', 17);
-  drawButton(PRESS_BTN, '🏭 PRESSE', '#21a35b', 17);
-  drawButton(TITLE_SHOP_BTN, '🏪 🪙 ' + wallet, '#3657b8', 17);
+  drawButton(DRAG_BTN, '🔥 DRAGSTER', '#d35400', 15);
+  drawButton(CITY_BTN, '🏙️ STADT', '#6d28d9', 15);
+  drawButton(STUNT_BTN, '🤸 STUNTS', '#db2777', 15);
+  drawButton(ONLINE_BTN, '🌍 ONLINE', '#0e7490', 15);
+  drawButton(PRESS_BTN, '🏭 PRESSE', '#21a35b', 15);
+  drawButton(TITLE_SHOP_BTN, '🏪 🪙 ' + wallet, '#3657b8', 15);
 }
 
 // --- Rennstrecke: Cups, Fahrzeugwahl und Pokale ---
@@ -3459,6 +3461,24 @@ function startCityMode() {
       console.error(err);
       openMenu('title');
       showMenuMsg('Die 3D-Stadt konnte nicht geladen werden – braucht Internet.');
+    });
+}
+
+// Stuntpark (stunt.js): Rampen, Schanzen, Looping; Punkte geben Münzen
+function startStuntMode() {
+  const v = raceVehicle();
+  state = 'stuntload';
+  import('./stunt.js')
+    .then(m => {
+      state = 'stunt';
+      m.startStunt({ player: { ...v, name: 'Du' }, kinds: KINDS, topSpeed: raceTopSpeed,
+        earn: n => { wallet += n; storeJSON('autoRetterCoins', wallet); },
+        onExit: res => { openMenu('title'); if (res && res.coins) showMenuMsg('🤸 ' + res.score + ' Stunt-Punkte = 🪙 +' + res.coins, 4); } });
+    })
+    .catch(err => {
+      console.error(err);
+      openMenu('title');
+      showMenuMsg('Der Stuntpark konnte nicht geladen werden – braucht Internet.');
     });
 }
 
@@ -3936,6 +3956,7 @@ canvas.addEventListener('pointerdown', e => {
       else if (inRect(px, py, DRAG_BTN)) openDragMenu();
       else if (inRect(px, py, ONLINE_BTN)) openOnline();
       else if (inRect(px, py, CITY_BTN)) startCityMode();
+      else if (inRect(px, py, STUNT_BTN)) startStuntMode();
       else if (inRect(px, py, PRESS_BTN)) openMenu('select');
       else if (inRect(px, py, TITLE_SHOP_BTN)) openMenu('shop');
       return;
@@ -3949,7 +3970,7 @@ canvas.addEventListener('pointerdown', e => {
   if (state === 'raceresult') { raceResultTap(px, py); return; }
   if (state === 'dragmenu') { dragMenuTap(px, py); return; }
   if (state === 'dragresult') { dragResultTap(px, py); return; }
-  if (['race', 'raceload', 'drag', 'dragload', 'city', 'cityload'].includes(state)) return;
+  if (['race', 'raceload', 'drag', 'dragload', 'city', 'cityload', 'stunt', 'stuntload'].includes(state)) return;
   if (state === 'shop') { shopTap(px, py); return; }
   if (state === 'collection') { collectionTap(px, py); return; }
   if (state === 'reveal') { if (reveal.t > REVEAL_AT + 0.2) openMenu('shop'); return; }
@@ -3983,7 +4004,7 @@ let lastTime = performance.now();
 function frame(now) {
   const dt = Math.min(0.05, (now - lastTime) / 1000);
   lastTime = now;
-  if (!['race', 'drag', 'online', 'city'].includes(state)) { // dort zeichnen race.js, drag.js, online.js bzw. city.js
+  if (!['race', 'drag', 'online', 'city', 'stunt'].includes(state)) { // dort zeichnen race.js, drag.js, online.js, city.js bzw. stunt.js
     update(dt);
     draw();
   }

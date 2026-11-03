@@ -6,6 +6,7 @@ import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 import { buildCar, animateCar, warmUp, makeQuality, mergeStatic } from './cars3d.js';
 import { makeNoise, rng, smoothstep, surface, terrain, cloudDome } from './world3d.js';
 import { createCarSound, crash, gearbox, horn, createSiren } from './sound.js';
+import { makeNetCars } from './netcars.js';
 
 const N = 8;                    // Blöcke pro Seite
 const BLOCK = 64;               // Abstand der Kreuzungen (Meter)
@@ -1043,6 +1044,10 @@ function drawMinimap() {
     g.fillStyle = Math.floor(city.t * 6) % 2 ? '#3b82f6' : '#ef4444';
     g.beginPath(); g.arc(mx(city.police.pos.x), mx(city.police.pos.z), 4.5, 0, Math.PI * 2); g.fill();
   }
+  if (city.netCars) for (const o of city.netCars.list()) { // Mitspieler als farbige Punkte
+    g.fillStyle = o.color; g.strokeStyle = '#000'; g.lineWidth = 1.5;
+    g.beginPath(); g.arc(mx(o.x), mx(o.z), 5, 0, Math.PI * 2); g.fill(); g.stroke();
+  }
   const me = city.me, x = mx(me.pos.x), y = mx(me.pos.z), h = me.heading;
   g.fillStyle = '#ffe066'; g.strokeStyle = '#000'; g.lineWidth = 1.5;
   g.beginPath();
@@ -1053,7 +1058,8 @@ function drawMinimap() {
 }
 
 // ---------- Start, Schleife, Ende ----------
-export function startCity({ player, kinds, topSpeed, onExit, pay = () => 0, earn = () => {} }) {
+// net (nur online): Mitspieler fahren mit (netcars.js); Verkehr und Polizei rechnet jedes Gerät für sich
+export function startCity({ player, kinds, topSpeed, onExit, pay = () => 0, earn = () => {}, net = null }) {
   if (!S) {
     S = buildWorld();
     S.ui = buildDom();
@@ -1064,12 +1070,13 @@ export function startCity({ player, kinds, topSpeed, onExit, pay = () => 0, earn
   }
   const mesh = buildCar(player, kinds);
   // Start: auf der rechten Spur einer Strasse am Stadtrand, Richtung Zentrum
-  const me = { v: player, mesh, pos: new THREE.Vector3(node(1) + 20, 0, node(0) + LANE), heading: 0, speed: 0, vl: 0, steer: 0,
+  // online starten alle auf einer anderen Strasse am Stadtrand
+  const me = { v: player, mesh, pos: new THREE.Vector3(node(1 + (net ? net.mySlot : 0)) + 20, 0, node(0) + LANE), heading: 0, speed: 0, vl: 0, steer: 0,
     maxV: Math.min(55, topSpeed(player.ps)), acc: 4 + player.ps * 0.06, radius: Math.max(1.3, mesh.userData.radius * 0.8),
     len: mesh.userData.length, slip: 0, surface: 'asphalt' };
   city = { me, cars: spawnTraffic(kinds), input: {}, t: Math.random() * CYCLE, msgT: 0, crashT: 0, hornT: 0, inCross: false,
     gears: gearbox(player.kind), onExit, last: performance.now(), kinds, pay, fines: 0, police: null, pulled: 0, ticket: false,
-    earn, drift: 0, driftT: 0, driftBest: (() => { try { return +localStorage.getItem('autoRetterDriftBest') || 0; } catch (e) { return 0; } })() };
+    earn, net, netCars: net ? makeNetCars({ scene: S.scene, kinds, net }) : null, drift: 0, driftT: 0, driftBest: (() => { try { return +localStorage.getItem('autoRetterDriftBest') || 0; } catch (e) { return 0; } })() };
   S.fx.clear();
   S.scene.add(mesh);
   for (const c of city.cars) S.scene.add(c.mesh);
@@ -1078,7 +1085,7 @@ export function startCity({ player, kinds, topSpeed, onExit, pay = () => 0, earn
   S.ui.root.hidden = false;
   S.ui.ps.textContent = '⚡ ' + player.ps + ' PS';
   layout();
-  showMsg('🏙️ Fahr, wohin du willst!', 2.5);
+  showMsg(net ? '🏙️ Stadt online – such deine Freunde!' : '🏙️ Fahr, wohin du willst!', 2.5);
   window.addEventListener('keydown', onKey);
   window.addEventListener('keyup', onKey);
   S.snd = createCarSound({ kind: player.kind });
@@ -1103,6 +1110,14 @@ function loop(now) {
   stepDrift(dt);
   stepPolice(dt);
   stepTraffic(dt);
+  if (city.netCars) { // Mitspieler: zeigen, eigene Position senden, nicht durcheinander durchfahren
+    const me = city.me, o = { x: me.pos.x, y: 0, z: me.pos.z };
+    if (city.netCars.bump(o, me.radius)) {
+      me.pos.x = o.x; me.pos.z = o.z; me.speed *= 0.95;
+      if (Math.abs(me.speed) > 5 && city.crashT <= 0) { crash(0.25, 'car'); city.crashT = 0.5; }
+    }
+    city.netCars.update(dt, city.t, { x: me.pos.x, y: 0, z: me.pos.z, h: me.heading, v: me.speed });
+  }
   updateHud(dt);
   render(dt);
   requestAnimationFrame(loop);
@@ -1147,6 +1162,7 @@ function endCity() {
   window.removeEventListener('keyup', onKey);
   S.scene.remove(c.me.mesh);
   for (const car of c.cars) S.scene.remove(car.mesh); // Formen gehören den Vorlagen in cars3d.js
+  if (c.netCars) c.netCars.dispose();
   S.ui.root.hidden = true;
   c.onExit();
 }

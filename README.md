@@ -7,6 +7,8 @@ und nochmals, damit es weiterfährt – so kommen alle heil zum Ausgang.
   fünf Strecken (Alpen, Vulkan, Gletscher mit Tunnel, Wüsten-Canyon mit Brücken-Kreuzung, Dschungel) mit Steilkurven, Hügeln und Brücken
 - 3D-Stadt zum freien Herumfahren: Häuser, Parks, Brunnen, Ampeln und viel Verkehr, der abbiegt, an Rot hält und hupt,
   Driften mit Handbremse (Rauch, Bremsspuren, Drift-Punkte) und Polizei, die bei Rot verfolgt und Strafzettel verteilt
+- 3D-Stuntpark: Schanzen, Tabletop, Weitsprung, Mega-Rampe vom Turm, Looping, Halfpipe-Wände, Wellenbahn und Feuerringe;
+  in der Luft Salto und Schraube, Punkte mit Combo, Rekord – Punkte geben Münzen (250 Punkte = 1 Münze)
 - 3D-Dragster-Bahn: 402 m geradeaus, Startampel und selber schalten – der Gewinner bekommt das Auto des Verlierers
 - Presse in einer 3D-Fabrikhalle: Autos retten bringt Münzen und +1 PS, zerquetscht kostet −3 PS
 - Fahrzeugpark mit 110 Fahrzeugen in fünf Seltenheitsstufen, viele mit Spezialkräften
@@ -14,12 +16,14 @@ und nochmals, damit es weiterfährt – so kommen alle heil zum Ausgang.
 - Münzen sammeln, Fahrzeuge verkaufen, Level werden schnell schwieriger
 - Echte Geräusche aus dem Synthesizer: jedes Fahrzeug klingt nach seinem Antrieb (Diesel, V8, Rennmotor, Elektro, Düse …),
   dazu quietschende Reifen, Gras, Kies, Curbs, Wind und Crashs
-- Online mit Freunden: Rennen (2–6 Spieler, freie Plätze fahren Bots, mit Remplern und Rückspiegel) und Dragster 1 gegen 1 über einen 4-stelligen Raum-Code
+- Online mit Freunden: Rennen (2–6 Spieler, freie Plätze fahren Bots, mit Remplern und Rückspiegel), Dragster 1 gegen 1,
+  Stadt und Stuntpark zusammen herumfahren (bis 6) über einen 4-stelligen Raum-Code
 
 **Online spielen:** https://pazoozooch.github.io/lio-auto-saver/
 
 Läuft ohne Build: `index.html` + `game.js`, dazu `press3d.js`, `race.js`, `drag.js`, `cars3d.js` und `world3d.js` für die 3D-Grafik
-sowie `tracks.js` für die Rennstrecken, `city.js` für die Stadt, `online.js` für das Online-Spiel und `sound.js` für die Geräusche
+sowie `tracks.js` für die Rennstrecken, `city.js` für die Stadt, `stunt.js` für den Stuntpark, `online.js` und `netcars.js`
+für das Online-Spiel und `sound.js` für die Geräusche
 (three.js wird aus dem Internet geladen; ohne Internet läuft die Presse in 2D). Der Spielstand liegt im `localStorage` des Browsers.
 
 ## Starten
@@ -59,6 +63,9 @@ Online spielen läuft ohne eigenen Server: Das Spiel verbindet sich direkt mit e
 - **Bots:** Sind weniger als 6 Spieler im Rennen, füllen Bots (🤖) die freien Startplätze. Sie werden nicht übers Netz
   geschickt: Jedes Gerät rechnet sie selbst, mit demselben Zufall (aus Raum-Code und Runde) und im festen Takt der
   gemeinsamen Uhr, darum fahren sie überall gleich. Spieler prallen an Bots ab, die Bots bleiben auf Kurs.
+- **Stadt und Stuntpark** (freies Fahren): kein gemeinsamer Start – jeder tippt „Losfahren“, wann er will, und sieht
+  alle, die gerade fahren (mit Namensschild, auf der Karte, im Stuntpark mit Punkteliste). Verkehr und Polizei rechnet
+  jedes Gerät für sich. Wer zurück in den Raum geht, verschwindet bei den anderen.
 - Dragster: gemeinsame Startampel. Ein Frühstart kostet 1 Sekunde, die Zeiten werden verglichen.
 - Online werden **keine Autos gewonnen oder verloren** und keine Pokale vergeben, es geht nur um Ruhm.
 - Verlässt ein Spieler den Raum oder bricht seine Verbindung ab, löscht Firebase seinen Platz
@@ -69,9 +76,9 @@ Datenaufbau:
 ```
 keys/<Schlüssel>: true                        Freundes-Schlüssel (nicht lesbar, nur per Admin-Zugang)
 public/<CODE>: mode, name (Gastgeber), n (Spieler), state, created   Liste der öffentlichen Räume
-rooms/<CODE>/  host, key, created, mode (race|drag), state (lobby|running), start, round
+rooms/<CODE>/  host, key, created, mode (race|drag|city|stunt), state (lobby|running), start, round
 rooms/<CODE>/players/<0–5>: uid, name, kind, color, special, ps
-rooms/<CODE>/live/<0–5>:    x, z, h, v, p, g, fin, r (Runde), t (Serverzeit)
+rooms/<CODE>/live/<0–5>:    x, z, h, v, p, g, fin, r (Runde), t (Serverzeit); freies Fahren: y (Höhe), a/b (Neigung), p (Stunt-Punkte), r = 0
 ```
 
 ### Einrichtung (bereits erledigt)

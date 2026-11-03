@@ -9,7 +9,10 @@ const CONFIG = {
   projectId: 'lio-car-saver-de75a',
   appId: '1:377042518173:web:f1184f6da48e2c21509474',
 };
-const MAX_PLAYERS = { race: 6, drag: 2 };
+const MAX_PLAYERS = { race: 6, drag: 2, city: 6, stunt: 6 };
+// Stadt und Stuntpark: freies Fahren ohne gemeinsamen Start – jeder fährt los, wann er will, und sieht die anderen
+const FREE = { city: true, stunt: true };
+const MODE_LABEL = { race: '🏁 Rennen', drag: '🔥 Dragster', city: '🏙️ Stadt', stunt: '🤸 Stuntpark' };
 const LS = { name: 'autoRetterOnlineName', key: 'autoRetterFriendKey', car: 'autoRetterOnlineCar', pub: 'autoRetterOnlinePublic' };
 
 let api = null;   // vom Spiel: kinds, fleet(), topSpeed, paintLabel(v), onClose()
@@ -56,7 +59,8 @@ const CSS = `
   border-radius: 10px; border: 1px solid #3b4560; background: #0e1118; color: #fff; }
 #online button { font: 800 17px system-ui, sans-serif; color: #fff; border: 2px solid rgba(255,255,255,0.35); border-radius: 12px;
   padding: 11px 14px; margin: 4px 6px 4px 0; cursor: pointer; background: #3657b8; }
-#online button.race { background: #c0392b; } #online button.drag { background: #d35400; } #online button.go { background: #21a35b; font-size: 22px; padding: 14px 26px; }
+#online button.race { background: #c0392b; } #online button.drag { background: #d35400; }
+#online button.city { background: #6d28d9; } #online button.stunt { background: #db2777; } #online button.go { background: #21a35b; font-size: 22px; padding: 14px 26px; }
 #online button.grey { background: #4b5563; } #online button:disabled { opacity: 0.45; cursor: default; }
 #online .code { font-size: 40px; letter-spacing: 6px; color: #ffd166; user-select: all; }
 #online .players { list-style: none; padding: 0; margin: 0; }
@@ -107,6 +111,8 @@ function showHome(msg = '') {
         <label class="check"><input type="checkbox" id="on-public"${load(LS.pub) === '1' ? ' checked' : ''}> 🌍 Öffentlich (alle sehen den Raum)</label>
         <button class="race" data-act="create" data-mode="race">🏁 Rennen (2–6)</button>
         <button class="drag" data-act="create" data-mode="drag">🔥 Dragster (1 gegen 1)</button>
+        <button class="city" data-act="create" data-mode="city">🏙️ Stadt (bis 6)</button>
+        <button class="stunt" data-act="create" data-mode="stunt">🤸 Stuntpark (bis 6)</button>
       </div>
       <div class="box"><b>Raum beitreten</b>
         <label>Raum-Code <input id="on-code" placeholder="z.B. 4821" autocomplete="off" inputmode="numeric" maxlength="4"></label>
@@ -141,9 +147,9 @@ function renderPublic(list) {
   const fresh = Object.entries(list).filter(([, r]) => r && r.created > serverNow() - 3 * 3600 * 1000)
     .sort((a, b) => b[1].created - a[1].created).slice(0, 12);
   box.innerHTML = fresh.length ? fresh.map(([code, r]) => {
-    const full = r.n >= MAX_PLAYERS[r.mode];
-    return `<button data-act="join" data-code="${esc(code)}"${full ? ' disabled' : ''}><span>${r.mode === 'race' ? '🏁 Rennen' : '🔥 Dragster'} von ${esc(r.name)}</span>
-      <small>${r.n}/${MAX_PLAYERS[r.mode]}${r.state === 'running' ? ' · fährt gerade' : ''}${full ? ' · voll' : ''}</small></button>`;
+    const full = r.n >= (MAX_PLAYERS[r.mode] || 6);
+    return `<button data-act="join" data-code="${esc(code)}"${full ? ' disabled' : ''}><span>${MODE_LABEL[r.mode] || r.mode} von ${esc(r.name)}</span>
+      <small>${r.n}/${MAX_PLAYERS[r.mode] || 6}${r.state === 'running' ? ' · fährt gerade' : ''}${full ? ' · voll' : ''}</small></button>`;
   }).join('') : '<p class="hint">Gerade gibt es keine offenen Räume. Erstell doch selber einen! 😊</p>';
 }
 
@@ -228,6 +234,7 @@ const ACTIONS = {
     fb.update(roomRef(room.code), { state: 'running', start: serverNow() + 4000, round: (d.round || 0) + 1 }).catch(e => status(e.message));
   },
   leave: () => leaveRoom(true),
+  drive: () => { if (room && room.data && FREE[room.data.mode] && !room.racing) launchFree(room.data); },
 };
 
 // ---------- Raum ----------
@@ -264,9 +271,10 @@ function onRoom(data) {
 function showRoom() {
   const d = room.data, players = d.players || {}, slots = Object.keys(players).sort();
   const isHost = d.host === fb.uid, n = slots.length, max = MAX_PLAYERS[d.mode];
-  const ready = d.mode === 'drag' ? n === 2 : n >= 2;
+  const ready = d.mode === 'drag' ? n === 2 : n >= 2, free = FREE[d.mode];
+  const driving = free ? Object.keys(players).filter(s => { const l = d.live && d.live[s]; return l && l.r === 0 && serverNow() - l.t < 5000; }).length : 0;
   ui.wrap.innerHTML = `
-    <h1>${d.mode === 'race' ? '🏁 Online-Rennen' : '🔥 Online-Dragster'}${room.public ? '<span class="badge">🌍 öffentlich</span>' : ''}</h1>
+    <h1>${MODE_LABEL[d.mode] || d.mode} online${room.public ? '<span class="badge">🌍 öffentlich</span>' : ''}</h1>
     <div class="box"><b>Raum-Code</b><div class="code">${esc(room.code)}</div>
       <p class="hint">${room.public ? 'Der Raum steht bei allen unter „Offene Räume“. Du kannst den Code auch direkt weitergeben.' : 'Schick diesen Code deinen Freunden. Sie tippen ihn unter „Raum beitreten“ ein.'}</p></div>
     <div class="box"><b>Spieler (${n}/${max})</b><ul class="players">${slots.map(s => {
@@ -275,10 +283,12 @@ function showRoom() {
     }).join('')}</ul></div>
     ${room.results ? resultsHtml() : ''}
     <div class="status"></div>
-    ${isHost ? `<button class="go" data-act="start"${ready ? '' : ' disabled'}>▶ ${room.results ? 'Nochmal fahren' : 'Start'}</button>`
+    ${free ? `<button class="go" data-act="drive">▶ Losfahren</button>
+      <p class="hint">${driving ? '🚗 ' + driving + ' fahren schon herum. ' : ''}Jeder fährt los, wann er will – wer schon fährt, sieht dich sofort.</p>`
+    : isHost ? `<button class="go" data-act="start"${ready ? '' : ' disabled'}>▶ ${room.results ? 'Nochmal fahren' : 'Start'}</button>`
       : '<p class="hint">Warte, bis 👑 das Rennen startet …</p>'}
     <button class="grey" data-act="leave">Raum verlassen</button>
-    ${isHost && !ready ? `<p class="hint">${d.mode === 'drag' ? 'Für den Dragster braucht es genau 2 Spieler.' : 'Es braucht mindestens 2 Spieler.'}</p>` : ''}
+    ${isHost && !ready && !free ? `<p class="hint">${d.mode === 'drag' ? 'Für den Dragster braucht es genau 2 Spieler.' : 'Es braucht mindestens 2 Spieler.'}</p>` : ''}
     ${d.mode === 'race' && n < max ? `<p class="hint">🤖 Die ${max - n} freien Plätze fahren Bots – es sind immer 6 Autos auf der Strecke.</p>` : ''}`;
 }
 
@@ -374,6 +384,40 @@ async function launch(data) {
     ui.root.hidden = false;
     showRoom();
     status('Die 3D-Strecke konnte nicht geladen werden.');
+  }
+}
+
+// Stadt oder Stuntpark: losfahren; zurück im Raum verschwindet das eigene Auto bei den anderen
+async function launchFree(data) {
+  const mySlot = room.slot, code = room.code, players = data.players || {};
+  const myV = { ...vehicleOf(players[mySlot]), id: 'online', name: players[mySlot].name };
+  const net = {
+    mySlot, serverNow,
+    players: () => (room && room.data && room.data.players) || {},
+    send(s) { fb.set(roomRef(code, 'live/' + mySlot), { ...s, r: 0, t: fb.serverTimestamp() }).catch(() => {}); },
+    latest(slot) {
+      const l = room && room.data && room.data.live && room.data.live[slot];
+      return l && l.r === 0 ? l : null;
+    },
+  };
+  room.racing = true;
+  ui.root.hidden = true;
+  const done = () => {
+    ui.root.hidden = false;
+    fb.remove(roomRef(code, 'live/' + mySlot)).catch(() => {});
+    if (!room) { showHome('Der Raum wurde geschlossen.'); return; }
+    room.racing = false;
+    showRoom();
+  };
+  try {
+    if (data.mode === 'city') (await import('./city.js')).startCity({ player: myV, kinds: api.kinds, topSpeed: api.topSpeed, onExit: done, net });
+    else (await import('./stunt.js')).startStunt({ player: myV, kinds: api.kinds, topSpeed: api.topSpeed, onExit: done, net });
+  } catch (err) {
+    console.error(err);
+    room.racing = false;
+    ui.root.hidden = false;
+    showRoom();
+    status('Das konnte nicht geladen werden – braucht Internet.');
   }
 }
 
