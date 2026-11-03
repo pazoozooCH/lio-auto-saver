@@ -276,10 +276,13 @@ function buildWorld() {
   }
 
   // Bäume: in den Parks und als Waldgürtel rund um die Stadt
-  for (let k = 0; k < 360; k++) {
+  // (die Stadt ist quadratisch: Bäume aus einem Kreis landeten sonst in den Ecken auf Strassen und Häusern)
+  for (let k = 0; k < 360;) {
     const a = r() * Math.PI * 2, rr = HALF + 30 + r() * 150;
     const tx = Math.cos(a) * rr * 1.1, tz = Math.sin(a) * rr * 1.1;
+    if (Math.max(Math.abs(tx), Math.abs(tz)) < HALF + ROAD / 2 + 12) continue;
     trees.push([tx, height(tx, tz), tz, 0.9 + r() * 0.9]);
+    k++;
   }
   const trunkM = new THREE.InstancedMesh(new THREE.CylinderGeometry(0.22, 0.35, 3, 6), mat({ color: 0x5b4030, roughness: 1 }), trees.length);
   const crownM = new THREE.InstancedMesh(new THREE.IcosahedronGeometry(2.4, 1), mat({ color: 0xffffff, roughness: 0.95, flatShading: true }), trees.length);
@@ -485,9 +488,33 @@ function stepTraffic(dt) {
 
 // ---------- Selber fahren ----------
 const GRIP = 12, BRAKE = 20;
+// Von der Polizei angehalten: das Auto lenkt selber an den rechten Strassenrand und bremst bis zum Stillstand
+// (nur „Bremse“ drücken hiesse nach dem Anhalten rückwärts fahren – dann fuhr man rückwärts durch die ganze Stadt)
+function pullOver(me, dt) {
+  const fx = Math.cos(me.heading), fz = Math.sin(me.heading);
+  const gi = Math.round(me.pos.x / BLOCK + N / 2), gj = Math.round(me.pos.z / BLOCK + N / 2);
+  const offX = Math.abs(me.pos.z - node(gj)), offZ = Math.abs(me.pos.x - node(gi));
+  // Strasse entlang x (man ist nahe an einer z-Linie) oder entlang z; Fahrtrichtung auf der Strasse
+  const alongX = offX < ROAD / 2 + 2 && (offZ >= ROAD / 2 + 2 || Math.abs(fx) > Math.abs(fz));
+  const ax = alongX ? Math.sign(fx) || 1 : 0, az = alongX ? 0 : Math.sign(fz) || 1;
+  const edge = ROAD / 2 - 1.6; // Abstand der Fahrzeugmitte von der Strassenmitte am rechten Rand
+  const tx = (alongX ? me.pos.x : node(gi)) + ax * 8 - az * edge, tz = (alongX ? node(gj) : me.pos.z) + az * 8 + ax * edge;
+  let diff = Math.atan2(tz - me.pos.z, tx - me.pos.x) - me.heading;
+  diff = Math.atan2(Math.sin(diff), Math.cos(diff));
+  const atEdge = Math.abs((alongX ? me.pos.z - node(gj) : me.pos.x - node(gi)) - (alongX ? ax : -az) * edge) < 1;
+  // bis auf Schritttempo bremsen und so an den Rand rollen (höchstens 4 s), dort anhalten; nie rückwärts
+  me.pullT = (me.pullT || 0) + dt;
+  if (me.speed < 0) me.speed = Math.min(0, me.speed + 10 * dt);
+  else if (atEdge || me.pullT > 4) me.speed = Math.max(0, me.speed - 9 * dt);
+  else me.speed = me.speed > 3.5 ? Math.max(3.5, me.speed - 7 * dt) : Math.min(3.5, me.speed + 4 * dt);
+  if (me.speed < 0.4 && (atEdge || me.pullT > 4)) me.speed = 0;
+  return { left: diff < -0.05, right: diff > 0.05 };
+}
+
 function stepMe(dt) {
   const stopped = city.pulled > 0 || city.ticket || (city.police && city.police.state === 'stop');
-  const me = city.me, input = stopped ? { brake: true } : city.input; // von der Polizei angehalten: nur bremsen
+  if (!stopped) city.me.pullT = 0;
+  const me = city.me, input = stopped ? pullOver(me, dt) : city.input; // von der Polizei angehalten: rechts ranfahren
   const gas = input.gas, brake = input.brake, hand = !!input.drift && !stopped; // Handbremse zum Driften
   const steerTarget = (input.left ? -1 : 0) + (input.right ? 1 : 0);
   me.steer += (steerTarget - me.steer) * Math.min(1, dt * 7);
