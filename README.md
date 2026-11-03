@@ -55,7 +55,7 @@ Online spielen läuft ohne eigenen Server: Das Spiel verbindet sich direkt mit e
 - Ein Spieler erstellt einen **Raum** mit einem Code aus 4 Ziffern (z.B. `4821`). Dafür braucht es den **Freundes-Schlüssel**.
   Die anderen treten mit dem Raum-Code bei. Mit dem Häkchen **„🌍 Öffentlich“** steht der Raum zusätzlich
   bei allen im Online-Menü unter „Offene Räume“ und kann dort direkt angetippt werden.
-- Der Gastgeber (👑) startet. Alle Geräte starten zur selben Serverzeit (`.info/serverTimeOffset`).
+- Der Gastgeber (👑) wählt beim Rennen die Strecke und startet. Alle Geräte starten zur selben Serverzeit (`.info/serverTimeOffset`).
 - Jedes Gerät berechnet **nur sein eigenes Auto** und sendet Position, Richtung, Tempo und Fortschritt
   10× pro Sekunde. Die Autos der anderen werden geglättet und vorausberechnet angezeigt.
 - **Kollisionen:** Berühren sich zwei Autos, schiebt jedes Gerät sein eigenes Auto weg.
@@ -76,7 +76,8 @@ Datenaufbau:
 ```
 keys/<Schlüssel>: true                        Freundes-Schlüssel (nicht lesbar, nur per Admin-Zugang)
 public/<CODE>: mode, name (Gastgeber), n (Spieler), state, created   Liste der öffentlichen Räume
-rooms/<CODE>/  host, key, created, mode (race|drag|city|stunt), state (lobby|running), start, round
+rooms/<CODE>/  host, key, created, mode (race|drag|city|stunt), state (lobby|running), start,
+               round (= Rennen × 8 + Strecke: so wählt der Gastgeber die Strecke ohne eigenes Feld in den Regeln)
 rooms/<CODE>/players/<0–5>: uid, name, kind, color, special, ps
 rooms/<CODE>/live/<0–5>:    x, z, h, v, p, g, fin, r (Runde), t (Serverzeit); freies Fahren: y (Höhe), a/b (Neigung), p (Stunt-Punkte), r = 0
 ```

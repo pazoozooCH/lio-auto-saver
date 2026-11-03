@@ -12,6 +12,11 @@ const CONFIG = {
 const MAX_PLAYERS = { race: 6, drag: 2, city: 6, stunt: 6 };
 // Stadt und Stuntpark: freies Fahren ohne gemeinsamen Start – jeder fährt los, wann er will, und sieht die anderen
 const FREE = { city: true, stunt: true };
+// Rennstrecke im Raum: steckt in round (round = Rennen × 8 + Strecke), so braucht es kein neues Feld in den Regeln
+const TRACK_SLOTS = 8;
+const trackOf = round => (round || 0) % TRACK_SLOTS;
+const raceNo = round => Math.floor((round || 0) / TRACK_SLOTS);
+const trackDef = round => (api.tracks || [])[trackOf(round)] || { id: 'gp', name: 'Alpen-Grand-Prix', emoji: '🏔️', km: 1.8, laps: 3 };
 const MODE_LABEL = { race: '🏁 Rennen', drag: '🔥 Dragster', city: '🏙️ Stadt', stunt: '🤸 Stuntpark' };
 const LS = { name: 'autoRetterOnlineName', key: 'autoRetterFriendKey', car: 'autoRetterOnlineCar', pub: 'autoRetterOnlinePublic' };
 
@@ -72,6 +77,8 @@ const CSS = `
 #online .check input { width: 22px; height: 22px; margin: 0; display: inline-block; }
 #online .rooms button { display: flex; justify-content: space-between; width: 100%; text-align: left; background: #1f2a44; margin: 6px 0; }
 #online .rooms button small { color: #9aa4b8; font-weight: 700; }
+#online .trackrow { display: flex; align-items: center; gap: 12px; margin-top: 6px; }
+#online .trackrow button { margin: 0; padding: 8px 16px; font-size: 20px; } #online .temoji { font-size: 30px; vertical-align: middle; }
 #online .badge { font-size: 15px; background: #0e7490; border-radius: 8px; padding: 3px 8px; margin-left: 8px; vertical-align: middle; }
 #online table { width: 100%; border-collapse: collapse; font-size: 17px; }
 #online td { padding: 6px 4px; border-bottom: 1px solid rgba(255,255,255,0.08); }
@@ -231,7 +238,15 @@ const ACTIONS = {
   start: () => {
     const d = room.data, n = Object.keys(d.players || {}).length;
     if (n < 2) return;
-    fb.update(roomRef(room.code), { state: 'running', start: serverNow() + 4000, round: (d.round || 0) + 1 }).catch(e => status(e.message));
+    // etwas mehr Vorlauf: die grossen Strecken brauchen auf dem Handy ein paar Sekunden zum Aufbauen
+    fb.update(roomRef(room.code), { state: 'running', start: serverNow() + (d.mode === 'race' ? 7000 : 4000),
+      round: (raceNo(d.round) + 1) * TRACK_SLOTS + trackOf(d.round) }).catch(e => status(e.message));
+  },
+  track(b) { // Gastgeber wählt die Strecke (nur zwischen den Rennen)
+    const d = room.data, n = (api.tracks || []).length;
+    if (!n || d.host !== fb.uid || d.state !== 'lobby') return;
+    const t = (trackOf(d.round) + +b.dataset.dir + n) % n;
+    fb.update(roomRef(room.code), { round: raceNo(d.round) * TRACK_SLOTS + t }).catch(e => status(e.message));
   },
   leave: () => leaveRoom(true),
   drive: () => { if (room && room.data && FREE[room.data.mode] && !room.racing) launchFree(room.data); },
@@ -281,6 +296,11 @@ function showRoom() {
       const p = players[s];
       return `<li class="${+s === room.slot ? 'me' : ''}"><span>${p.uid === d.host ? '👑 ' : ''}${esc(p.name)}</span><span>${esc(carLabel(p))}</span></li>`;
     }).join('')}</ul></div>
+    ${d.mode === 'race' ? (() => { const tr = trackDef(d.round); return `<div class="box track"><b>Strecke</b>
+      <div class="trackrow">${isHost && d.state === 'lobby' ? '<button class="grey" data-act="track" data-dir="-1">◀</button>' : ''}
+      <span><span class="temoji">${tr.emoji}</span> <b>${esc(tr.name)}</b><br><small>${tr.km.toFixed(1)} km · ${tr.laps} Runden</small></span>
+      ${isHost && d.state === 'lobby' ? '<button class="grey" data-act="track" data-dir="1">▶</button>' : ''}</div>
+      ${isHost ? '' : '<p class="hint">👑 wählt die Strecke.</p>'}</div>`; })() : ''}
     ${room.results ? resultsHtml() : ''}
     <div class="status"></div>
     ${free ? `<button class="go" data-act="drive">▶ Losfahren</button>
@@ -295,7 +315,7 @@ function showRoom() {
 function resultsHtml() {
   const r = room.results;
   const rows = r.rows.map((row, i) => `<tr><td>${['🥇', '🥈', '🥉'][i] || (i + 1) + '.'}</td><td>${esc(row.name)}${row.me ? ' (du)' : ''}</td><td>${esc(row.kind)}</td><td style="text-align:right">${row.time ? row.time.toFixed(2) + ' s' : '–'}</td></tr>`).join('');
-  return `<div class="box"><b>Ergebnis Runde ${r.round}</b><table>${rows}</table></div>`;
+  return `<div class="box"><b>Ergebnis ${r.mode === 'race' ? 'Rennen ' + raceNo(r.round) + ' · ' + esc(trackDef(r.round).name) : 'Runde ' + raceNo(r.round)}</b><table>${rows}</table></div>`;
 }
 
 async function leaveRoom(byUser, msg = '') {
@@ -364,14 +384,15 @@ async function launch(data) {
     ui.root.hidden = false;
     if (!room) { showHome('Der Raum wurde geschlossen.'); return; }
     room.racing = false;
-    if (!res.quit) room.results = { round, rows: resultRows(res, data, round) };
+    if (!res.quit) room.results = { round, mode: data.mode, rows: resultRows(res, data, round) };
     if (room.data && room.data.host === fb.uid && room.data.state === 'running') fb.update(roomRef(code), { state: 'lobby' }).catch(() => {});
     showRoom();
   };
   try {
     if (data.mode === 'race') {
       const m = await import('./race.js');
-      m.startRace({ player: myV, opponents: botsFor(players, code, round), kinds: api.kinds, topSpeed: api.topSpeed, onFinish: done, net });
+      m.startRace({ player: myV, opponents: botsFor(players, code, round), kinds: api.kinds, topSpeed: api.topSpeed, onFinish: done, net,
+        track: trackDef(round).id });
     } else {
       const m = await import('./drag.js');
       const opp = others[0];

@@ -3486,7 +3486,7 @@ function startStuntMode() {
 function openOnline() {
   state = 'online';
   import('./online.js')
-    .then(m => m.openLobby({ kinds: KINDS, fleet: fleetByPS, topSpeed: raceTopSpeed, paintLabel: specialLabel, onClose: () => openMenu('title') }))
+    .then(m => m.openLobby({ kinds: KINDS, fleet: fleetByPS, topSpeed: raceTopSpeed, paintLabel: specialLabel, tracks: RACE_TRACKS, onClose: () => openMenu('title') }))
     .catch(err => {
       console.error(err);
       openMenu('title');
