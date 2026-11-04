@@ -21,8 +21,38 @@ const PROFILE = {
   microbus: { body: [[0, .16], [0, .88], [.05, 1], [.9, 1], [1, .86], [1, .16]], glass: [[.03, .62], [.04, .9], [.95, .9], [.99, .62]], width: 2.0, tall: true },
 };
 
+// Lava: dunkles Gestein mit glühenden Rissen (einmal gezeichnet, für alle Lava-Autos)
+let lavaTex = null;
+function lavaTexture() {
+  if (lavaTex) return lavaTex;
+  const c = document.createElement('canvas');
+  c.width = c.height = 256;
+  const g = c.getContext('2d');
+  g.fillStyle = '#1c0d08'; g.fillRect(0, 0, 256, 256);
+  g.strokeStyle = '#ff6a00'; g.lineCap = 'round';
+  for (let k = 0; k < 26; k++) { // Risse: Zickzack-Linien
+    let x = Math.random() * 256, y = Math.random() * 256;
+    g.lineWidth = 1.5 + Math.random() * 3;
+    g.beginPath(); g.moveTo(x, y);
+    for (let i = 0; i < 6; i++) { x += (Math.random() - 0.5) * 60; y += (Math.random() - 0.5) * 60; g.lineTo(x, y); }
+    g.stroke();
+  }
+  lavaTex = new THREE.CanvasTexture(c);
+  lavaTex.colorSpace = THREE.SRGBColorSpace;
+  lavaTex.wrapS = lavaTex.wrapT = THREE.RepeatWrapping;
+  return lavaTex;
+}
+
 function paintMaterial(v) {
   const base = { clearcoat: 1, clearcoatRoughness: 0.06 };
+  const finish = v.tune && v.tune.finish; // Tuning-Lack geht vor
+  if (finish === 'chrome') return new THREE.MeshPhysicalMaterial({ ...base, color: 0xf2f4f8, metalness: 0.85, roughness: 0.16, envMapIntensity: 1.6 });
+  if (finish === 'neon') {
+    const col = new THREE.Color((v.tune && v.tune.neon) || '#39ff14');
+    return new THREE.MeshPhysicalMaterial({ ...base, color: col, emissive: col, emissiveIntensity: 0.75, metalness: 0.2, roughness: 0.3 });
+  }
+  if (finish === 'lava') return new THREE.MeshPhysicalMaterial({ ...base, color: 0xffffff, map: lavaTexture(), emissive: 0xffffff,
+    emissiveMap: lavaTexture(), emissiveIntensity: 1.1, metalness: 0.1, roughness: 0.7 });
   switch (v.special) {
     case 'gold': return new THREE.MeshPhysicalMaterial({ ...base, color: 0xffc83d, metalness: 0.9, roughness: 0.26, emissive: 0x3a2600, emissiveIntensity: 0.6 });
     case 'diamond': return new THREE.MeshPhysicalMaterial({ ...base, color: 0xcdefff, metalness: 0.2, roughness: 0.03, iridescence: 1, iridescenceIOR: 1.8 });
@@ -56,7 +86,7 @@ function shared() {
 const mat = (color, opts = {}) => new THREE.MeshStandardMaterial({ color, roughness: 0.5, ...opts });
 
 // Schweizer Nummernschild: weiss, schwarze Schrift, kleines Wappen
-function plateTexture() {
+function plateTexture(text = 'AR 2026') {
   const c = document.createElement('canvas');
   c.width = 256; c.height = 56;
   const g = c.getContext('2d');
@@ -65,7 +95,7 @@ function plateTexture() {
   g.fillStyle = '#d52b1e'; g.fillRect(14, 12, 30, 32);
   g.fillStyle = '#fff'; g.fillRect(25, 17, 8, 22); g.fillRect(18, 24, 22, 8);
   g.fillStyle = '#111'; g.font = 'bold 38px system-ui, sans-serif'; g.textBaseline = 'middle';
-  g.fillText('AR 2026', 56, 30);
+  g.fillText(text, 56, 30, 192);
   const t = new THREE.CanvasTexture(c);
   t.colorSpace = THREE.SRGBColorSpace;
   return t;
@@ -160,7 +190,9 @@ function wheel(r, width, parent, x, z, rimMat, spokes) {
 
 // Werkzeugkasten zum Bauen: Teile werden am Fahrzeugkörper angebracht
 function kit(v, kinds, hDiv, spec) {
-  const k = kinds[v.kind], M = shared();
+  const k = kinds[v.kind], shM = shared(), tune = v.tune || {};
+  // eigenes Nummernschild (Tuning): nur für dieses Auto ein eigenes Material
+  const M = tune.plate ? { ...shM, plate: new THREE.MeshStandardMaterial({ map: plateTexture(tune.plate), roughness: 0.4 }) } : shM;
   const tall = spec.tall || (PROFILE[spec.arch] && PROFILE[spec.arch].tall);
   const C = {
     v, k, M, L: k.w[1] / 22, H: k.h[1] / (hDiv || (tall ? 20 : 27)), W: spec.width || (PROFILE[spec.arch] || {}).width || 1.85,
@@ -891,15 +923,71 @@ function bike(C) {
 // Baut ein 3D-Fahrzeug. hDiv: Pixel der 2D-Höhe pro Meter (Standard: hohe Fahrzeuge 20, sonst 27)
 // Jedes Fahrzeug (Typ, Lack, Farbe) wird nur einmal gebaut und danach kopiert: Kopien teilen sich
 // Formen und Materialien, das spart beim Erscheinen eines Autos viel Zeit. Geteilte Formen nie freigeben!
+// ---------- Tuning (Werkstatt in game.js): grosse Räder, Spoiler, Neonlicht, Sticker ----------
+const STICKERS = {
+  flames: (g, w, h) => { // Flammen von vorne nach hinten
+    const gr = g.createLinearGradient(0, 0, w, 0); gr.addColorStop(0, '#dc2626'); gr.addColorStop(0.6, '#f97316'); gr.addColorStop(1, '#facc15');
+    g.fillStyle = gr; g.beginPath(); g.moveTo(w, h * 0.2);
+    for (let i = 0; i <= 10; i++) g.lineTo(w - w * i / 10, i % 2 ? h * 0.5 : h * (0.05 + 0.1 * Math.sin(i)));
+    g.lineTo(0, h * 0.95); g.lineTo(w, h * 0.8); g.fill();
+  },
+  stripes: (g, w, h) => { g.fillStyle = '#ffffff'; g.fillRect(0, h * 0.18, w, h * 0.22); g.fillRect(0, h * 0.6, w, h * 0.22); },
+  stars: (g, w, h) => {
+    g.fillStyle = '#facc15';
+    for (let k = 0; k < 5; k++) {
+      const cx = w * (0.12 + k * 0.19), cy = h * (k % 2 ? 0.35 : 0.65), r = h * 0.3;
+      g.beginPath();
+      for (let i = 0; i < 10; i++) { const a = -Math.PI / 2 + i * Math.PI / 5, rr = i % 2 ? r * 0.45 : r; g.lineTo(cx + Math.cos(a) * rr, cy + Math.sin(a) * rr); }
+      g.fill();
+    }
+  },
+  lightning: (g, w, h) => {
+    g.fillStyle = '#facc15'; g.strokeStyle = '#111'; g.lineWidth = h * 0.05;
+    g.beginPath(); g.moveTo(w * 0.05, h * 0.5); g.lineTo(w * 0.45, h * 0.1); g.lineTo(w * 0.42, h * 0.42); g.lineTo(w * 0.95, h * 0.5);
+    g.lineTo(w * 0.55, h * 0.9); g.lineTo(w * 0.58, h * 0.58); g.closePath(); g.fill(); g.stroke();
+  },
+};
+function applyTune(C, tune) {
+  const { L, W, M } = C;
+  if (tune.wheels) for (const w of C.wheels) { const r = w.position.y; w.scale.setScalar(1.22); w.position.y = r * 1.22; }
+  if (tune.spoiler) { // Heckflügel über dem Heck: Höhe des Hecks aus dem Seitenprofil (sonst aus den Teilen hinten)
+    let top = 0.6;
+    if (C.side) for (const [x, y] of C.side.pts) { if (x < -L / 2 + L * 0.18) top = Math.max(top, y); }
+    else {
+      C.body.updateMatrixWorld(true);
+      const box = new THREE.Box3();
+      C.body.traverse(o => { if (!o.isMesh) return; box.setFromObject(o); if (box.max.x < -L / 2 + L * 0.3 && box.max.y < 3.5) top = Math.max(top, box.max.y); });
+    }
+    const carbon = mat(0x111214, { roughness: 0.35, metalness: 0.3 });
+    C.box(0.55, 0.06, Math.min(W, 2.2) * 0.95, carbon, -L / 2 + 0.35, top + 0.32, 0);
+    for (const sz of [-1, 1]) C.box(0.1, 0.34, 0.06, carbon, -L / 2 + 0.4, top + 0.15, sz * Math.min(W, 2.2) * 0.3);
+  }
+  if (tune.neon) { // Neonlicht unter dem Auto: leuchtender Schein am Boden und Leuchtstreifen an der Seite
+    const col = new THREE.Color(tune.neon);
+    const glow = new THREE.Mesh(new THREE.PlaneGeometry(L * 1.05, Math.max(1, W) * 1.35),
+      new THREE.MeshBasicMaterial({ color: col, map: M.shadow.map, transparent: true, opacity: 0.9, blending: THREE.AdditiveBlending, depthWrite: false }));
+    glow.rotation.x = -PI / 2; glow.position.y = 0.07; glow.renderOrder = 1;
+    C.group.add(glow);
+    const strip = new THREE.MeshStandardMaterial({ color: col, emissive: col, emissiveIntensity: 2.5 });
+    for (const sz of [-1, 1]) C.box(L * 0.7, 0.05, 0.05, strip, 0, 0.22, sz * (Math.min(W, 2.2) / 2 - 0.12));
+  }
+  if (tune.sticker && STICKERS[tune.sticker]) {
+    const s = C.side, y0 = s ? s.bottom : 0.3, y1 = s ? (s.tall ? s.top * 0.55 + s.bottom * 0.45 : s.top) : C.H * 0.6;
+    C.decal(L * 0.66, (y1 - y0) * 0.58, 0, y0 + (y1 - y0) * 0.42, STICKERS[tune.sticker], -0.004);
+  }
+}
+
 const templates = new Map();
 export function buildCar(v, kinds, hDiv) {
-  const key = [v.kind, v.special || '', v.color || '', hDiv || ''].join('|');
+  const tune = v.tune || {};
+  const key = [v.kind, v.special || '', v.color || '', hDiv || '', JSON.stringify(tune)].join('|');
   let t = templates.get(key);
   if (!t) {
     if (templates.size > 150) templates.clear();
     const C = kit(v, kinds, hDiv, BUILD[v.kind] ? SPEC_HINT[v.kind] || {} : {});
     (BUILD[v.kind] || BUILD.car)(C);
     if (C.side) sideDetails(C);
+    applyTune(C, tune);
     mergeStatic(C.body);
     const sh = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), C.M.shadow); // weicher Schatten am Boden
     sh.rotation.x = -PI / 2;
@@ -911,7 +999,8 @@ export function buildCar(v, kinds, hDiv) {
     templates.set(key, t);
   }
   const g = t.group.clone();
-  g.userData = { wheels: g.getObjectsByProperty('name', 'wheel'), paint: t.paint, body: g.getObjectByName('body'), shadow: g.getObjectByName('shadow'), radius: t.radius, length: t.length };
+  g.userData = { wheels: g.getObjectsByProperty('name', 'wheel'), paint: t.paint, body: g.getObjectByName('body'), shadow: g.getObjectByName('shadow'), radius: t.radius, length: t.length,
+    finish: tune.finish || null };
   return g;
 }
 
@@ -1799,6 +1888,6 @@ export function animateCar(mesh, t, special, flying = false) {
     if (u.rainbow) o.material.color.setHSL((t * 0.3) % 1, 0.85, 0.6);
     if (u.blink) o.material.emissiveIntensity = Math.floor(t * 6 + (u.blink > 0 ? 1 : 0)) % 2 ? 3 : 0;
   });
-  if (special === 'rainbow') mesh.userData.paint.color.setHSL((t * 0.25) % 1, 0.85, 0.5);
+  if (special === 'rainbow' && !mesh.userData.finish) mesh.userData.paint.color.setHSL((t * 0.25) % 1, 0.85, 0.5);
   if (mesh.userData.shadow) mesh.userData.shadow.visible = !flying && mesh.position.y < 0.3;
 }

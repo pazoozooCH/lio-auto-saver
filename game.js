@@ -433,7 +433,7 @@ function carFromVehicle(v, x) {
   const w = k.w[1], h = k.h[1];
   const speed = carSpeed() * rand(0.92, 1.08) * (k.speed || 1);
   return {
-    x, w, h, kind: v.kind, special: v.special, seed: Math.random(), r: k.wheel || 11,
+    x, w, h, kind: v.kind, special: v.special, tune: v.tune || null, seed: Math.random(), r: k.wheel || 11,
     diamond: v.special === 'diamond',
     color: v.color, speed, v: speed * 0.8,
     stopped: false, rot: 0, dead: false,
@@ -1053,6 +1053,19 @@ function drawBackground() {
 // Obsidian schwarz mit lila Schimmer
 function carPaint(c) {
   const top = ROAD_Y - c.h;
+  const finish = c.tune && c.tune.finish; // Tuning-Lack geht vor
+  if (finish === 'chrome') {
+    const g = ctx.createLinearGradient(0, top, 0, ROAD_Y);
+    ['#ffffff', '#c3c9d2', '#7d8694', '#eef1f5', '#9aa3af'].forEach((col, i) => g.addColorStop(i / 4, col));
+    return g;
+  }
+  if (finish === 'neon') return c.tune.neon || '#39ff14';
+  if (finish === 'lava') {
+    const g = ctx.createLinearGradient(c.x, top, c.x + c.w, ROAD_Y);
+    const shift = (time * 0.2 + c.seed) % 1;
+    ['#2a0a02', '#ff4500', '#3b0d03', '#ff8c1a', '#1c0702', '#e23d00'].forEach((col, i) => g.addColorStop((i / 6 + shift) % 1, col));
+    return g;
+  }
   if (c.special === 'obsidian') {
     const g = ctx.createLinearGradient(c.x, top, c.x + c.w, ROAD_Y);
     const shift = (time * 0.25 + c.seed) % 1;
@@ -1083,6 +1096,31 @@ function carPaint(c) {
     return g;
   }
   return c.color;
+}
+
+// Tuning in 2D: Sticker auf der Seite, Spoiler am Heck (links, die Autos fahren nach rechts)
+function drawTune2D(c, x, y, w, h) {
+  const t = c.tune, top = y - h, sy = top + h * 0.42, sh = h * 0.26;
+  if (t.sticker === 'flames') {
+    const g = ctx.createLinearGradient(x + w * 0.75, 0, x + w * 0.1, 0);
+    g.addColorStop(0, '#dc2626'); g.addColorStop(0.6, '#f97316'); g.addColorStop(1, '#facc15');
+    ctx.fillStyle = g; ctx.beginPath(); ctx.moveTo(x + w * 0.75, sy);
+    for (let i = 0; i <= 8; i++) ctx.lineTo(x + w * 0.75 - w * 0.62 * i / 8, i % 2 ? sy + sh * 0.5 : sy + sh * 0.05);
+    ctx.lineTo(x + w * 0.13, sy + sh); ctx.lineTo(x + w * 0.75, sy + sh * 0.9); ctx.fill();
+  } else if (t.sticker === 'stripes') {
+    ctx.fillStyle = '#ffffff'; ctx.fillRect(x + 6, sy, w - 12, sh * 0.3); ctx.fillRect(x + 6, sy + sh * 0.6, w - 12, sh * 0.3);
+  } else if (t.sticker === 'stars') {
+    ctx.fillStyle = '#facc15';
+    for (let k = 0; k < 3; k++) drawSparkle(x + w * (0.3 + k * 0.2), sy + sh * 0.5, sh * 0.55);
+  } else if (t.sticker === 'lightning') {
+    ctx.fillStyle = '#facc15';
+    poly([[x + w * 0.25, sy + sh * 0.5], [x + w * 0.45, sy], [x + w * 0.44, sy + sh * 0.4], [x + w * 0.72, sy + sh * 0.5], [x + w * 0.52, sy + sh], [x + w * 0.53, sy + sh * 0.6]]);
+  }
+  if (t.spoiler) {
+    ctx.fillStyle = '#111214';
+    ctx.fillRect(x + 6, top - 9, 4, 11);
+    rr(x - 4, top - 13, 22, 5, 2); ctx.fill();
+  }
 }
 
 function drawSparkle(sx, sy, size) {
@@ -1310,6 +1348,13 @@ function drawCar(c) {
   ctx.beginPath();
   ctx.ellipse(x + w / 2, y + 3, w / 2 + 4, 5, 0, 0, Math.PI * 2);
   ctx.fill();
+  if (c.tune && c.tune.neon) { // Neonlicht unter dem Auto
+    ctx.save();
+    ctx.globalAlpha = 0.55 + 0.2 * Math.sin(time * 4 + c.seed * 5);
+    ctx.fillStyle = c.tune.neon; ctx.shadowColor = c.tune.neon; ctx.shadowBlur = 18;
+    ctx.beginPath(); ctx.ellipse(x + w / 2, y + 2, w / 2, 6, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.restore();
+  }
 
   let lightY = y - h * 0.58 + 5;
   switch (KINDS[c.kind].look || c.kind) {
@@ -2269,8 +2314,11 @@ function drawCar(c) {
     }
   }
 
-  // Räder
-  for (const [wx, wr] of wheels(c)) {
+  if (c.tune) drawTune2D(c, x, y, w, h);
+
+  // Räder (Tuning: grössere Räder)
+  for (const [wx, wr0] of wheels(c)) {
+    const wr = c.tune && c.tune.wheels ? wr0 * 1.18 : wr0;
     const wy = y - wr;
     const rot = c.rot * r / wr;
     ctx.fillStyle = '#16171b';
@@ -2546,6 +2594,7 @@ function draw() {
   if (state === 'shop') { drawShop(); return; }
   if (state === 'collection') { drawCollection(); return; }
   if (state === 'paints') { drawPaints(); return; }
+  if (state === 'tuning') { drawTuning(); return; }
   if (state === 'reveal') { drawReveal(); return; }
   if (state === 'admin') { drawAdmin(); return; }
   if (state === 'racemenu') { drawRaceMenu(); return; }
@@ -3414,6 +3463,139 @@ function applyPaint(v, paint, card) {
   beep(880, 0.12, 'triangle', 0.07); beep(1175, 0.18, 'triangle', 0.07, 0.1);
 }
 
+// --- Tuning-Werkstatt: Teile für Münzen einbauen (Rennwagen aus dem Rennmenü) ---
+// v.tune = { wheels, spoiler, neon: Farbe, sticker, plate: Text, finish: 'chrome' | 'neon' | 'lava' }
+// Ausbauen ist gratis, gibt aber kein Geld zurück. Räder und Spoiler geben PS.
+const TUNE_BTN = { x: 318, y: 390, w: 150, h: 40 };
+const TUNE_PS = { wheels: 2, spoiler: 4 };
+const TUNE_ROWS = [
+  { id: 'wheels', label: '🛞 Grosse Räder', note: '+2 PS', price: 40 },
+  { id: 'spoiler', label: '🪽 Spoiler', note: '+4 PS', price: 50 },
+  { id: 'neon', label: '💡 Neonlicht', note: 'unter dem Auto', price: 60, choices: ['#ff2bd6', '#22d3ee', '#4ade80', '#a855f7', '#f97316'] },
+  { id: 'sticker', label: '🏷️ Sticker', note: 'auf der Seite', price: 30, choices: ['flames', 'stripes', 'stars', 'lightning'] },
+  { id: 'plate', label: '🔤 Nummernschild', note: 'eigener Text', price: 20 },
+  { id: 'finish', label: '✨ Spezial-Lack', note: 'nur Aussehen', choices: ['chrome', 'neon', 'lava'] },
+];
+const STICKER_ICON = { flames: '🔥', stripes: '🏁', stars: '⭐', lightning: '⚡' };
+const FINISH = { chrome: { name: 'Chrom', price: 120, color: '#c3c9d2' }, neon: { name: 'Neon', price: 120, color: '#39ff14' }, lava: { name: 'Lava', price: 150, color: '#ff4500' } };
+const TUNE_PREV = { x: 30, y: 230, w: 50, h: 70 }, TUNE_NEXT = { x: 360, y: 230, w: 50, h: 70 };
+const tuneRowY = i => 76 + i * 68;
+// Knöpfe einer Zeile: [{ x, y, w, h, act, val }]
+function tuneButtons(row, i, v) {
+  const y = tuneRowY(i) + 12, t = v.tune || {}, out = [];
+  if (row.id === 'wheels' || row.id === 'spoiler') out.push({ x: 790, y, w: 140, h: 40, act: t[row.id] ? 'off' : 'buy' });
+  else if (row.id === 'plate') out.push({ x: 790, y, w: 140, h: 40, act: 'plate' });
+  else {
+    row.choices.forEach((ch, k) => out.push({ x: 640 + k * (row.id === 'finish' ? 74 : 44), y, w: row.id === 'finish' ? 68 : 38, h: 40, act: 'buy', val: ch }));
+    if (t[row.id]) out.push({ x: 870, y, w: 60, h: 40, act: 'off' });
+  }
+  return out;
+}
+
+function drawTuning() {
+  const v = raceVehicle(), k = KINDS[v.kind], t = v.tune || {};
+  drawMenuBackdrop('🔧 TUNING-WERKSTATT', true);
+  drawButton(BACK_BTN, '← Zurück', '#444b5c');
+  ctx.fillStyle = 'rgba(255, 255, 255, 0.06)';
+  rr(20, 72, 400, 408, 14); ctx.fill();
+  drawVehiclePreview(v, 220, 330, 300, 2.2);
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.fillStyle = '#fff'; ctx.font = 'bold 24px system-ui, sans-serif';
+  ctx.fillText(k.name, 220, 110);
+  ctx.fillStyle = '#7dd3fc'; ctx.font = 'bold 20px system-ui, sans-serif';
+  ctx.fillText('⚡ ' + v.ps + ' PS', 220, 142);
+  const parts = [t.wheels && '🛞', t.spoiler && '🪽', t.neon && '💡', t.sticker && STICKER_ICON[t.sticker], t.plate && '🔤 ' + t.plate, t.finish && '✨ ' + FINISH[t.finish].name].filter(Boolean);
+  ctx.fillStyle = 'rgba(255,255,255,0.75)'; ctx.font = '16px system-ui, sans-serif';
+  ctx.fillText(parts.length ? 'Eingebaut: ' + parts.join('  ') : 'Noch nichts eingebaut', 220, 400);
+  if (fleet.length > 1) { drawButton(TUNE_PREV, '◀', '#444b5c', 24); drawButton(TUNE_NEXT, '▶', '#444b5c', 24); }
+  ctx.font = '13px system-ui, sans-serif'; ctx.fillStyle = 'rgba(255,255,255,0.55)';
+  ctx.fillText('Mit diesem Auto fährst du Rennen, Stadt und Stuntpark', 220, 455);
+
+  TUNE_ROWS.forEach((row, i) => {
+    const y = tuneRowY(i);
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.06)';
+    rr(440, y, 500, 62, 12); ctx.fill();
+    ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
+    ctx.fillStyle = '#fff'; ctx.font = 'bold 18px system-ui, sans-serif';
+    ctx.fillText(row.label, 454, y + 22);
+    ctx.fillStyle = 'rgba(255,255,255,0.6)'; ctx.font = '13px system-ui, sans-serif';
+    ctx.fillText(row.note + (row.price ? '  ·  🪙 ' + row.price : ''), 454, y + 44);
+    for (const b of tuneButtons(row, i, v)) {
+      const on = b.val !== undefined && t[row.id] === b.val;
+      if (b.act === 'off') { drawButton(b, row.id === 'wheels' || row.id === 'spoiler' ? '✓ Ausbauen' : 'Aus', '#4b5563', 15); continue; }
+      if (b.act === 'plate') { drawButton(b, t.plate ? '«' + t.plate + '» ✏️' : 'Text 🪙20', '#3657b8', 15); continue; }
+      if (b.val === undefined) { drawButton(b, 'Einbauen 🪙' + row.price, wallet >= row.price ? '#16a34a' : '#4b5563', 15); continue; }
+      if (row.id === 'neon') {
+        ctx.fillStyle = b.val; rr(b.x, b.y, b.w, b.h, 10); ctx.fill();
+      } else if (row.id === 'sticker') {
+        drawButton(b, STICKER_ICON[b.val], '#334155', 20);
+      } else {
+        const f = FINISH[b.val];
+        ctx.fillStyle = f.color; rr(b.x, b.y, b.w, b.h, 10); ctx.fill();
+        ctx.fillStyle = '#111'; ctx.font = 'bold 13px system-ui, sans-serif'; ctx.textAlign = 'center';
+        ctx.fillText(f.name, b.x + b.w / 2, b.y + 13); ctx.fillText('🪙' + f.price, b.x + b.w / 2, b.y + 29);
+      }
+      if (on) { ctx.strokeStyle = '#ffe066'; ctx.lineWidth = 4; rr(b.x - 2, b.y - 2, b.w + 4, b.h + 4, 12); ctx.stroke(); }
+    }
+  });
+  drawMenuMsg('Antippen = einbauen (kostet Münzen)  ·  Ausbauen ist gratis, gibt aber nichts zurück', 505);
+  drawParticles();
+}
+
+function tuneSave(v, text, x, y) {
+  delete previews[v.id];
+  storeJSON('autoRetterFleet', fleet);
+  storeJSON('autoRetterCoins', wallet);
+  showMenuMsg(text, 3);
+  for (let i = 0; i < 24; i++) {
+    particles.push({ x: x + rand(-20, 20), y, vx: rand(-220, 220), vy: rand(-320, -60), life: 0, max: rand(0.5, 1), color: pick(['#ffd700', '#7dd3fc', '#fff']), size: rand(3, 6), g: 500 });
+  }
+}
+
+function tuningTap(px, py) {
+  if (inRect(px, py, BACK_BTN)) { openMenu('racemenu'); return; }
+  const list = fleetByPS();
+  const step = inRect(px, py, TUNE_PREV) ? -1 : inRect(px, py, TUNE_NEXT) ? 1 : 0;
+  if (step && list.length > 1) {
+    const i = list.indexOf(raceVehicle());
+    raceVehicleId = list[(i + step + list.length) % list.length].id;
+    storeJSON('autoRetterRaceCar', raceVehicleId);
+    beep(520, 0.06, 'triangle', 0.05);
+    return;
+  }
+  const v = raceVehicle();
+  TUNE_ROWS.forEach((row, i) => {
+    for (const b of tuneButtons(row, i, v)) {
+      if (!inRect(px, py, b)) continue;
+      const t = v.tune || (v.tune = {});
+      if (b.act === 'off') {
+        if (TUNE_PS[row.id] && t[row.id]) v.ps = Math.max(5, v.ps - TUNE_PS[row.id]);
+        delete t[row.id];
+        tuneSave(v, row.label + ' ausgebaut', b.x + b.w / 2, b.y);
+        return;
+      }
+      if (b.act === 'plate') {
+        const text = (window.prompt('Was soll auf dem Nummernschild stehen? (höchstens 8 Zeichen)', t.plate || '') || '')
+          .toUpperCase().replace(/[^A-Z0-9ÄÖÜ -]/g, '').trim().slice(0, 8);
+        if (!text || text === t.plate) return;
+        if (wallet < row.price) { showMenuMsg('Dir fehlen ' + (row.price - wallet) + ' Münzen.'); beep(200, 0.15, 'square', 0.05); return; }
+        wallet -= row.price; t.plate = text;
+        tuneSave(v, '🔤 Neues Nummernschild: ' + text, b.x + b.w / 2, b.y);
+        return;
+      }
+      const val = b.val === undefined ? true : b.val, price = row.id === 'finish' ? FINISH[val].price : row.price;
+      if (t[row.id] === val) { showMenuMsg('Ist schon eingebaut 😉'); return; }
+      if (wallet < price) { showMenuMsg('Dir fehlen ' + (price - wallet) + ' Münzen.'); beep(200, 0.15, 'square', 0.05); return; }
+      wallet -= price;
+      if (TUNE_PS[row.id] && !t[row.id]) v.ps += TUNE_PS[row.id];
+      t[row.id] = val;
+      tuneSave(v, '🔧 ' + row.label + (row.id === 'finish' ? ': ' + FINISH[val].name : '') + ' eingebaut!' + (TUNE_PS[row.id] ? ' +' + TUNE_PS[row.id] + ' PS' : ''), b.x + b.w / 2, b.y);
+      beep(880, 0.1, 'triangle', 0.07); beep(1175, 0.15, 'triangle', 0.07, 0.08);
+      return;
+    }
+  });
+}
+
 // --- Tor geht auf: das neue Fahrzeug wird enthüllt ---
 const REVEAL_AT = 1.6;
 
@@ -3620,6 +3802,7 @@ function drawRaceMenu() {
     drawButton(RACE_NEXT_BTN, '▶', '#444b5c', 30);
   }
 
+  drawButton(TUNE_BTN, '🔧 TUNING', '#7c3aed', 18);
   drawButton(RACE_GO_BTN, '🏁 RENNEN STARTEN', '#c0392b', 24);
   drawMenuMsg('Mehr PS = schneller! PS trainierst du in der Presse: retten +1, zerquetscht −3.', 452);
   drawParticles();
@@ -3645,6 +3828,7 @@ function raceMenuTap(px, py) {
     beep(620, 0.06, 'triangle', 0.05);
     return;
   }
+  if (inRect(px, py, TUNE_BTN)) { openMenu('tuning'); return; }
   const list = fleetByPS();
   const step = inRect(px, py, RACE_PREV_BTN) ? -1 : inRect(px, py, RACE_NEXT_BTN) ? 1 : 0;
   if (step && list.length > 1) {
@@ -4178,6 +4362,7 @@ canvas.addEventListener('pointerdown', e => {
   if (state === 'select') { selectTap(px, py); return; }
   if (state === 'admin') { adminTap(px, py); return; }
   if (state === 'racemenu') { raceMenuTap(px, py); return; }
+  if (state === 'tuning') { tuningTap(px, py); return; }
   if (state === 'raceresult') { raceResultTap(px, py); return; }
   if (state === 'dragmenu') { dragMenuTap(px, py); return; }
   if (state === 'dragresult') { dragResultTap(px, py); return; }
@@ -4199,6 +4384,7 @@ window.addEventListener('keydown', e => {
     else if (state === 'select') selectTap(GO_BTN.x + 1, GO_BTN.y + 1);
   }
   if (e.code === 'Escape' && (state === 'collection' || state === 'paints')) openMenu('shop');
+  else if (e.code === 'Escape' && state === 'tuning') openMenu('racemenu');
   else if (e.code === 'Escape' && ['select', 'shop', 'admin', 'racemenu', 'raceresult', 'dragmenu', 'dragresult'].includes(state)) openMenu('title');
 });
 
