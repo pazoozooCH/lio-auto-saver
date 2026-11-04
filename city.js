@@ -21,6 +21,7 @@ const CYCLE = 22;               // Ampelzyklus in Sekunden
 const TRAFFIC = 46;             // so viele Autos fahren herum
 const SEE = 140;                // weiter weg werden Autos nicht gezeichnet
 const DIRS = [[1, 0], [0, 1], [-1, 0], [0, -1]]; // +x, +z, −x, −z
+const SPECIAL = { '2,5': 'gas', '5,2': 'wash', '5,5': 'pizza' }; // Blöcke mit Tankstelle, Waschanlage, Pizzeria
 const POOL = ('car mini kombi kompakt taxi police van delivery pickup hatch coupe smart ecar minivan jeep postauto ' +
   'schoolbus ambulance garbage beetle cabrio sports muscle offroad parcel bakery icecream oldtimer limo firetruck').split(' ');
 const COLORS = ['#c0392b', '#2563eb', '#f4f4f4', '#22232b', '#9aa0aa', '#16a34a', '#f59e0b', '#7c3aed', '#0e7490', '#b45309'];
@@ -79,7 +80,8 @@ function canvasTex(w, h, paint) {
 
 // Hausfassade: 4 × 4 Fenster auf 12 × 12 Meter, manche Fenster hell, manche mit Vorhang
 function facade(wall, frame, r) {
-  return canvasTex(256, 256, (g, w, h) => {
+  const glowWins = []; // welche Fenster nachts leuchten
+  const tex = canvasTex(256, 256, (g, w, h) => {
     g.fillStyle = wall; g.fillRect(0, 0, w, h);
     for (let y = 0; y < 4; y++) for (let x = 0; x < 4; x++) {
       const px = x * 64 + 12, py = y * 64 + 14;
@@ -89,8 +91,14 @@ function facade(wall, frame, r) {
       g.fillStyle = grad; g.fillRect(px, py, 40, 36);
       if (r() < 0.25) { g.fillStyle = 'rgba(240,235,225,0.85)'; g.fillRect(px, py, 40, 10 + r() * 20); } // Vorhang
       g.fillStyle = frame; g.fillRect(px + 19, py, 2, 36);
+      if (r() < 0.55) glowWins.push([px, py]);
     }
   });
+  tex.glow = canvasTex(256, 256, g => { // Leuchtbild für die Nacht: schwarz, nur die beleuchteten Fenster gelb
+    g.fillStyle = '#000'; g.fillRect(0, 0, 256, 256);
+    for (const [px, py] of glowWins) { g.fillStyle = Math.random() < 0.3 ? '#bfe4ff' : '#ffd38a'; g.fillRect(px, py, 40, 36); }
+  });
+  return tex;
 }
 
 // Box, deren Textur in Metern wiederholt wird (Fassaden passen bei jeder Hausgrösse)
@@ -119,6 +127,7 @@ function buildWorld() {
   const scene = new THREE.Scene();
   scene.fog = new THREE.Fog(0xc6d6e6, 160, 1100);
   scene.environment = new THREE.PMREMGenerator(renderer).fromScene(new RoomEnvironment(), 0.04).texture;
+  const dayEnv = scene.environment;
   const camera = new THREE.PerspectiveCamera(62, 16 / 9, 0.5, 5000);
   camera.layers.enable(1);
 
@@ -128,7 +137,11 @@ function buildWorld() {
   su.turbidity.value = 4; su.rayleigh.value = 1.3; su.mieCoefficient.value = 0.004; su.mieDirectionalG.value = 0.8;
   su.sunPosition.value.setFromSphericalCoords(1, THREE.MathUtils.degToRad(50), THREE.MathUtils.degToRad(210));
   scene.add(sky);
-  scene.add(new THREE.HemisphereLight(0xd6e8ff, 0x55604a, 0.75));
+  const hemi = new THREE.HemisphereLight(0xd6e8ff, 0x55604a, 0.75);
+  scene.add(hemi);
+  // Umgebungslicht für Tag, Dämmerung und Nacht (nur die Textur wird getauscht, das kostet nichts)
+  const pm = new THREE.PMREMGenerator(renderer), envOf = col => { const sc = new THREE.Scene(); sc.background = new THREE.Color(col); return pm.fromScene(sc, 0.04).texture; };
+  const envs = { day: null, dusk: envOf(0x3a4562), night: envOf(0x0d1426) };
   const sun = new THREE.DirectionalLight(0xfff1dc, 2.4);
   sun.castShadow = true;
   sun.shadow.mapSize.set(1024, 1024);
@@ -204,14 +217,69 @@ function buildWorld() {
 
   // Blöcke: Trottoir-Platte, darauf Häuser, ein Park oder der Brunnen-Platz
   const walls = [['#d9c7a7', '#6b5a45'], ['#b0544a', '#f1e7da'], ['#9aa3ad', '#3b4350'], ['#e9e4d8', '#7a6a55'], ['#3c5a78', '#c7d6e6'], ['#c9a46a', '#4b3b2a']]
-    .map(([wall, frame]) => mat({ map: facade(wall, frame, r), roughness: 0.75 }));
+    .map(([wall, frame]) => { const f = facade(wall, frame, r); return mat({ map: f, emissive: 0xffffff, emissiveMap: f.glow, emissiveIntensity: 0, roughness: 0.75 }); });
   const roofMat = mat({ color: 0x4b4f57, roughness: 0.9 }), metal = mat({ color: 0x9aa0aa, metalness: 0.6, roughness: 0.4 });
   const plaza = (N >> 1) + ',' + (N >> 1);
   const parks = new Set(); // sieben Parks, über die Stadt verteilt
-  while (parks.size < 7) { const k = Math.floor(r() * N) + ',' + Math.floor(r() * N); if (k !== plaza) parks.add(k); }
+  while (parks.size < 7) { const k = Math.floor(r() * N) + ',' + Math.floor(r() * N); if (k !== plaza && !SPECIAL[k]) parks.add(k); }
+  const places = {}; // Tankstelle, Waschanlage, Pizzeria: Mitte des Blocks
+  // Schild mit Schrift (beidseitig lesbar)
+  const sign = (text, bg, fg, w = 8, h = 1.6) => {
+    const c = document.createElement('canvas'); c.width = 512; c.height = Math.round(512 * h / w);
+    const g = c.getContext('2d'); g.fillStyle = bg; g.fillRect(0, 0, c.width, c.height);
+    g.fillStyle = fg; g.font = 'bold ' + Math.round(c.height * 0.55) + 'px system-ui, sans-serif'; g.textAlign = 'center'; g.textBaseline = 'middle';
+    g.fillText(text, c.width / 2, c.height / 2 + 2, c.width - 20);
+    const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace;
+    return new THREE.Mesh(new THREE.PlaneGeometry(w, h), new THREE.MeshStandardMaterial({ map: t, emissive: 0xffffff, emissiveMap: t, emissiveIntensity: 0.35, side: THREE.DoubleSide }));
+  };
+  const box = (w, h, d, m, x, y, z, solidToo) => {
+    const b = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), m);
+    b.position.set(x, y, z); b.castShadow = b.receiveShadow = true; decor.add(b);
+    if (solidToo) solid.push({ x0: x - w / 2, x1: x + w / 2, z0: z - d / 2, z1: z + d / 2 });
+    return b;
+  };
+  const tarmac = mat({ map: asphalt.map, roughness: 0.85 });
+  function buildGas(cx, cz) { // Tankstelle: Dach auf vier Säulen, zwei Zapfsäulen, Shop dahinter
+    box(40, 0.04, 30, tarmac, cx, 0.18, cz - 4);
+    box(22, 0.7, 14, mat({ color: 0xf8fafc }), cx, 5.6, cz - 6);
+    box(22.2, 0.5, 14.2, mat({ color: 0xdc2626, emissive: 0xdc2626, emissiveIntensity: 0.25 }), cx, 5.05, cz - 6);
+    for (const [dx, dz] of [[-10, -12.5], [10, -12.5], [-10, 0.5], [10, 0.5]]) { box(0.6, 5.2, 0.6, metal, cx + dx, 2.7, cz + dz); round.push({ x: cx + dx, z: cz + dz, r: 0.5 }); }
+    for (const dx of [-4, 4]) { box(1.1, 1.8, 0.7, mat({ color: 0xdc2626 }), cx + dx, 1.06, cz - 6, true); box(0.8, 0.5, 0.05, mat({ color: 0x111827, emissive: 0x22d3ee, emissiveIntensity: 0.6 }), cx + dx, 1.5, cz - 6.38); }
+    const shop = wallBox(16, 4.5, 8, walls[3], 8); shop.position.set(cx, 2.41, cz + 13); decor.add(shop);
+    solid.push({ x0: cx - 8, x1: cx + 8, z0: cz + 9, z1: cz + 17 });
+    const s1 = sign('⛽ TANKSTELLE', '#dc2626', '#ffffff', 12, 2); s1.position.set(cx, 6.6, cz - 13.2); decor.add(s1);
+    places.gas = { x: cx, z: cz - 6, w: 18, d: 10 };
+  }
+  function buildWash(cx, cz) { // Waschanlage: Tunnel mit drehenden Bürsten, man fährt der Länge nach durch
+    box(44, 0.04, 14, tarmac, cx, 0.18, cz);
+    const wallM = mat({ color: 0x38bdf8 }), roofM = mat({ color: 0xe0f2fe });
+    for (const dz of [-4.6, 4.6]) box(16, 5, 0.5, wallM, cx, 2.66, cz + dz, true);
+    box(16.4, 0.5, 9.8, roofM, cx, 5.4, cz);
+    const brushes = [];
+    const brushM = mat({ color: 0x2563eb, roughness: 1 }), brushM2 = mat({ color: 0xf472b6, roughness: 1 });
+    for (const [dx, dz, m] of [[-3, -3.2, brushM], [-3, 3.2, brushM], [3, -3.2, brushM2], [3, 3.2, brushM2]]) {
+      const b = new THREE.Mesh(new THREE.CylinderGeometry(0.9, 0.9, 4.2, 10, 1, false), m);
+      b.position.set(cx + dx, 2.4, cz + dz); b.castShadow = true;
+      b.userData.brush = true; // dreht sich (bleibt einzeln, nicht zusammengefasst)
+      scene.add(b); brushes.push(b);
+    }
+    const s1 = sign('🫧 WASCHANLAGE', '#0ea5e9', '#ffffff', 12, 2); s1.position.set(cx, 6.7, cz - 4.9); decor.add(s1);
+    const s2 = sign('🫧 WASCHANLAGE', '#0ea5e9', '#ffffff', 12, 2); s2.position.set(cx, 6.7, cz + 4.9); decor.add(s2);
+    places.wash = { x: cx, z: cz, w: 16, d: 8, brushes };
+  }
+  function buildPizza(cx, cz) { // Pizzeria mit gestreifter Markise; abgeholt wird vorne an der Strasse
+    const shop = wallBox(18, 6, 12, walls[1], 8); shop.position.set(cx, 3.16, cz + 4); decor.add(shop);
+    solid.push({ x0: cx - 9, x1: cx + 9, z0: cz - 2, z1: cz + 10 });
+    const st = document.createElement('canvas'); st.width = 128; st.height = 8;
+    const sg = st.getContext('2d'); for (let i = 0; i < 8; i++) { sg.fillStyle = i % 2 ? '#ffffff' : '#16a34a'; sg.fillRect(i * 16, 0, 16, 8); }
+    const awn = new THREE.Mesh(new THREE.BoxGeometry(18, 0.2, 3), mat({ map: new THREE.CanvasTexture(st) }));
+    awn.position.set(cx, 3.6, cz - 3.4); awn.rotation.x = -0.3; decor.add(awn);
+    const s1 = sign('🍕 PIZZERIA', '#b91c1c', '#ffffff', 10, 1.8); s1.position.set(cx, 5.2, cz - 2.06); decor.add(s1);
+    places.pizza = { x: cx, z: cz - 2, front: { x: cx, z: cz - 32 + LANE } }; // rechte Spur der Strasse davor
+  }
   const roofTiles = [mat({ color: 0x9b3b2b, roughness: 0.85 }), mat({ color: 0x5a4e4a, roughness: 0.85 }), mat({ color: 0xb4532a, roughness: 0.85 })];
   const homeWalls = [['#f3eadb', '#7a6a55'], ['#e8d9b8', '#5b4a35'], ['#dfe7ea', '#4a5560'], ['#f0d9d0', '#7a4a3a']]
-    .map(([wall, frame]) => mat({ map: facade(wall, frame, r), roughness: 0.8 }));
+    .map(([wall, frame]) => { const f = facade(wall, frame, r); return mat({ map: f, emissive: 0xffffff, emissiveMap: f.glow, emissiveIntensity: 0, roughness: 0.8 }); });
   const block = 50, inner = 44;
   const trees = [];
   for (let bi = 0; bi < N; bi++) for (let bj = 0; bj < N; bj++) {
@@ -221,6 +289,7 @@ function buildWorld() {
     decor.add(slab);
     const key = bi + ',' + bj;
     if (key === plaza) { buildPlaza(decor, cx, cz, round); continue; }
+    if (SPECIAL[key]) { ({ gas: buildGas, wash: buildWash, pizza: buildPizza })[SPECIAL[key]](cx, cz); continue; }
     if (parks.has(key)) { // Park: Wiese mit Wegkreuz und Bäumen
       const g = quads(1 / 4), h = inner / 2, p = 1.6;
       g.add(cx - h, cz - h, cx - p, cz - p, 0.17); g.add(cx + p, cz - h, cx + h, cz - p, 0.17);
@@ -313,6 +382,25 @@ function buildWorld() {
   });
   poleM.castShadow = true;
   decor.add(poleM, headM);
+  // Lichtkegel der Lampen auf dem Boden (nachts sichtbar): ein Bild mit weichem Rand, alle in einem Zeichen-Befehl
+  const pool = document.createElement('canvas'); pool.width = pool.height = 64;
+  const pg = pool.getContext('2d'), prg = pg.createRadialGradient(32, 32, 0, 32, 32, 32);
+  prg.addColorStop(0, 'rgba(255,255,255,1)'); prg.addColorStop(1, 'rgba(255,255,255,0)'); pg.fillStyle = prg; pg.fillRect(0, 0, 64, 64);
+  const pools = new THREE.InstancedMesh(new THREE.PlaneGeometry(14, 14).rotateX(-Math.PI / 2),
+    new THREE.MeshBasicMaterial({ color: 0xffd9a0, map: new THREE.CanvasTexture(pool), transparent: true, opacity: 0, blending: THREE.AdditiveBlending, depthWrite: false }), lampPos.length);
+  lampPos.forEach(([x, z], k) => pools.setMatrixAt(k, m4.makeTranslation(x, 0.2, z)));
+  pools.visible = false;
+  scene.add(pools);
+  // Sterne (nachts)
+  const sp = [];
+  for (let k = 0; k < 900; k++) { const a = r() * Math.PI * 2, e = 0.08 + r() * 1.4; sp.push(Math.cos(a) * Math.cos(e) * 2400, Math.sin(e) * 2400, Math.sin(a) * Math.cos(e) * 2400); }
+  const starGeo = new THREE.BufferGeometry(); starGeo.setAttribute('position', new THREE.Float32BufferAttribute(sp, 3));
+  const stars = new THREE.Points(starGeo, new THREE.PointsMaterial({ color: 0xffffff, size: 2.2, sizeAttenuation: false, transparent: true, opacity: 0, fog: false, depthWrite: false }));
+  stars.layers.set(1);
+  scene.add(stars);
+  // Scheinwerfer des eigenen Autos (nachts an)
+  const headlight = new THREE.SpotLight(0xfff2d6, 0, 70, 0.55, 0.5, 1.2);
+  scene.add(headlight, headlight.target);
 
   // Ampeln: vor jeder Kreuzung rechts ein Mast; Lichter teilen sich je Richtung und Farbe ein Material
   const lamps = {};
@@ -346,7 +434,8 @@ function buildWorld() {
   clouds.layers.set(1);
   scene.add(clouds);
   warmUp(renderer, scene, camera);
-  return { renderer, scene, camera, sun, clouds, lamps, solid, round, parks };
+  return { renderer, scene, camera, sun, clouds, lamps, solid, round, parks, places,
+    night: { sky: su, hemi, envs: { ...envs, day: dayEnv }, walls: [...walls, ...homeWalls], heads: headM.material, pools, stars, headlight, fog: scene.fog } };
 }
 
 // Platz in der Stadtmitte mit Brunnen und Bänken
@@ -522,10 +611,11 @@ function stepMe(dt) {
   const steerTarget = (input.left ? -1 : 0) + (input.right ? 1 : 0);
   me.steer += (steerTarget - me.steer) * Math.min(1, dt * 7);
   me.surface = surfaceAt(me.pos.x, me.pos.z);
-  const maxV = me.surface === 'grass' ? me.maxV * 0.55 : me.maxV;
+  const boost = city.turbo > 0 ? 1.3 : 1; // Turbo-Benzin von der Tankstelle
+  const maxV = (me.surface === 'grass' ? me.maxV * 0.55 : me.maxV) * boost;
   if (gas) {
     if (me.speed < 0) me.speed = Math.min(0, me.speed + BRAKE * dt);
-    else me.speed += me.acc * Math.max(0, 1 - me.speed / maxV) * dt;
+    else me.speed += me.acc * boost * Math.max(0, 1 - me.speed / maxV) * dt;
   } else if (!brake) me.speed -= Math.sign(me.speed) * Math.min(Math.abs(me.speed), 2.5 * dt);
   if (brake) me.speed = me.speed > 0 ? Math.max(0, me.speed - BRAKE * dt) : Math.max(-8, me.speed - 6 * dt);
   if (me.speed > maxV) me.speed = Math.max(maxV, me.speed - 12 * dt);
@@ -599,7 +689,7 @@ function stepMe(dt) {
   const inX = inGrid(ni, nj) && Math.abs(me.pos.x - node(ni)) < ROAD / 2 && Math.abs(me.pos.z - node(nj)) < ROAD / 2;
   if (inX && !city.inCross && hasLights(ni, nj) && Math.abs(me.speed) > 5) {
     const ax = Math.abs(Math.cos(me.heading)) > Math.abs(Math.sin(me.heading)) ? 'x' : 'z';
-    if (lightState(ax, city.t) === 'red') { showMsg('🚦 Über Rot gefahren!', 1.6); startChase(); }
+    if (lightState(ax, city.t) === 'red' && !POLICE_KINDS.includes(me.v.kind)) { showMsg('🚦 Über Rot gefahren!', 1.6); startChase(); } // Polizei darf (im Einsatz)
   }
   city.inCross = inX;
   const m = me.mesh;
@@ -647,6 +737,180 @@ function bankDrift(crashed = false) {
   let rec = '';
   if (pts > city.driftBest) { city.driftBest = pts; rec = '  🏆 Rekord!'; try { localStorage.setItem('autoRetterDriftBest', String(pts)); } catch (e) { /* egal */ } }
   showMsg('🔥 ' + pts + ' Drift-Punkte' + (coins ? '  +' + coins + ' 🪙' : '') + rec, 2.2);
+}
+
+// ---------- Tankstelle und Waschanlage ----------
+const inZone = (p, x, z, pad = 0) => p && Math.abs(x - p.x) < p.w / 2 + pad && Math.abs(z - p.z) < p.d / 2 + pad;
+function stepPlaces(dt) {
+  const me = city.me, P = S.places, x = me.pos.x, z = me.pos.z;
+  if (city.turbo > 0) city.turbo -= dt;
+  // Tankstelle: unter dem Dach anhalten = Turbo-Benzin (30 s schneller), kostet 3 Münzen (ohne Münzen gratis)
+  if (inZone(P.gas, x, z) && Math.abs(me.speed) < 1.5) {
+    if (city.fuelT >= 0) {
+      if (city.fuelT === 0) showMsg('⛽ Tanken …', 1.6);
+      city.fuelT += dt;
+      if (city.fuelT > 1.5) {
+        const paid = city.pay(3);
+        city.turbo = 30; city.fuelT = -1; // erst nach dem Wegfahren wieder
+        showMsg('⛽ Turbo-Benzin! 30 Sekunden schneller' + (paid ? '  (−' + paid + ' 🪙)' : ''), 2.6);
+        window.beep && window.beep(660, 0.1, 'triangle', 0.06); window.beep && window.beep(990, 0.18, 'triangle', 0.06, 0.1);
+      }
+    }
+  } else if (!inZone(P.gas, x, z, 3)) city.fuelT = 0;
+  // Waschanlage: langsam durchfahren, Bürsten drehen schneller, Schaum; hinten raus = blitzblank
+  const inWash = inZone(P.wash, x, z);
+  for (const b of P.wash.brushes) b.rotation.y += dt * (inWash ? 14 : 1.5);
+  if (inWash) {
+    if (!city.washT) showMsg('🫧 Schaum und Bürsten …', 1.6);
+    city.washT = (city.washT || 0) + dt;
+    if (Math.random() < dt * 30) S.fx.puff(x + (Math.random() - 0.5) * 3, 0.6 + Math.random() * 2.2, z + (Math.random() - 0.5) * 3, 0, 0);
+  } else if (city.washT > 1.2) {
+    showMsg('✨ Blitzblank! Dein Auto glänzt.', 2.2);
+    window.beep && window.beep(1047, 0.12, 'triangle', 0.06); window.beep && window.beep(1319, 0.2, 'triangle', 0.06, 0.12);
+    city.washT = 0;
+  } else city.washT = 0;
+}
+
+// ---------- Aufträge: Taxi, Pizza, Dieb jagen ----------
+const POLICE_KINDS = ['police', 'policebike', 'policebus'];
+function toggleJobs() {
+  const ui = S.ui;
+  if (!ui.jobpanel.hidden) { ui.jobpanel.hidden = true; return; }
+  ui.jobpanel.querySelector('[data-job="thief"]').disabled = !POLICE_KINDS.includes(city.me.v.kind);
+  ui.jobpanel.querySelector('[data-job="cancel"]').hidden = !city.mission;
+  ui.jobpanel.hidden = false;
+}
+// zufälliger Punkt auf der rechten Spur einer Strasse, min–max Meter von „from“ entfernt
+function roadPoint(minD, maxD, from) {
+  for (let k = 0; k < 300; k++) {
+    const i = Math.floor(Math.random() * (N + 1)), j = Math.floor(Math.random() * (N + 1)), d = Math.floor(Math.random() * 4);
+    const [fx, fz] = DIRS[d];
+    if (!inGrid(i + fx, j + fz)) continue;
+    const sAlong = 16 + Math.random() * (BLOCK - 32), x = node(i) + fx * sAlong - fz * LANE, z = node(j) + fz * sAlong + fx * LANE;
+    const dist = Math.hypot(x - from.x, z - from.z);
+    if (dist >= minD && dist <= maxD) return { x, z };
+  }
+  return { x: node(1) + 20, z: node(1) + LANE };
+}
+// Zielmarkierung: Lichtsäule mit Ring am Boden
+function marker() {
+  if (S.marker) return S.marker;
+  const g = new THREE.Group();
+  const beamMat = new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.35, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide });
+  const beam = new THREE.Mesh(new THREE.CylinderGeometry(3, 3, 40, 24, 1, true), beamMat); beam.position.y = 20;
+  const ring = new THREE.Mesh(new THREE.RingGeometry(2.6, 3.4, 32).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.9, depthWrite: false }));
+  ring.position.y = 0.25;
+  g.add(beam, ring);
+  g.visible = false;
+  S.scene.add(g);
+  S.marker = { g, set(x, z, col) { g.position.set(x, 0, z); beamMat.color.set(col); ring.material.color.set(col); g.visible = true; }, hide() { g.visible = false; } };
+  return S.marker;
+}
+function startMission(type) {
+  if (city.mission) endMission(false);
+  const me = city.me, from = { x: me.pos.x, z: me.pos.z };
+  if (type === 'taxi') city.mission = { type, step: 'pick', color: '#facc15', target: roadPoint(120, 320, from), text: '🚕 Hol den Fahrgast ab' };
+  else if (type === 'pizza') city.mission = { type, step: 'pick', color: '#ef4444', target: { ...S.places.pizza.front }, text: '🍕 Hol die Pizza bei der Pizzeria' };
+  else if (type === 'thief') {
+    const p = roadPoint(90, 160, from);
+    const mesh = buildCar({ kind: 'sports', color: '#18181b', special: null }, city.kinds);
+    S.scene.add(mesh);
+    city.mission = { type, step: 'chase', color: '#a855f7', target: p, text: '🚓 Fang den Dieb!', close: 0, far: 0,
+      thief: { mesh, pos: new THREE.Vector3(p.x, 0, p.z), heading: 0, speed: 6, path: [], pathT: 0, maxV: Math.max(18, Math.min(34, me.maxV * 0.78)), radius: Math.max(1.3, mesh.userData.radius * 0.8) } };
+    showMsg('🚨 Ein Dieb flüchtet! Bleib dicht hinter ihm.', 2.4);
+  }
+  const M = city.mission;
+  if (type !== 'thief') showMsg(M.text + '!', 2);
+  marker().set(M.target.x, M.target.z, M.color);
+  S.ui.goal.hidden = false;
+}
+function endMission(ok, text, coins = 0) {
+  const M = city.mission;
+  if (!M) return;
+  if (M.thief) S.scene.remove(M.thief.mesh);
+  if (M.pizzaBox) city.me.mesh.remove(M.pizzaBox);
+  city.mission = null;
+  marker().hide();
+  S.ui.goal.hidden = true;
+  if (city.net) coins = 0; // online gibt es keine Münzen
+  if (coins) city.earn(coins);
+  if (text) showMsg(text + (coins ? '  +' + coins + ' 🪙' : ''), 2.6);
+  if (ok) { window.beep && window.beep(784, 0.12, 'triangle', 0.07); window.beep && window.beep(1047, 0.25, 'triangle', 0.07, 0.12); }
+}
+function stepMission(dt) {
+  const M = city.mission;
+  if (!M) return;
+  const me = city.me, x = me.pos.x, z = me.pos.z;
+  if (M.thief) stepThief(M, dt);
+  const d = Math.hypot(M.target.x - x, M.target.z - z), stopped = Math.abs(me.speed) < 3;
+  if (M.timer !== undefined && (M.timer -= dt) <= 0) { endMission(false, '⏰ Zu spät! Der Auftrag ist vorbei.'); return; }
+  if (M.type !== 'thief' && d < 7 && stopped) {
+    if (M.step === 'pick') {
+      M.step = 'drop';
+      M.target = M.type === 'taxi' ? roadPoint(220, 420, M.target) : roadPoint(180, 380, M.target);
+      M.timer = Math.round(Math.hypot(M.target.x - x, M.target.z - z) / 10 + 25);
+      M.text = M.type === 'taxi' ? '🚕 Bring den Fahrgast ans Ziel' : '🍕 Liefere die Pizza aus';
+      if (M.type === 'pizza') { // Pizzaschachtel aufs Dach
+        const b = new THREE.Box3().setFromObject(me.mesh);
+        M.pizzaBox = new THREE.Mesh(new THREE.BoxGeometry(0.7, 0.12, 0.7), new THREE.MeshStandardMaterial({ color: 0xf5deb3 }));
+        M.pizzaBox.position.set(0, b.max.y - me.mesh.position.y + 0.06, 0);
+        me.mesh.add(M.pizzaBox);
+      }
+      showMsg(M.type === 'taxi' ? '🧍 Eingestiegen! Bring ihn hin.' : '🍕 Pizza eingepackt! Schnell ausliefern.', 2.2);
+      marker().set(M.target.x, M.target.z, M.color);
+    } else {
+      const coins = Math.min(12, (M.type === 'taxi' ? 5 : 6) + Math.floor(M.timer / 10));
+      endMission(true, M.type === 'taxi' ? '🚕 Angekommen! Danke fürs Fahren.' : '🍕 Pizza geliefert! Mmmh.', coins);
+      return;
+    }
+  }
+  if (M.thief) { // Dieb: dicht dranbleiben = erwischt, zu weit weg = entkommen
+    M.target = { x: M.thief.pos.x, z: M.thief.pos.z };
+    marker().set(M.target.x, M.target.z, M.color);
+    M.close = d < 10 ? M.close + dt : Math.max(0, M.close - dt * 0.5);
+    M.far = d > 380 ? M.far + dt : 0;
+    M.text = M.close > 0.2 ? '🚓 Dranbleiben! ' + '█'.repeat(Math.ceil(M.close / 0.5)) + '░'.repeat(Math.max(0, 5 - Math.ceil(M.close / 0.5))) : '🚓 Fang den Dieb!';
+    if (M.close > 2.5) { endMission(true, '🚓 Erwischt! Der Dieb ist gefasst.', 12); return; }
+    if (M.far > 8) { endMission(false, '💨 Der Dieb ist entkommen …'); return; }
+  }
+  // Anzeige: Pfeil zum Ziel (relativ zur Fahrtrichtung), Text, Entfernung, Zeit
+  const ang = Math.atan2(M.target.z - z, M.target.x - x) - me.heading;
+  S.ui.arrow.style.transform = 'rotate(' + (ang - Math.PI / 2) + 'rad)'; // ➤ zeigt nach rechts, geradeaus = nach oben
+  S.ui.gtext.textContent = M.text + ' · ' + Math.round(d) + ' m' + (M.timer !== undefined ? ' · ⏱ ' + Math.ceil(M.timer) + ' s' : '');
+}
+// Dieb fährt über die Kreuzungen weg vom Spieler (wie der Streifenwagen, nur in die andere Richtung)
+function stepThief(M, dt) {
+  const T = M.thief, me = city.me;
+  if ((T.pathT -= dt) <= 0 || !T.path.length) {
+    let best = null, bd = -1; // Kreuzung, die weit weg von dir und nicht zu weit vom Dieb ist
+    for (let k = 0; k < 20; k++) {
+      const i = Math.floor(Math.random() * (N + 1)), j = Math.floor(Math.random() * (N + 1));
+      const sc = Math.hypot(node(i) - me.pos.x, node(j) - me.pos.z) - 0.4 * Math.hypot(node(i) - T.pos.x, node(j) - T.pos.z);
+      if (sc > bd) { bd = sc; best = [node(i), node(j)]; }
+    }
+    T.path = pathTo(T.pos.x, T.pos.z, best[0], best[1]); T.pathT = 3;
+  }
+  while (T.path.length > 1 && Math.hypot(T.path[0][0] - T.pos.x, T.path[0][1] - T.pos.z) < 9) T.path.shift();
+  const [tx, tz] = T.path[0] || [T.pos.x, T.pos.z];
+  let diff = Math.atan2(tz - T.pos.z, tx - T.pos.x) - T.heading;
+  diff = Math.atan2(Math.sin(diff), Math.cos(diff));
+  const want = Math.abs(diff) > 0.7 ? 9 : T.maxV;
+  T.speed = T.speed < want ? Math.min(want, T.speed + 8 * dt) : Math.max(want, T.speed - 14 * dt);
+  const yawMax = Math.min(2, GRIP * 1.3 / Math.max(T.speed, 0.1));
+  if (T.speed > 0.3) T.heading += Math.max(-1, Math.min(1, diff * 2.5)) * yawMax * dt;
+  T.pos.x += Math.cos(T.heading) * T.speed * dt;
+  T.pos.z += Math.sin(T.heading) * T.speed * dt;
+  for (const b of S.solid) {
+    const qx = Math.max(b.x0, Math.min(T.pos.x, b.x1)), qz = Math.max(b.z0, Math.min(T.pos.z, b.z1));
+    const ex = T.pos.x - qx, ez = T.pos.z - qz, d = Math.hypot(ex, ez);
+    if (d < T.radius && d > 0.001) { T.pos.x += ex / d * (T.radius - d); T.pos.z += ez / d * (T.radius - d); T.speed *= 0.7; }
+  }
+  const ex = me.pos.x - T.pos.x, ez = me.pos.z - T.pos.z, d = Math.hypot(ex, ez), min = (me.radius + T.radius) * 0.85;
+  if (d < min && d > 0.01) { me.pos.x += ex / d * (min - d); me.pos.z += ez / d * (min - d); T.speed *= 0.9; }
+  const m = T.mesh;
+  m.position.set(T.pos.x, 0, T.pos.z);
+  m.rotation.y = -T.heading;
+  for (const w of m.userData.wheels) w.rotation.z -= T.speed * dt / 0.35;
 }
 
 // ---------- Polizei ----------
@@ -830,6 +1094,18 @@ const CSS = `
   background: rgba(0,0,0,.55); border-radius: 14px; padding: 6px 16px; font-weight: 800; font-size: 26px; }
 #city .speed small { display: block; font-size: 13px; font-weight: 600; opacity: .8; }
 #city .minimap { position: absolute; top: 10px; right: 62px; background: rgba(0,0,0,.45); border-radius: 10px; }
+#city .jobs { position: absolute; top: 10px; left: 80px; width: 58px; height: 58px; border-radius: 50%; border: 3px solid rgba(255,255,255,.65);
+  background: rgba(0,0,0,.4); font-size: 26px; }
+#city .jobpanel { position: absolute; top: 76px; left: 12px; width: min(380px, 70%); background: rgba(15,18,28,.92); border-radius: 14px;
+  padding: 10px; display: flex; flex-direction: column; gap: 6px; z-index: 5; font-size: 18px; }
+#city .jobpanel[hidden], #city .goal[hidden] { display: none; }
+#city .jobpanel button { border: none; border-radius: 10px; background: #2563eb; color: #fff; font: 700 16px system-ui, sans-serif; padding: 10px; text-align: left; }
+#city .jobpanel button.grey { background: #4b5563; } #city .jobpanel button:disabled { opacity: .4; }
+#city .goal { position: absolute; top: 64px; left: 50%; transform: translateX(-50%); background: rgba(0,0,0,.6); border-radius: 12px;
+  padding: 6px 14px; font-weight: 800; font-size: 18px; white-space: nowrap; }
+#city .goal .arrow { display: inline-block; color: #facc15; font-size: 22px; transition: transform .1s; }
+#city .clock { position: absolute; top: 206px; right: 62px; width: 190px; text-align: center; font-weight: 800; font-size: 17px;
+  background: rgba(0,0,0,.45); border-radius: 8px; padding: 3px 0; }
 #city .quit { position: absolute; top: 10px; right: 12px; width: 42px; height: 42px; border-radius: 50%; border: none;
   background: rgba(0,0,0,.55); color: #fff; font-size: 20px; }
 #city .msg { position: absolute; top: 30%; width: 100%; text-align: center; font-size: 40px; font-weight: 900;
@@ -867,8 +1143,17 @@ function buildDom() {
   root.hidden = true;
   root.innerHTML = `
     <canvas class="minimap" width="190" height="190"></canvas>
+    <div class="clock"></div>
     <button class="quit" title="Stadt verlassen">✕</button>
     <button class="horn" title="Hupen (H)">📯</button>
+    <button class="jobs" title="Aufträge (J)">📋</button>
+    <div class="jobpanel" hidden><b>📋 Aufträge</b>
+      <button data-job="taxi">🚕 Taxi: Fahrgast abholen und hinbringen</button>
+      <button data-job="pizza">🍕 Pizza: bei der Pizzeria abholen und ausliefern</button>
+      <button data-job="thief">🚓 Dieb jagen (nur mit Polizeiauto)</button>
+      <button data-job="cancel" class="grey">Auftrag abbrechen</button>
+      <button data-job="close" class="grey">Schliessen</button></div>
+    <div class="goal" hidden><span class="arrow">➤</span> <span class="gtext"></span></div>
     <div class="msg"></div>
     <div class="chase" hidden>🚨 Polizei!</div>
     <div class="drift" hidden></div>
@@ -888,7 +1173,17 @@ function buildDom() {
   document.body.appendChild(root);
   const $ = s => root.querySelector(s);
   const ui = { root, kmh: $('.kmh'), ps: $('.ps'), msg: $('.msg'), hint: $('.hint'), minimap: $('.minimap'), ctls: [...root.querySelectorAll('.ctl')],
-    chase: $('.chase'), ticket: $('.ticket'), drift: $('.drift') };
+    chase: $('.chase'), ticket: $('.ticket'), drift: $('.drift'), clock: $('.clock'),
+    jobs: $('.jobs'), jobpanel: $('.jobpanel'), goal: $('.goal'), arrow: $('.goal .arrow'), gtext: $('.goal .gtext') };
+  $('.jobs').addEventListener('pointerdown', e => { e.preventDefault(); toggleJobs(); });
+  ui.jobpanel.addEventListener('pointerdown', e => {
+    const b = e.target.closest('button'); if (!b || b.disabled) return;
+    e.preventDefault();
+    const j = b.dataset.job;
+    ui.jobpanel.hidden = true;
+    if (j === 'cancel') endMission(false, '📋 Auftrag abgebrochen');
+    else if (j !== 'close') startMission(j);
+  });
   $('.pay').addEventListener('pointerdown', e => { e.preventDefault(); closeTicket(); });
   const touch = matchMedia('(pointer: coarse)').matches || 'ontouchstart' in window;
   for (const b of ui.ctls) {
@@ -919,6 +1214,7 @@ const KEYS = { ArrowLeft: 'left', KeyA: 'left', ArrowRight: 'right', KeyD: 'righ
 function onKey(e) {
   if (!city || (e.target && e.target.tagName === 'INPUT')) return; // im Chat wird geschrieben, nicht gefahren
   if (e.code === 'KeyH' && e.type === 'keydown') { honk(); e.preventDefault(); return; }
+  if (e.code === 'KeyJ' && e.type === 'keydown') { toggleJobs(); e.preventDefault(); return; }
   const k = KEYS[e.code];
   if (!k) return;
   city.input[k] = e.type === 'keydown';
@@ -956,6 +1252,8 @@ function drawMinimapBase() {
   }
   g.fillStyle = '#4aa3ff';
   g.beginPath(); g.arc(mx(0), mx(0), 3, 0, Math.PI * 2); g.fill();
+  g.font = '13px system-ui, sans-serif'; g.textAlign = 'center'; g.textBaseline = 'middle';
+  for (const [k, icon] of [['gas', '⛽'], ['wash', '🫧'], ['pizza', '🍕']]) { const p = S.places[k]; if (p) g.fillText(icon, mx(p.x), mx(p.z)); }
   g.strokeStyle = 'rgba(220,225,235,0.85)'; g.lineWidth = Math.max(2, ROAD * mapScale);
   for (let i = 0; i <= N; i++) {
     g.beginPath(); g.moveTo(mx(node(i)), mx(-HALF)); g.lineTo(mx(node(i)), mx(HALF)); g.stroke();
@@ -976,6 +1274,11 @@ function drawMinimap() {
   if (city.netCars) for (const o of city.netCars.list()) { // Mitspieler als farbige Punkte
     g.fillStyle = o.color; g.strokeStyle = '#000'; g.lineWidth = 1.5;
     g.beginPath(); g.arc(mx(o.x), mx(o.z), 5, 0, Math.PI * 2); g.fill(); g.stroke();
+  }
+  const M = city.mission;
+  if (M && M.target) { // Ziel des Auftrags blinkt
+    g.fillStyle = Math.floor(city.t * 4) % 2 ? M.color : '#ffffff'; g.strokeStyle = '#000'; g.lineWidth = 1.5;
+    g.beginPath(); g.arc(mx(M.target.x), mx(M.target.z), 5.5, 0, Math.PI * 2); g.fill(); g.stroke();
   }
   const me = city.me, x = mx(me.pos.x), y = mx(me.pos.z), h = me.heading;
   g.fillStyle = '#ffe066'; g.strokeStyle = '#000'; g.lineWidth = 1.5;
@@ -1003,11 +1306,12 @@ export function startCity({ player, kinds, topSpeed, onExit, pay = () => 0, earn
   const me = { v: player, mesh, pos: new THREE.Vector3(node(1 + (net ? net.mySlot : 0)) + 20, 0, node(0) + LANE), heading: 0, speed: 0, vl: 0, steer: 0,
     maxV: Math.min(55, topSpeed(player.ps)), acc: 4 + player.ps * 0.06, radius: Math.max(1.3, mesh.userData.radius * 0.8),
     len: mesh.userData.length, slip: 0, surface: 'asphalt' };
-  city = { me, cars: spawnTraffic(kinds), input: {}, t: Math.random() * CYCLE, msgT: 0, crashT: 0, hornT: 0, inCross: false,
+  city = { me, cars: spawnTraffic(kinds), input: {}, t: Math.random() * CYCLE, msgT: 0, crashT: 0, hornT: 0, inCross: false, tod: 0.02, turbo: 0, fuelT: 0, washT: 0, mission: null,
     gears: gearbox(player.kind), onExit, last: performance.now(), kinds, pay, fines: 0, police: null, pulled: 0, ticket: false,
     earn, net, netCars: net ? makeNetCars({ scene: S.scene, kinds, net }) : null, drift: 0, driftT: 0, driftBest: (() => { try { return +localStorage.getItem('autoRetterDriftBest') || 0; } catch (e) { return 0; } })() };
   S.fx.clear();
   S.scene.add(mesh);
+  mesh.traverse(o => { const m = o.material; if (m && m.emissive && m.emissiveIntensity === 1.2 && m.color.getHex() === 0xffffff) city.headMat = m; }); // Scheinwerfer (gemeinsam für alle Autos)
   for (const c of city.cars) S.scene.add(c.mesh);
   warmUp(S.renderer, S.scene, S.camera);
   if (!S.quality) S.quality = makeQuality(S.renderer, layout);
@@ -1035,10 +1339,13 @@ function loop(now) {
   if (city.msgT > 0 && (city.msgT -= dt) <= 0) S.ui.msg.textContent = '';
   city.hornT -= dt;
   stepLights();
+  stepDayNight(dt);
   if (city.pulled > 0) city.pulled -= dt;
   stepMe(dt);
   stepDrift(dt);
   stepPolice(dt);
+  stepPlaces(dt);
+  stepMission(dt);
   stepTraffic(dt);
   if (city.netCars) { // Mitspieler: zeigen, eigene Position senden, nicht durcheinander durchfahren
     const me = city.me, o = { x: me.pos.x, y: 0, z: me.pos.z };
@@ -1052,6 +1359,40 @@ function loop(now) {
   updateHud(dt);
   render(dt);
   requestAnimationFrame(loop);
+}
+
+// ---------- Tag und Nacht ----------
+// Ein Tag dauert 6 Minuten; die Sonne steht meist über dem Horizont (Nacht etwa ein Drittel).
+const DAY = 360;
+const smooth01 = (a, b, x) => { const t = Math.min(1, Math.max(0, (x - a) / (b - a))); return t * t * (3 - 2 * t); };
+const C_DAY = new THREE.Color(0xc6d6e6), C_NIGHT = new THREE.Color(0x0b1222), C_SKY_D = new THREE.Color(0xd6e8ff), C_SKY_N = new THREE.Color(0x2a3a66);
+function stepDayNight(dt) {
+  const n = S.night;
+  city.tod = (city.tod + dt / DAY) % 1;
+  const a = city.tod * Math.PI * 2, elev = Math.sin(a) * 0.9 + 0.3; // > 0: Tag
+  const day = smooth01(-0.12, 0.3, elev), night = 1 - day;
+  n.sky.sunPosition.value.setFromSphericalCoords(1, Math.PI / 2 - Math.asin(Math.max(-1, Math.min(1, elev)) * 0.95), 3.66);
+  S.sun.intensity = 2.4 * day;
+  n.hemi.intensity = 0.32 + 0.43 * day;
+  n.hemi.color.lerpColors(C_SKY_N, C_SKY_D, day);
+  n.fog.color.lerpColors(C_NIGHT, C_DAY, day);
+  S.renderer.toneMappingExposure = 0.9 + 0.05 * day;
+  const env = day > 0.6 ? n.envs.day : day > 0.2 ? n.envs.dusk : n.envs.night;
+  if (S.scene.environment !== env) S.scene.environment = env;
+  n.heads.emissiveIntensity = 0.6 + 3 * night;
+  for (const m of n.walls) m.emissiveIntensity = 1.1 * night;
+  n.pools.visible = night > 0.05; n.pools.material.opacity = 0.75 * night;
+  n.stars.material.opacity = night;
+  if (S.clouds.material && S.clouds.material.color) S.clouds.material.color.setScalar(0.25 + 0.75 * day);
+  if (city.headMat) city.headMat.emissiveIntensity = 1.2 + 2.5 * night; // Scheinwerfer aller Autos
+  const me = city.me, fx = Math.cos(me.heading), fz = Math.sin(me.heading);
+  n.headlight.intensity = 90 * night;
+  n.headlight.position.set(me.pos.x + fx * 1.5, 1.1, me.pos.z + fz * 1.5);
+  n.headlight.target.position.set(me.pos.x + fx * 25, 0, me.pos.z + fz * 25);
+  // Uhr: Mittag = höchster Sonnenstand
+  const mins = Math.floor(((city.tod - 0.25 + 1) % 1) * 24 * 60 + 12 * 60) % (24 * 60);
+  const clock = (night > 0.5 ? '🌙 ' : '☀️ ') + String(Math.floor(mins / 60)).padStart(2, '0') + ':' + String(mins % 60).padStart(2, '0');
+  if (S.ui.clock.textContent !== clock) S.ui.clock.textContent = clock;
 }
 
 function updateHud(dt) {
@@ -1085,6 +1426,8 @@ function render(dt) {
 
 function endCity() {
   removePolice();
+  endMission(false);
+  S.ui.jobpanel.hidden = true;
   S.ui.ticket.hidden = true;
   const c = city;
   city = null;
@@ -1093,6 +1436,7 @@ function endCity() {
   window.removeEventListener('keyup', onKey);
   S.scene.remove(c.me.mesh);
   for (const car of c.cars) S.scene.remove(car.mesh); // Formen gehören den Vorlagen in cars3d.js
+  if (c.headMat) c.headMat.emissiveIntensity = 1.2; // Scheinwerfer wieder wie am Tag (gilt auch fürs Rennen)
   if (c.netCars) c.netCars.dispose();
   if (c.chat) c.chat.dispose();
   S.ui.root.hidden = true;

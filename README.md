@@ -6,7 +6,9 @@ und nochmals, damit es weiterfährt – so kommen alle heil zum Ausgang.
 - 3D-Rennstrecken im F1-Stil: lenken, Gas, Bremse, Driften mit Handbremse – vier Cups mit Pokalen, mehr PS = schneller;
   fünf Strecken (Alpen, Vulkan, Gletscher mit Tunnel, Wüsten-Canyon mit Brücken-Kreuzung, Dschungel) mit Steilkurven, Hügeln und Brücken
 - 3D-Stadt zum freien Herumfahren: Häuser, Parks, Brunnen, Ampeln und viel Verkehr, der abbiegt, an Rot hält und hupt,
-  Driften mit Handbremse (Rauch, Bremsspuren, Drift-Punkte) und Polizei, die bei Rot verfolgt und Strafzettel verteilt
+  Driften mit Handbremse (Rauch, Bremsspuren, Drift-Punkte) und Polizei, die bei Rot verfolgt und Strafzettel verteilt;
+  Tag und Nacht (6 Minuten, Laternen, Fenster, Scheinwerfer), Tankstelle (Turbo-Benzin), Waschanlage und Aufträge:
+  Taxi, Pizza ausliefern, Dieb jagen (mit Polizeiauto)
 - 3D-Stuntpark: Schanzen, Tabletop, Weitsprung, Mega-Rampe vom Turm, Looping, Halfpipe-Wände, Wellenbahn und Feuerringe;
   in der Luft Salto und Schraube, Drift-Punkte, Combo und Rekord – Punkte geben Münzen (250 Punkte = 1 Münze)
 - 3D-Dragster-Bahn: 402 m geradeaus, Startampel und selber schalten – der Gewinner bekommt das Auto des Verlierers
