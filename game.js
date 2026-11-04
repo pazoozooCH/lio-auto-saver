@@ -2596,6 +2596,7 @@ function draw() {
     ], null);
     drawTitleButtons();
     drawVersion();
+    drawCredits();
     drawQuit();
   } else if (state === 'over') {
     drawOverlay('RUNDE VORBEI!', [
@@ -2705,6 +2706,17 @@ function drawVersion() {
     drawButton(UPDATE_BTN, appUpdate.busy ? '⏳ Lädt …' : '🔄 Update: Version ' + appUpdate.info.number, '#16a34a', 18);
     ctx.restore();
   }
+}
+
+// Wer das Spiel gemacht hat: klein oben rechts auf dem Startbildschirm (unter dem Update-Knopf, falls er da ist)
+function drawCredits() {
+  const y = appUpdate.info ? UPDATE_BTN.y + UPDATE_BTN.h + 10 : 16;
+  ctx.textAlign = 'right';
+  ctx.textBaseline = 'top';
+  ctx.fillStyle = 'rgba(255,255,255,0.6)';
+  ctx.font = '13px system-ui, sans-serif';
+  ctx.fillText('Ersteller: LIONEL', W - 14, y);
+  ctx.fillText('Mitarbeiter: MAEL', W - 14, y + 17);
 }
 
 // ---------- Beenden ----------
