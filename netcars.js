@@ -50,6 +50,7 @@ export function makeNetCars({ scene, kinds, net }) {
   const cars = new Map(); // slot → { mesh, tag, x, y, z, h, a, b, v, key }
   let sendT = 0;
   const wrap = a => Math.atan2(Math.sin(a), Math.cos(a));
+  let itSlot = null, itSign = null; // Fangis: wer dran ist, bekommt ein rotes Schild
   const dropBubble = c => { if (!c.bubble) return; scene.remove(c.bubble); c.bubble.material.map.dispose(); c.bubble.material.dispose(); c.bubble = null; };
 
   function remove(slot) {
@@ -105,6 +106,7 @@ export function makeNetCars({ scene, kinds, net }) {
         for (const w of c.mesh.userData.wheels) w.rotation.z -= c.v * dt / 0.35;
         animateCar(c.mesh, t, p.special || null, false);
         c.tag.position.set(c.x, c.y + 4, c.z);
+        if (itSign && slot === itSlot) itSign.position.set(c.x, c.y + (c.bubble ? 6.8 : 5.5), c.z);
         if (c.bubble) {
           c.bubble.position.set(c.x, c.y + 5.4, c.z);
           if ((c.bubbleT -= dt) <= 0) dropBubble(c);
@@ -138,6 +140,13 @@ export function makeNetCars({ scene, kinds, net }) {
       c.bubbleT = 5;
       scene.add(c.bubble);
     },
-    dispose() { for (const slot of [...cars.keys()]) remove(slot); },
+    // Fangis: Schild „DRAN“ über diesem Mitspieler (null = keiner)
+    setIt(slot) {
+      if (slot === itSlot) return;
+      itSlot = slot;
+      if (!itSign) { itSign = bubble('🏃 DRAN!'); itSign.material.color.set('#ff6b6b'); itSign.visible = false; scene.add(itSign); }
+      itSign.visible = slot !== null && cars.has(slot);
+    },
+    dispose() { for (const slot of [...cars.keys()]) remove(slot); if (itSign) { scene.remove(itSign); itSign = null; } itSlot = null; },
   };
 }

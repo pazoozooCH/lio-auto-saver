@@ -127,11 +127,37 @@ function showHome(msg = '') {
       </div>
     </div>
     <div class="box"><b>🌍 Offene Räume</b><div class="rooms"><p class="hint">Suche …</p></div></div>
+    <div class="box"><b>🏆 Stunt-Rangliste</b><div class="scores"><p class="hint">Lade …</p></div>
+      <p class="hint">Dein bester Stuntpark-Rekord kommt hier mit deinem Spitznamen rein.</p></div>
     <div class="status"></div>
     <button class="grey" data-act="back">← Zurück</button>
     <p class="hint">Online gibt es keine Autos zu gewinnen oder zu verlieren – nur Ruhm! 🏆</p>`;
   status(msg);
   watchPublic();
+  connect().then(() => submitBest()).then(showScores).catch(() => showScores(null));
+}
+
+// ---------- Stunt-Rangliste: bester Rekord je Gerät (scores/<uid>), die 10 besten ----------
+async function submitBest() {
+  const best = Math.min(9999999, Math.round(+load('autoRetterStuntBest', '0') || 0)), name = load(LS.name).trim().slice(0, 16);
+  if (!best || !name || !fb) return;
+  const ref = fb.ref(fb.db, 'scores/' + fb.uid);
+  const old = (await fb.get(ref)).val();
+  if (old && old.best >= best && old.name === name) return;
+  await fb.set(ref, { name, best: Math.max(best, old && old.name === name ? old.best : 0), t: fb.serverTimestamp() }).catch(() => {});
+}
+async function showScores() {
+  const box = ui.wrap.querySelector('.scores');
+  if (!box) return;
+  try {
+    const snap = await fb.get(fb.query(fb.ref(fb.db, 'scores'), fb.orderByChild('best'), fb.limitToLast(10)));
+    const rows = [];
+    snap.forEach(c => { rows.push({ ...c.val(), me: c.key === fb.uid }); });
+    rows.sort((a, b) => b.best - a.best);
+    box.innerHTML = rows.length ? '<table>' + rows.map((r, i) => `<tr${r.me ? ' style="color:#facc15"' : ''}><td>${['🥇', '🥈', '🥉'][i] || (i + 1) + '.'}</td>
+      <td>${esc(r.name)}${r.me ? ' (du)' : ''}</td><td style="text-align:right">⭐ ${r.best}</td></tr>`).join('') + '</table>'
+      : '<p class="hint">Noch keine Rekorde – fahr in den Stuntpark! 🤸</p>';
+  } catch (e) { box.innerHTML = '<p class="hint">' + (/permission/i.test(e.message) ? 'Die Rangliste ist noch nicht freigeschaltet (Regeln hochladen).' : 'Offline – keine Rangliste.') + '</p>'; }
 }
 
 // Liste der öffentlichen Räume live anzeigen; Antippen = beitreten
@@ -427,6 +453,8 @@ async function launchFree(data) {
     chats: () => (room && room.data && room.data.chat) || {},
     chat(m) { fb.set(roomRef(code, 'chat/' + mySlot), { m, t: fb.serverTimestamp() }).catch(() => {}); }, // Nummer eines Spruchs (chat.js)
     canType: !isPublic,
+    tag: () => room && room.data && room.data.tag, // Fangis (nur Stadt)
+    setTag(it) { fb.set(roomRef(code, 'tag'), { it, by: mySlot, t: fb.serverTimestamp() }).catch(() => {}); },
     chatText(x) { fb.set(roomRef(code, 'chat/' + mySlot), { x: String(x).slice(0, 80), t: fb.serverTimestamp() }).catch(() => {}); },
     send(s) { fb.set(roomRef(code, 'live/' + mySlot), { ...s, r: 0, t: fb.serverTimestamp() }).catch(() => {}); },
     latest(slot) {
@@ -439,6 +467,7 @@ async function launchFree(data) {
   const done = () => {
     ui.root.hidden = false;
     fb.remove(roomRef(code, 'live/' + mySlot)).catch(() => {});
+    if (data.mode === 'stunt') submitBest(); // neuer Stunt-Rekord? In die Rangliste
     if (!room) { showHome('Der Raum wurde geschlossen.'); return; }
     room.racing = false;
     showRoom();

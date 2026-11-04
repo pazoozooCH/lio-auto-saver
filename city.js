@@ -771,6 +771,45 @@ function stepPlaces(dt) {
   } else city.washT = 0;
 }
 
+// ---------- Fangis (nur online) ----------
+// Im Raum steht tag = { it: Platz, der dran ist (−1 = kein Spiel), by: wer zuletzt gefangen hat, t }.
+// Wer dran ist, prüft selbst, ob er jemanden berührt, und gibt „dran“ weiter (zurückfangen erst nach 3 s).
+function tagState() {
+  const tag = city.net && city.net.tag();
+  return tag && tag.it >= 0 && (city.net.players() || {})[tag.it] ? tag : null;
+}
+function toggleTag() {
+  if (!city.net) return;
+  if (tagState()) { city.net.setTag(-1); showMsg('🏃 Fangis beendet', 1.6); }
+  else { city.net.setTag(city.net.mySlot); showMsg('🏃 Fangis! Du bist zuerst dran – fang jemanden!', 2.4); }
+}
+function stepTag(dt) {
+  if (!city.net) return;
+  const tag = tagState(), me = city.me, ui = S.ui;
+  ui.tagbtn.textContent = tag ? '🛑' : '🏃';
+  if (!tag) { ui.tagbar.hidden = true; city.netCars.setIt(null); city.lastIt = -1; return; }
+  const mine = tag.it === city.net.mySlot, players = city.net.players() || {};
+  city.netCars.setIt(mine ? null : tag.it);
+  ui.tagbar.hidden = false;
+  ui.tagbar.classList.toggle('me', mine);
+  ui.tagbar.textContent = mine ? '🏃 DU BIST DRAN! Fang jemanden!' : '🏃 ' + ((players[tag.it] || {}).name || '?') + ' ist dran – lauf weg!';
+  if (city.lastIt !== tag.it) {
+    if (mine && city.lastIt >= 0) { showMsg('😱 Erwischt! Jetzt bist DU dran!', 2); horn(0.6, 0.25, 1.3); }
+    city.lastIt = tag.it; city.tagCD = 1;
+  }
+  if (!mine || (city.tagCD -= dt) > 0) return;
+  for (const o of city.netCars.list()) {
+    if (o.slot === tag.by && city.net.serverNow() - tag.t < 3000) continue; // nicht gleich zurückfangen
+    if (Math.hypot(o.x - me.pos.x, o.z - me.pos.z) < (me.radius + o.r) * 1.05) {
+      city.net.setTag(o.slot);
+      city.tagCD = 1.5;
+      showMsg('🏃 Erwischt: ' + o.name + '!', 1.8);
+      window.beep && window.beep(880, 0.15, 'square', 0.05);
+      break;
+    }
+  }
+}
+
 // ---------- Aufträge: Taxi, Pizza, Dieb jagen ----------
 const POLICE_KINDS = ['police', 'policebike', 'policebus'];
 function toggleJobs() {
@@ -1094,6 +1133,12 @@ const CSS = `
   background: rgba(0,0,0,.55); border-radius: 14px; padding: 6px 16px; font-weight: 800; font-size: 26px; }
 #city .speed small { display: block; font-size: 13px; font-weight: 600; opacity: .8; }
 #city .minimap { position: absolute; top: 10px; right: 62px; background: rgba(0,0,0,.45); border-radius: 10px; }
+#city .tagbtn { position: absolute; top: 10px; left: 148px; width: 58px; height: 58px; border-radius: 50%; border: 3px solid #f87171;
+  background: rgba(0,0,0,.4); font-size: 26px; }
+#city .tagbtn[hidden], #city .tagbar[hidden] { display: none; }
+#city .tagbar { position: absolute; top: 104px; left: 50%; transform: translateX(-50%); background: rgba(30,41,59,.85); border-radius: 12px;
+  padding: 6px 16px; font-weight: 900; font-size: 20px; white-space: nowrap; }
+#city .tagbar.me { background: #dc2626; animation: cityblink 0.7s infinite alternate; }
 #city .jobs { position: absolute; top: 10px; left: 80px; width: 58px; height: 58px; border-radius: 50%; border: 3px solid rgba(255,255,255,.65);
   background: rgba(0,0,0,.4); font-size: 26px; }
 #city .jobpanel { position: absolute; top: 76px; left: 12px; width: min(380px, 70%); background: rgba(15,18,28,.92); border-radius: 14px;
@@ -1147,6 +1192,8 @@ function buildDom() {
     <button class="quit" title="Stadt verlassen">✕</button>
     <button class="horn" title="Hupen (H)">📯</button>
     <button class="jobs" title="Aufträge (J)">📋</button>
+    <button class="tagbtn" title="Fangis (online)" hidden>🏃</button>
+    <div class="tagbar" hidden></div>
     <div class="jobpanel" hidden><b>📋 Aufträge</b>
       <button data-job="taxi">🚕 Taxi: Fahrgast abholen und hinbringen</button>
       <button data-job="pizza">🍕 Pizza: bei der Pizzeria abholen und ausliefern</button>
@@ -1174,8 +1221,10 @@ function buildDom() {
   const $ = s => root.querySelector(s);
   const ui = { root, kmh: $('.kmh'), ps: $('.ps'), msg: $('.msg'), hint: $('.hint'), minimap: $('.minimap'), ctls: [...root.querySelectorAll('.ctl')],
     chase: $('.chase'), ticket: $('.ticket'), drift: $('.drift'), clock: $('.clock'),
+    tagbtn: $('.tagbtn'), tagbar: $('.tagbar'),
     jobs: $('.jobs'), jobpanel: $('.jobpanel'), goal: $('.goal'), arrow: $('.goal .arrow'), gtext: $('.goal .gtext') };
   $('.jobs').addEventListener('pointerdown', e => { e.preventDefault(); toggleJobs(); });
+  $('.tagbtn').addEventListener('pointerdown', e => { e.preventDefault(); toggleTag(); });
   ui.jobpanel.addEventListener('pointerdown', e => {
     const b = e.target.closest('button'); if (!b || b.disabled) return;
     e.preventDefault();
@@ -1271,9 +1320,11 @@ function drawMinimap() {
     g.fillStyle = Math.floor(city.t * 6) % 2 ? '#3b82f6' : '#ef4444';
     g.beginPath(); g.arc(mx(city.police.pos.x), mx(city.police.pos.z), 4.5, 0, Math.PI * 2); g.fill();
   }
-  if (city.netCars) for (const o of city.netCars.list()) { // Mitspieler als farbige Punkte
+  const it = city.net ? tagState() : null;
+  if (city.netCars) for (const o of city.netCars.list()) { // Mitspieler als farbige Punkte, wer bei Fangis dran ist, mit rotem Ring
     g.fillStyle = o.color; g.strokeStyle = '#000'; g.lineWidth = 1.5;
     g.beginPath(); g.arc(mx(o.x), mx(o.z), 5, 0, Math.PI * 2); g.fill(); g.stroke();
+    if (it && it.it === o.slot) { g.strokeStyle = Math.floor(city.t * 4) % 2 ? '#ff2020' : '#fff'; g.lineWidth = 2.5; g.beginPath(); g.arc(mx(o.x), mx(o.z), 9, 0, Math.PI * 2); g.stroke(); }
   }
   const M = city.mission;
   if (M && M.target) { // Ziel des Auftrags blinkt
@@ -1315,6 +1366,7 @@ export function startCity({ player, kinds, topSpeed, onExit, pay = () => 0, earn
   for (const c of city.cars) S.scene.add(c.mesh);
   warmUp(S.renderer, S.scene, S.camera);
   if (!S.quality) S.quality = makeQuality(S.renderer, layout);
+  S.ui.tagbtn.hidden = !net; S.ui.tagbar.hidden = true;
   if (net) city.chat = makeChat({ parent: S.ui.root, net, mode: 'city', onSay: (slot, text) => city.netCars.say(slot, text) });
   S.ui.root.hidden = false;
   S.ui.ps.textContent = '⚡ ' + player.ps + ' PS';
@@ -1355,6 +1407,7 @@ function loop(now) {
     }
     city.netCars.update(dt, city.t, { x: me.pos.x, y: 0, z: me.pos.z, h: me.heading, v: me.speed });
     city.chat.update(dt);
+    stepTag(dt);
   }
   updateHud(dt);
   render(dt);

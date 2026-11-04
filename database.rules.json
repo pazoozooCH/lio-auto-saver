@@ -6,6 +6,18 @@
       ".read": false,
       ".write": false
     },
+    "scores": {
+      ".read": "auth != null",
+      ".indexOn": ["best"],
+      "$uid": {
+        ".write": "auth != null && auth.uid === $uid",
+        ".validate": "newData.hasChildren(['name', 'best', 't']) && newData.child('t').val() === now && (!data.exists() || now - data.child('t').val() >= 3000)",
+        "name": { ".validate": "newData.isString() && newData.val().length >= 1 && newData.val().length <= 16" },
+        "best": { ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 10000000" },
+        "t": { ".validate": "newData.isNumber()" },
+        "$other": { ".validate": false }
+      }
+    },
     "public": {
       ".read": "auth != null",
       "$code": {
@@ -71,6 +83,14 @@
             "fin": { ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() < 3600" },
             "$other": { ".validate": false }
           }
+        },
+        "tag": {
+          ".write": "auth != null && newData.exists() && root.child('rooms').child($code).child('players').child('' + newData.child('by').val()).child('uid').val() === auth.uid",
+          ".validate": "newData.hasChildren(['it', 'by', 't']) && newData.child('t').val() === now && (!data.exists() || now - data.child('t').val() >= 500)",
+          "it": { ".validate": "newData.isNumber() && newData.val() >= -1 && newData.val() <= 5" },
+          "by": { ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 5" },
+          "t": { ".validate": "newData.isNumber()" },
+          "$other": { ".validate": false }
         },
         "chat": {
           "$slot": {
