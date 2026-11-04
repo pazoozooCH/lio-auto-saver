@@ -9,6 +9,7 @@ import { makeNoise, rng, smoothstep, surface, terrain, cloudDome } from './world
 import { createCarSound, crash, gearbox } from './sound.js';
 import { makeNetCars } from './netcars.js';
 import { makeChat } from './chat.js';
+import { makeEffects } from './fx.js';
 
 const G = 9.81;
 const EDGE = 188;               // so weit geht der Platz (±)
@@ -270,7 +271,7 @@ function buildWorld() {
 
 // ---------- Fahren ----------
 function resetCar(me, x = -170, z = 0, heading = 0) {
-  Object.assign(me, { x, z, y: groundAt(x, z), heading, speed: 0, air: false, loop: null, vx: 0, vy: 0, vz: 0, vyG: 0,
+  Object.assign(me, { x, z, y: groundAt(x, z), heading, speed: 0, vl: 0, driftMode: false, drifting: false, air: false, loop: null, vx: 0, vy: 0, vz: 0, vyG: 0,
     pitch: 0, roll: 0, airT: 0, flip: 0, spin: 0, camH: heading, frozen: 0, ringsNow: [], wallAir: null });
 }
 
@@ -288,15 +289,25 @@ function stepMe(dt) {
     else me.speed += me.acc * Math.max(0, 1 - me.speed / me.maxV) * dt;
   } else if (!input.brake) me.speed -= Math.sign(me.speed) * Math.min(Math.abs(me.speed), 1.8 * dt);
   if (input.brake) me.speed = me.speed > 0 ? Math.max(0, me.speed - BRAKE * dt) : Math.max(-8, me.speed - 6 * dt);
-  const yawMax = Math.min(1.6, GRIP / Math.max(Math.abs(me.speed), 0.1));
-  if (Math.abs(me.speed) > 0.3) me.heading += me.steer * yawMax * dt * Math.sign(me.speed);
+  // Driften (wie in der Stadt): Handbremse lässt das Heck ausbrechen, das Auto rutscht quer weiter
+  const hand = !!input.drift;
+  if (hand) me.speed -= Math.sign(me.speed) * Math.min(Math.abs(me.speed), 3.5 * dt);
+  if ((hand && Math.abs(me.speed) > 8) || Math.abs(me.vl) > 3.5) me.driftMode = true;
+  else if (Math.abs(me.vl) < 1.2 || Math.abs(me.speed) < 5) me.driftMode = false;
+  const sliding = me.driftMode || hand;
+  const yawMax = sliding ? Math.min(1.9, 30 / Math.max(Math.hypot(me.speed, me.vl), 0.1)) : Math.min(1.6, GRIP / Math.max(Math.abs(me.speed), 0.1));
+  const turn = Math.abs(me.speed) > 0.3 ? me.steer * yawMax * dt * Math.sign(me.speed) : 0;
+  me.heading += turn;
+  if (sliding) { const c = Math.cos(turn), sn = Math.sin(turn), vf = me.speed * c + me.vl * sn; me.vl = -me.speed * sn + me.vl * c; me.speed = vf; }
+  me.vl *= Math.exp(-(hand ? 0.8 : me.driftMode ? (input.gas ? 1.3 : 2.4) : 9) * dt);
+  me.drifting = Math.abs(me.vl) > 2.5 && Math.abs(me.speed) > 5;
   const sl = slopeAt(me.x, me.z, me.heading);
   me.speed -= G * Math.sin(sl.pitch) * dt; // bergauf langsamer, an der Halfpipe-Wand rollt man zurück
   const fx = Math.cos(me.heading), fz = Math.sin(me.heading), dist = me.speed * Math.cos(sl.pitch) * dt;
-  const nx = me.x + fx * dist, nz = me.z + fz * dist, h = groundAt(nx, nz);
+  const nx = me.x + fx * dist - fz * me.vl * dt, nz = me.z + fz * dist + fx * me.vl * dt, h = groundAt(nx, nz);
   if (h > me.y + 0.7) { // seitlich gegen einen Kasten oder eine Rampe: abprallen
     if (Math.abs(me.speed) > 6) crash(Math.abs(me.speed) / 40, 'tyres');
-    me.speed *= -0.25;
+    me.speed *= -0.25; me.vl *= -0.3;
     return;
   }
   // Abheben: der Boden fällt schneller weg, als das Auto fallen würde (Schanzenkante, Kante oben auf dem Turm)
@@ -305,7 +316,8 @@ function stepMe(dt) {
   if (h < ballistic - (0.02 + 0.25 * Math.abs(dist)) && Math.abs(me.speed) > 2) {
     me.air = true;
     const vh = me.speed * Math.cos(sl.pitch), wall = shapeAt(me.x, me.z);
-    me.vx = fx * vh; me.vz = fz * vh; me.vy = me.vyG;
+    me.vx = fx * vh - fz * me.vl; me.vz = fz * vh + fx * me.vl; me.vy = me.vyG; // im Drift fliegt man schräg ab
+    me.vl = 0; me.drifting = false;
     // über die Kante einer Halfpipe-Wand: senkrecht hoch und wieder zurück in die Wand (nicht auf die Plattform)
     me.wallAir = wall && wall.kind === 'curve' && wall.max > 1.2 && me.speed > 0 ? wall : null;
     if (me.wallAir) { me.vx = -wall.c * 0.4; me.vz = -wall.s * 0.4; me.vy = Math.min(me.vy, 13); } // höchstens etwa 8 m über die Kante
@@ -387,6 +399,7 @@ function stepAir(me, input, dt) {
 
 function crashLand(me) {
   crash(0.9, 'car');
+  P.drift = 0;
   me.speed = 0; me.frozen = 1.2;
   const sl = slopeAt(me.x, me.z, me.heading);
   me.pitch = sl.pitch; me.roll = sl.roll;
@@ -399,6 +412,7 @@ function tryLoop(me) {
   const L = LOOP, dx = me.x - L.x, dz = me.z - L.z, u = dx * L.c + dz * L.s, v = -dx * L.s + dz * L.c;
   if (u < -0.3 || u > 1.2 || Math.abs(v) > L.w / 2 || me.speed < 3 || Math.abs(wrap(me.heading - L.ang)) > 0.6) return;
   me.loop = { th: Math.max(0, u) / L.R, v0: v };
+  me.vl = 0; me.drifting = false;
 }
 function stepLoop(me, input, dt) {
   const L = me.loop, R = LOOP.R;
@@ -420,6 +434,26 @@ function stepLoop(me, input, dt) {
   if (th >= Math.PI * 2) {
     me.loop = null; me.y = 0; me.pitch = 0; me.vyG = 0;
     addPoints(800, '🎢 LOOPING! +800', true);
+  }
+}
+
+// Bremsspuren und Rauch; Drift-Punkte: je schneller und je quer, desto mehr (nach dem Drift gutgeschrieben)
+function stuntDrift(dt) {
+  const me = P.me, fx = Math.cos(me.heading), fz = Math.sin(me.heading), ground = !me.air && !me.loop;
+  const skid = ground && (me.drifting || (P.input.drift && Math.abs(me.speed) > 6) || (P.input.brake && me.speed > 12));
+  const back = me.mesh.userData.length * 0.32, y = me.y + 0.04;
+  for (const k of [0, 1]) {
+    const sx = k ? 1 : -1, wx = me.x - fx * back - fz * 0.8 * sx, wz = me.z - fz * back + fx * 0.8 * sx;
+    S.fx.mark(k, wx, y, wz, skid);
+    if (ground && me.drifting && Math.random() < dt * 22) S.fx.puff(wx, y + 0.3, wz, fx * me.speed - fz * me.vl, fz * me.speed + fx * me.vl);
+  }
+  if (ground && me.drifting) {
+    P.drift += Math.abs(me.vl) * Math.abs(me.speed) * dt * 0.8;
+    P.driftT = 0.7;
+  } else if (P.drift > 0 && (P.driftT -= dt) <= 0) {
+    const pts = Math.round(P.drift);
+    P.drift = 0;
+    if (pts >= 60) addPoints(pts, '🔥 Drift +' + pts);
   }
 }
 
@@ -455,6 +489,7 @@ const CSS = `
 #stunt .ctl { position: absolute; bottom: 16px; width: 94px; height: 94px; border-radius: 50%; border: 3px solid rgba(255,255,255,.65);
   background: rgba(0,0,0,.35); color: #fff; font-size: 30px; font-weight: 900; touch-action: none; }
 #stunt .ctl.on { background: rgba(255,255,255,.4); }
+#stunt .ctl.hand { width: 84px; height: 84px; font-size: 16px; border-color: #fb923c; }
 #stunt .ctl.gas { border-color: #4ade80; font-size: 20px; } #stunt .ctl.brake { border-color: #f87171; font-size: 16px; }
 #stunt .hint { position: absolute; bottom: 86px; left: 50%; transform: translateX(-50%); font-size: 15px; opacity: .85;
   background: rgba(0,0,0,.45); padding: 4px 12px; border-radius: 10px; white-space: nowrap; }
@@ -475,11 +510,12 @@ function buildDom() {
     <div class="air"></div>
     <div class="msg"></div>
     <div class="speed"><span class="kmh">0</span> km/h<small class="ps"></small></div>
-    <div class="hint">⬅️ ➡️ lenken (in der Luft: Schraube) · ⬆️ Gas (Salto vorwärts) · ⬇️ Bremse (Salto rückwärts) · R Neustart</div>
+    <div class="hint">⬅️ ➡️ lenken (in der Luft: Schraube) · ⬆️ Gas (Salto vorwärts) · ⬇️ Bremse (Salto rückwärts) · Leertaste driften · R Neustart</div>
     <button class="ctl" data-k="left" style="left:16px">◀</button>
     <button class="ctl" data-k="right" style="left:124px">▶</button>
     <button class="ctl brake" data-k="brake" style="right:124px">BREMSE<br>↺</button>
-    <button class="ctl gas" data-k="gas" style="right:16px">GAS<br>↻</button>`;
+    <button class="ctl gas" data-k="gas" style="right:16px">GAS<br>↻</button>
+    <button class="ctl hand" data-k="drift" style="right:70px; bottom:120px">DRIFT</button>`;
   document.body.appendChild(root);
   const $ = s => root.querySelector(s);
   const ui = { root, kmh: $('.kmh'), ps: $('.ps'), msg: $('.msg'), air: $('.air'), pts: $('.pts'), best: $('.best'), board: $('.board'),
@@ -498,7 +534,8 @@ function buildDom() {
   return ui;
 }
 
-const KEYS = { ArrowLeft: 'left', KeyA: 'left', ArrowRight: 'right', KeyD: 'right', ArrowUp: 'gas', KeyW: 'gas', ArrowDown: 'brake', KeyS: 'brake' };
+const KEYS = { ArrowLeft: 'left', KeyA: 'left', ArrowRight: 'right', KeyD: 'right', ArrowUp: 'gas', KeyW: 'gas', ArrowDown: 'brake', KeyS: 'brake',
+  Space: 'drift', ShiftLeft: 'drift', ShiftRight: 'drift' };
 function onKey(e) {
   if (!P || (e.target && e.target.tagName === 'INPUT')) return; // im Chat wird geschrieben, nicht gefahren
   if (e.code === 'KeyR' && e.type === 'keydown') { resetCar(P.me); P.combo = 0; return; }
@@ -532,8 +569,10 @@ export function startStunt({ player, kinds, topSpeed, onExit, earn = () => {}, n
     S = buildWorld();
     S.ui = buildDom();
     S.ui.root.prepend(S.renderer.domElement);
+    S.fx = makeEffects(S.scene);
     window.addEventListener('resize', () => S && !S.ui.root.hidden && layout());
   }
+  S.fx.clear();
   const mesh = buildCar(player, kinds);
   mesh.rotation.order = 'YZX';
   const me = { mesh, special: player.special || null, steer: 0, maxV: Math.min(36, topSpeed(player.ps)), acc: 6 + player.ps * 0.07, radius: Math.max(1.3, mesh.userData.radius * 0.8) };
@@ -541,7 +580,7 @@ export function startStunt({ player, kinds, topSpeed, onExit, earn = () => {}, n
   resetCar(me, -170, net ? (net.mySlot - 2.5) * 6 : 0);
   let best = 0;
   try { best = +localStorage.getItem(BEST_KEY) || 0; } catch (e) { /* egal */ }
-  P = { me, input: {}, t: 0, msgT: 0, last: performance.now(), onExit, earn, score: 0, best, combo: 0, comboT: 0, gears: gearbox(player.kind), net,
+  P = { me, input: {}, t: 0, msgT: 0, last: performance.now(), onExit, earn, score: 0, best, combo: 0, comboT: 0, drift: 0, driftT: 0, gears: gearbox(player.kind), net,
     netCars: net ? makeNetCars({ scene: S.scene, kinds, net }) : null };
   window.__stunt = () => P; // für Tests im Browser
   window.__stuntS = () => S;
@@ -573,6 +612,7 @@ function loop(now) {
   const n = Math.max(1, Math.ceil(dt / (1 / 120))); // kleine Schritte: genauer an Kanten und im Looping
   for (let k = 0; k < n; k++) stepMe(dt / n);
   const me = P.me;
+  stuntDrift(dt);
   me.x = Math.max(-EDGE + 1.5, Math.min(EDGE - 1.5, me.x)); me.z = Math.max(-EDGE + 1.5, Math.min(EDGE - 1.5, me.z));
   if (P.netCars) {
     const o = { x: me.x, y: me.y, z: me.z };
@@ -590,7 +630,7 @@ function updateHud(dt) {
   ui.kmh.textContent = Math.round(Math.abs(me.air ? Math.hypot(me.vx, me.vz, me.vy) : me.speed) * 3.6);
   ui.pts.textContent = P.score;
   ui.best.textContent = '🏆 Rekord ' + P.best;
-  ui.air.textContent = me.air && me.airT > 0.4 ? '✈️ ' + me.airT.toFixed(1) + ' s' + (Math.abs(me.flip) > 3 ? '  🔄' : '') + (Math.abs(me.spin) > 3 ? '  🌀' : '') : '';
+  ui.air.textContent = P.drift > 20 ? '🔥 DRIFT ' + Math.round(P.drift) : me.air && me.airT > 0.4 ? '✈️ ' + me.airT.toFixed(1) + ' s' + (Math.abs(me.flip) > 3 ? '  🔄' : '') + (Math.abs(me.spin) > 3 ? '  🌀' : '') : '';
   if (P.net) { // Punkte aller Mitspieler (aus den Live-Daten, Feld p)
     const players = P.net.players() || {};
     const rows = Object.keys(players).map(s => ({ name: players[s].name, pts: +s === P.net.mySlot ? P.score : ((P.net.latest(+s) || {}).p || 0), me: +s === P.net.mySlot }))
@@ -601,7 +641,7 @@ function updateHud(dt) {
   if (S.snd) {
     const g = P.gears(Math.abs(me.speed), me.maxV);
     S.snd.update({ frac: me.air ? Math.min(1, g.frac + 0.2) : g.frac, throttle: P.input.gas ? 1 : 0.15, speed: me.air ? 0 : me.speed,
-      slip: !me.air && P.input.brake && me.speed > 6 ? 0.6 : 0, surface: 'asphalt', other: null, dt });
+      slip: me.air ? 0 : me.drifting ? Math.min(1, Math.abs(me.vl) / 7) : P.input.brake && me.speed > 6 ? 0.6 : 0, surface: 'asphalt', other: null, dt });
   }
 }
 const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
@@ -636,6 +676,7 @@ function render(dt) {
   S.sun.position.set(me.x + 80, me.y + 120, me.z + 50);
   S.sun.target.position.set(me.x, me.y, me.z);
   S.clouds.position.set(cam.position.x, 0, cam.position.z);
+  S.fx.update(dt, cam, S.renderer);
   S.renderer.render(S.scene, cam);
 }
 

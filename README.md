@@ -3,12 +3,12 @@
 Ein Browser-Spiel: Autos fahren durch eine Fabrik mit hydraulischen Pressen. Tippe ein Auto an, damit es anhält,
 und nochmals, damit es weiterfährt – so kommen alle heil zum Ausgang.
 
-- 3D-Rennstrecken im F1-Stil: lenken, Gas, Bremse – vier Cups mit Pokalen, mehr PS = schneller;
+- 3D-Rennstrecken im F1-Stil: lenken, Gas, Bremse, Driften mit Handbremse – vier Cups mit Pokalen, mehr PS = schneller;
   fünf Strecken (Alpen, Vulkan, Gletscher mit Tunnel, Wüsten-Canyon mit Brücken-Kreuzung, Dschungel) mit Steilkurven, Hügeln und Brücken
 - 3D-Stadt zum freien Herumfahren: Häuser, Parks, Brunnen, Ampeln und viel Verkehr, der abbiegt, an Rot hält und hupt,
   Driften mit Handbremse (Rauch, Bremsspuren, Drift-Punkte) und Polizei, die bei Rot verfolgt und Strafzettel verteilt
 - 3D-Stuntpark: Schanzen, Tabletop, Weitsprung, Mega-Rampe vom Turm, Looping, Halfpipe-Wände, Wellenbahn und Feuerringe;
-  in der Luft Salto und Schraube, Punkte mit Combo, Rekord – Punkte geben Münzen (250 Punkte = 1 Münze)
+  in der Luft Salto und Schraube, Drift-Punkte, Combo und Rekord – Punkte geben Münzen (250 Punkte = 1 Münze)
 - 3D-Dragster-Bahn: 402 m geradeaus, Startampel und selber schalten – der Gewinner bekommt das Auto des Verlierers
 - Presse in einer 3D-Fabrikhalle: Autos retten bringt Münzen und +1 PS, zerquetscht kostet −3 PS
 - Fahrzeugpark mit 110 Fahrzeugen in fünf Seltenheitsstufen, viele mit Spezialkräften

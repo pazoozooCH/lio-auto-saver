@@ -1,6 +1,7 @@
 // Rennstrecke in 3D (three.js). Wird von game.js erst geladen, wenn ein Rennen startet.
 import * as THREE from 'three';
 import { Sky } from 'three/addons/objects/Sky.js';
+import { makeEffects } from './fx.js';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { buildCar, animateCar, warmUp, makeQuality, mergeStatic } from './cars3d.js';
@@ -692,6 +693,7 @@ const CSS = `
 #race .ctl { position: absolute; bottom: 16px; width: 94px; height: 94px; border-radius: 50%; border: 3px solid rgba(255,255,255,.65);
   background: rgba(0,0,0,.35); color: #fff; font-size: 30px; font-weight: 900; touch-action: none; }
 #race .ctl.on { background: rgba(255,255,255,.4); }
+#race .ctl.hand { width: 84px; height: 84px; font-size: 16px; border-color: #fb923c; }
 #race .ctl.gas { border-color: #4ade80; } #race .ctl.brake { border-color: #f87171; font-size: 18px; }
 #race .hint { position: absolute; bottom: 86px; left: 50%; transform: translateX(-50%); font-size: 15px; opacity: .85;
   background: rgba(0,0,0,.45); padding: 4px 12px; border-radius: 10px; white-space: nowrap; }
@@ -712,11 +714,12 @@ function buildDom() {
     <div class="mirror"></div>
     <div class="msg"></div>
     <div class="speed"><span class="kmh">0</span> km/h<small class="ps"></small></div>
-    <div class="hint">⬅️ ➡️ lenken · ⬆️ Gas · ⬇️ Bremse</div>
+    <div class="hint">⬅️ ➡️ lenken · ⬆️ Gas · ⬇️ Bremse · Leertaste driften</div>
     <button class="ctl left" data-k="left" style="left:16px">◀</button>
     <button class="ctl right" data-k="right" style="left:124px">▶</button>
     <button class="ctl brake" data-k="brake" style="right:124px">BREMSE</button>
-    <button class="ctl gas" data-k="gas" style="right:16px">GAS</button>`;
+    <button class="ctl gas" data-k="gas" style="right:16px">GAS</button>
+    <button class="ctl hand" data-k="drift" style="right:70px; bottom:120px">DRIFT</button>`;
   document.body.appendChild(root);
   const $ = sel => root.querySelector(sel);
   const ui = {
@@ -741,7 +744,8 @@ function buildDom() {
   return ui;
 }
 
-const KEYS = { ArrowLeft: 'left', KeyA: 'left', ArrowRight: 'right', KeyD: 'right', ArrowUp: 'gas', KeyW: 'gas', ArrowDown: 'brake', KeyS: 'brake', Space: 'brake' };
+const KEYS = { ArrowLeft: 'left', KeyA: 'left', ArrowRight: 'right', KeyD: 'right', ArrowUp: 'gas', KeyW: 'gas', ArrowDown: 'brake', KeyS: 'brake',
+  Space: 'drift', ShiftLeft: 'drift', ShiftRight: 'drift' };
 function onKey(e) {
   const k = KEYS[e.code];
   if (!k || !race) return;
@@ -785,7 +789,10 @@ export function startRace({ player, opponents, kinds, topSpeed, onFinish, net = 
   const def = TRACKS.find(t => t.id === track) || TRACKS[0];
   for (const id of Object.keys(R.worlds)) if (id !== def.id) { disposeWorld(R.worlds[id]); delete R.worlds[id]; } // nur eine Strecke im Speicher
   if (!R.worlds[def.id]) R.worlds[def.id] = buildWorld(def, R.renderer);
-  Object.assign(R, R.worlds[def.id]); // aktuelle Strecke: Szene, Kamera, Sonne, Strecke …
+  const world = R.worlds[def.id];
+  if (!world.fx) world.fx = makeEffects(world.scene); // Reifenrauch und Bremsspuren (gehören zur Szene der Strecke)
+  Object.assign(R, world); // aktuelle Strecke: Szene, Kamera, Sonne, Strecke, Effekte …
+  R.fx.clear();
   R.renderer.toneMappingExposure = THEMES[def.theme].exposure;
   const T = R.T;
   const accelFor = ps => 4 + ps * 0.06;
@@ -806,7 +813,7 @@ export function startRace({ player, opponents, kinds, topSpeed, onFinish, net = 
       speed: 0, idx: nearestIndex(T, g.pos, 0), prog: g.s, mesh: buildCar(p.v, kinds), finished: null, color: p.v.special ? '#ffd700' : p.v.color });
   }
   const pg = gridSlot(T, net ? net.mySlot : grid.length);
-  const me = { v: player, name: player.name, ai: false, pos: pg.pos.clone(), heading: Math.atan2(pg.fwd.z, pg.fwd.x),
+  const me = { v: player, name: player.name, ai: false, pos: pg.pos.clone(), heading: Math.atan2(pg.fwd.z, pg.fwd.x), vl: 0, driftMode: false,
     speed: 0, steer: 0, idx: nearestIndex(T, pg.pos, 0), prog: pg.s, maxV: topSpeed(player.ps), acc: accelFor(player.ps),
     mesh: buildCar(player, kinds), finished: null, wrongT: 0 };
   cars.push(me);
@@ -881,7 +888,7 @@ function step(dt) {
 
   // --- Spieler: lenken, Gas, Bremse ---
   const driving = !me.finished;
-  const gas = driving && input.gas, brake = driving && input.brake;
+  const gas = driving && input.gas, brake = driving && input.brake, hand = driving && !!input.drift; // Handbremse zum Driften
   const steerTarget = driving ? (input.left ? -1 : 0) + (input.right ? 1 : 0) : 0;
   me.steer += (steerTarget - me.steer) * Math.min(1, dt * 7);
   const lat = (me.pos.x - T.pts[me.idx].x) * T.nor[me.idx].x + (me.pos.z - T.pts[me.idx].z) * T.nor[me.idx].z;
@@ -895,9 +902,15 @@ function step(dt) {
   }
   if (brake) me.speed = me.speed > 0 ? Math.max(0, me.speed - BRAKE * dt) : Math.max(-7, me.speed - 6 * dt);
   if (offTrack && me.speed > maxV) me.speed = Math.max(maxV, me.speed - 14 * dt);
-  // Kurven: bei hohem Tempo kann man weniger stark einlenken (die Reifen halten nur so viel)
+  if (hand) me.speed -= Math.sign(me.speed) * Math.min(Math.abs(me.speed), 3.5 * dt); // blockierte Hinterräder bremsen etwas
+  // Driften (wie in der Stadt): beginnt mit der Handbremse und hält, solange das Auto quer rutscht
+  if ((hand && Math.abs(me.speed) > 8) || Math.abs(me.vl) > 3.5) me.driftMode = true;
+  else if (Math.abs(me.vl) < 1.2 || Math.abs(me.speed) < 5) me.driftMode = false;
+  const sliding = me.driftMode || hand;
+  // Kurven: bei hohem Tempo kann man weniger stark einlenken (die Reifen halten nur so viel); im Drift viel stärker
   const grip = T.gripEff[me.idx];
-  const yawMax = Math.min(1.5, grip / Math.max(Math.abs(me.speed), 0.1));
+  const vTot = Math.hypot(me.speed, me.vl);
+  const yawMax = sliding ? Math.min(1.9, 30 / Math.max(vTot, 0.1)) : Math.min(1.5, grip / Math.max(Math.abs(me.speed), 0.1));
   // Für die Geräusche: Untergrund und wie stark die Reifen rutschen (Kurve am Limit oder Vollbremsung)
   const al = Math.abs(lat), curvyHere = T.curv[me.idx] > 0.012;
   me.surface = al <= TRACK_W / 2 ? 'asphalt' : curvyHere && al <= TRACK_W / 2 + 1.4 ? 'kerb' : curvyHere && al <= TRACK_W / 2 + 9 ? 'gravel' : 'grass';
@@ -907,9 +920,19 @@ function step(dt) {
   const latA = Math.abs(me.steer) * yawMax * Math.abs(me.speed);
   me.slip = 0.7 * Math.min(1, Math.max(0, (latA - (grip - 1.2)) / 1.2)) * Math.min(1, Math.max(0, (Math.abs(me.speed) - 18) / 8));
   if (brake && me.speed > 6) me.slip = Math.max(me.slip, 0.45 + 0.55 * Math.min(1, me.speed / 45));
-  if (Math.abs(me.speed) > 0.3) me.heading += me.steer * yawMax * dt * Math.sign(me.speed);
-  me.pos.x += Math.cos(me.heading) * me.speed * dt;
-  me.pos.z += Math.sin(me.heading) * me.speed * dt;
+  const turn = Math.abs(me.speed) > 0.3 ? me.steer * yawMax * dt * Math.sign(me.speed) : 0;
+  me.heading += turn;
+  if (sliding) { // im Drift bleibt die Bewegung in der alten Richtung (Trägheit): vorwärts und seitwärts neu aufteilen
+    const c = Math.cos(turn), sn = Math.sin(turn), vf = me.speed * c + me.vl * sn;
+    me.vl = -me.speed * sn + me.vl * c;
+    me.speed = vf;
+  }
+  me.vl *= Math.exp(-(hand ? 0.8 : me.driftMode ? (gas ? 1.3 : 2.4) : offTrack ? 4 : 9) * dt); // Reifen greifen wieder
+  me.drifting = Math.abs(me.vl) > 2.5 && Math.abs(me.speed) > 5;
+  if (me.drifting) me.slip = Math.max(me.slip, Math.min(1, Math.abs(me.vl) / 7));
+  const hx = Math.cos(me.heading), hz = Math.sin(me.heading);
+  me.pos.x += (hx * me.speed - hz * me.vl) * dt;
+  me.pos.z += (hz * me.speed + hx * me.vl) * dt;
   me.speed -= 9.81 * 0.6 * tilt(me).grade * dt; // bergauf langsamer, bergab schneller
 
   const before = me.idx;
@@ -1153,8 +1176,21 @@ function snapCamera() {
   R.camera.fov = 62;
 }
 
+// Bremsspuren hinter den Hinterrädern, Rauch beim Driften
+function driftFx(dt) {
+  const { me, input } = race, fx = Math.cos(me.heading), fz = Math.sin(me.heading);
+  const skid = me.drifting || (input.drift && Math.abs(me.speed) > 6) || (input.brake && me.speed > 25);
+  const back = me.mesh.userData.length * 0.32, y = (me.y || 0) + 0.04;
+  for (const k of [0, 1]) {
+    const sx = k ? 1 : -1, wx = me.pos.x - fx * back - fz * 0.8 * sx, wz = me.pos.z - fz * back + fx * 0.8 * sx;
+    R.fx.mark(k, wx, y, wz, skid && me.surface !== 'grass');
+    if (me.drifting && Math.random() < dt * 22) R.fx.puff(wx, y + 0.3, wz, fx * me.speed - fz * me.vl, fz * me.speed + fx * me.vl);
+  }
+}
+
 function render(dt) {
   const { me } = race;
+  driftFx(dt);
   const fx = Math.cos(me.heading), fz = Math.sin(me.heading);
   const back = 8.5 + Math.abs(me.speed) * 0.03;
   const my = me.y || 0;
@@ -1171,6 +1207,7 @@ function render(dt) {
   R.sun.target.position.set(me.pos.x, my, me.pos.z);
   R.clouds.position.set(R.camera.position.x, 0, R.camera.position.z);
   R.update(dt, race.t, R.camera);
+  R.fx.update(dt, R.camera, R.renderer);
   R.renderer.render(R.scene, R.camera);
   renderMirror(me);
 }

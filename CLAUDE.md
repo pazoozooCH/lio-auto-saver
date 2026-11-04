@@ -15,6 +15,7 @@ Browser-Spiel ohne Build: `index.html` + `game.js` (Spiellogik, Menüs und 2D-Ze
   Testen: `startCityMode()`, dann `window.__city()` (`me`, `cars`, `input`).
 - `stunt.js`: 3D-Stuntpark mit eigener Physik in der Höhe (Rampen als Formen in `SHAPES`, Looping, Feuerringe, Salto/Schraube).
   Testen: `startStuntMode()`, dann `window.__stunt()` (`me`, `input`, `score`).
+- `fx.js`: Reifenrauch und Bremsspuren (Stadt, Rennen, Stuntpark); Driften selbst steckt in der Physik des jeweiligen Modus.
 - `netcars.js`: Mitspieler beim freien Fahren online (Stadt, Stuntpark): senden, glätten, Namensschild, Zusammenstösse.
 - `chat.js`: Chat beim freien Fahren online: feste Sprüche (gespeichert wird die Nummer; neue Sprüche hinten anhängen),
   freier Text nur in privaten Räumen, ohne Wortfilter (Entscheid der Eltern; Regeln prüfen Länge, Rate und privat).
@@ -37,7 +38,8 @@ Texte im Spiel sind Deutsch (Schweizer Schreibweise, kein ß).
 - Spiel für alle im LAN: Port **8123** (`.claude/launch.json` → `auto-retter`, `serve.py --host 0.0.0.0`).
   Dort liegt der echte Spielstand im `localStorage` – beim Testen nicht anfassen.
 - Tests nur auf Port **8124** (`auto-retter-test`, nur `127.0.0.1`). Anderer Port = eigener `localStorage`.
-- Prüfen: `node --check game.js`, dann im Browser auf 8124 ansehen; Spielzustand lässt sich per
+- Prüfen: `node --check game.js`; die Module (alle anderen .js) als Modul prüfen: `node --input-type=module --check < race.js`
+  (sonst werden z.B. doppelte `const` nicht gefunden). Dann im Browser auf 8124 ansehen; Spielzustand lässt sich per
   JavaScript setzen (`start(...)`, `openMenu('shop')`, `fleet`, `wallet` usw. sind globale Variablen).
 - Rennen testen: `startRaceMode()`, dann liefert `window.__race()` das laufende Rennen (`input`, `me`, `cars`, `T`).
   Der Browser-Tab muss im Vordergrund sein, sonst läuft das Rennen kaum weiter.
