@@ -12,7 +12,8 @@ und nochmals, damit es weiterfährt – so kommen alle heil zum Ausgang.
 - 3D-Dragster-Bahn: 402 m geradeaus, Startampel und selber schalten – der Gewinner bekommt das Auto des Verlierers
 - Presse in einer 3D-Fabrikhalle: Autos retten bringt Münzen und +1 PS, zerquetscht kostet −3 PS
 - Fahrzeugpark mit 110 Fahrzeugen in fünf Seltenheitsstufen, viele mit Spezialkräften
-- Shop mit Garagentoren (Holz bis Obsidian), Spezial-Lacke (Gold, Regenbogen, Diamant, Obsidian)
+- Shop mit Garagentoren (Holz bis Obsidian), Spezial-Lacke (Gold, Regenbogen, Diamant, Obsidian);
+  in der Lack-Garage Lack-Dosen ziehen und auf eigene Fahrzeuge sprühen (der alte Lack kommt zurück in die Dose)
 - Münzen sammeln, Fahrzeuge verkaufen, Level werden schnell schwieriger
 - Echte Geräusche aus dem Synthesizer: jedes Fahrzeug klingt nach seinem Antrieb (Diesel, V8, Rennmotor, Elektro, Düse …),
   dazu quietschende Reifen, Gras, Kies, Curbs, Wind und Crashs

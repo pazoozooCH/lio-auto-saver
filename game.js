@@ -954,6 +954,7 @@ function update(dt) {
   }
   menuMsgT = Math.max(0, menuMsgT - dt);
   if (state === 'reveal') updateReveal(dt);
+  if (state === 'paints') updatePaints(dt);
 
   if (state === 'play') {
     spawnTimer -= dt;
@@ -2544,6 +2545,7 @@ function draw() {
   if (state === 'select') { drawSelect(); return; }
   if (state === 'shop') { drawShop(); return; }
   if (state === 'collection') { drawCollection(); return; }
+  if (state === 'paints') { drawPaints(); return; }
   if (state === 'reveal') { drawReveal(); return; }
   if (state === 'admin') { drawAdmin(); return; }
   if (state === 'racemenu') { drawRaceMenu(); return; }
@@ -3044,6 +3046,7 @@ function drawShop() {
   drawMenuBackdrop('SHOP', true);
   drawButton(BACK_BTN, '← Zurück', '#444b5c');
   drawButton(COLLECTION_BTN, '📖 SAMMLUNG', '#7c3aed', 20);
+  drawButton(PAINT_SHOP_BTN, '🎨 LACK-GARAGE', '#c026d3', 20);
 
   for (const card of gateCards()) {
     const g = card.gate, can = wallet >= g.price;
@@ -3122,6 +3125,7 @@ function rollGate(g) {
 function shopTap(px, py) {
   if (inRect(px, py, BACK_BTN)) { openMenu('title'); return; }
   if (inRect(px, py, COLLECTION_BTN)) { collectionPage = 0; openMenu('collection'); return; }
+  if (inRect(px, py, PAINT_SHOP_BTN)) { paintPage = 0; paintPull = null; openMenu('paints'); return; }
   for (const card of gateCards()) {
     if (!inRect(px, py, card)) continue;
     const g = card.gate;
@@ -3213,6 +3217,201 @@ function collectionTap(px, py) {
   if (inRect(px, py, BACK_BTN)) openMenu('shop');
   else if (collectionPage > 0 && inRect(px, py, PREV_BTN)) collectionPage--;
   else if (collectionPage < pages - 1 && inRect(px, py, NEXT_BTN)) collectionPage++;
+}
+
+// --- Lack-Garage: Lack-Dosen ziehen und auf eigene Fahrzeuge sprühen ---
+// Der alte Lack eines Autos kommt beim Umlackieren zurück in die Dose, es geht also nichts verloren.
+const PAINT_SHOP_BTN = { x: 580, y: 18, w: 220, h: 44 };
+const PAINT_GATE = { name: 'Lack-Tor', price: 180, color: '#c026d3', odds: { gold: 60, rainbow: 27, diamond: 10, obsidian: 3 } };
+const PAINT_ORDER = ['gold', 'rainbow', 'diamond', 'obsidian'];
+const PAINT_NAME = { gold: '★ Gold', rainbow: '🌈 Regenbogen', diamond: '💎 Diamant', obsidian: '🖤 Obsidian' };
+const PAINT_BODY = { gold: '#ffcf33', diamond: '#bfefff', obsidian: '#1d1030' }; // Grundfarbe (Regenbogen behält seine)
+let paints = loadJSON('autoRetterPaints', {}), paintSel = null, paintPage = 0, paintPull = null;
+const PAINT_CARD = { x: 20, y: 72, w: 280, h: 408 };
+const paintSlot = i => ({ x: 320 + i * 157, y: 72, w: 150, h: 86 });
+const PAINT_CARS = 8;
+function paintCarCards() {
+  return fleetByPS().slice(paintPage * PAINT_CARS, (paintPage + 1) * PAINT_CARS)
+    .map((v, i) => ({ v, x: 320 + (i % 4) * 157, y: 170 + Math.floor(i / 4) * 155, w: 148, h: 146 }));
+}
+function savePaints() { storeJSON('autoRetterPaints', paints); }
+
+// Lack-Dose: Zylinder mit Deckel, Farbe je Lack
+function drawPaintCan(x, y, paint, h = 54) {
+  const w = h * 0.72;
+  let body;
+  if (paint === 'rainbow') {
+    body = ctx.createLinearGradient(x - w / 2, 0, x + w / 2, 0);
+    ['#ff3b3b', '#ffb03b', '#ffe83b', '#3bd16f', '#3b9dff', '#a33bff'].forEach((c, i) => body.addColorStop(i / 5, c));
+  } else {
+    const [a, b] = { gold: ['#fff1a8', '#c99a10'], diamond: ['#ffffff', '#7fd0ff'], obsidian: ['#6d4a9c', '#120a1f'] }[paint];
+    body = ctx.createLinearGradient(x - w / 2, 0, x + w / 2, 0);
+    body.addColorStop(0, b); body.addColorStop(0.45, a); body.addColorStop(1, b);
+  }
+  ctx.fillStyle = body;
+  ctx.fillRect(x - w / 2, y - h, w, h);
+  ctx.fillStyle = 'rgba(255,255,255,0.85)'; // Etikett
+  ctx.fillRect(x - w / 2, y - h * 0.62, w, h * 0.3);
+  ctx.fillStyle = '#9aa0aa'; // Deckel und Boden
+  ctx.beginPath(); ctx.ellipse(x, y - h, w / 2, w * 0.16, 0, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = 'rgba(0,0,0,0.25)';
+  ctx.beginPath(); ctx.ellipse(x, y, w / 2, w * 0.16, 0, 0, Math.PI); ctx.fill();
+  ctx.font = Math.round(h * 0.24) + 'px system-ui, sans-serif';
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.fillText(PAINT_NAME[paint].split(' ')[0], x, y - h * 0.47);
+  if (paint !== 'rainbow') { // Glanz
+    const glow = Math.sin(time * 3 + x);
+    if (glow > 0.3) { ctx.fillStyle = paint === 'obsidian' ? '#c9a2ff' : '#fff'; drawSparkle(x + w * 0.3, y - h * 0.8, 6 * glow); }
+  }
+}
+
+function drawPaints() {
+  drawMenuBackdrop('🎨 LACK-GARAGE', true);
+  drawButton(BACK_BTN, '← Shop', '#444b5c');
+  // Lack-Tor
+  const c = PAINT_CARD, g = PAINT_GATE, can = wallet >= g.price;
+  ctx.fillStyle = 'rgba(255, 255, 255, 0.06)';
+  rr(c.x, c.y, c.w, c.h, 12); ctx.fill();
+  ctx.strokeStyle = can && !paintPull ? '#ffe066' : '#4a4f5c'; ctx.lineWidth = can ? 3 : 2; ctx.stroke();
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.fillStyle = '#fff'; ctx.font = 'bold 22px system-ui, sans-serif';
+  ctx.fillText('🎨 ' + g.name, c.x + c.w / 2, c.y + 24);
+  const dx = c.x + 40, dy = c.y + 48, dw = c.w - 80, dh = 150;
+  ctx.fillStyle = '#15171d'; ctx.fillRect(dx, dy, dw, dh);
+  const open = paintPull ? Math.min(1, Math.max(0, (paintPull.t - 0.3) / 0.9)) : 0;
+  if (paintPull && open > 0) drawPaintCan(dx + dw / 2, dy + dh - 14, paintPull.paint, 96);
+  drawGateDoor(dx, dy, dw, dh, g.color, open);
+  let ly = c.y + 226;
+  for (const p of PAINT_ORDER) {
+    ctx.fillStyle = 'rgba(255,255,255,0.85)'; ctx.font = 'bold 17px system-ui, sans-serif';
+    ctx.textAlign = 'left'; ctx.fillText(PAINT_NAME[p] + '-Lack', c.x + 22, ly);
+    ctx.textAlign = 'right'; ctx.fillText(g.odds[p] + ' %', c.x + c.w - 22, ly);
+    ly += 28;
+  }
+  ctx.textAlign = 'center'; ctx.font = '14px system-ui, sans-serif'; ctx.fillStyle = 'rgba(255,255,255,0.6)';
+  ctx.fillText('Tippe aufs Tor: eine Lack-Dose ziehen', c.x + c.w / 2, c.y + c.h - 72);
+  drawCoin(c.x + c.w / 2 - 34, c.y + c.h - 32, 14, 0);
+  ctx.fillStyle = can ? '#ffe066' : '#9aa0aa'; ctx.font = 'bold 28px system-ui, sans-serif'; ctx.textAlign = 'left';
+  ctx.fillText(String(g.price), c.x + c.w / 2 - 14, c.y + c.h - 30);
+
+  // Deine Lack-Dosen (antippen = auswählen)
+  PAINT_ORDER.forEach((p, i) => {
+    const b = paintSlot(i), n = paints[p] || 0, sel = paintSel === p;
+    ctx.fillStyle = sel ? 'rgba(255, 224, 102, 0.16)' : 'rgba(255, 255, 255, 0.06)';
+    rr(b.x, b.y, b.w, b.h, 12); ctx.fill();
+    ctx.strokeStyle = sel ? '#ffe066' : '#3a3f4b'; ctx.lineWidth = sel ? 3 : 2; ctx.stroke();
+    ctx.globalAlpha = n ? 1 : 0.35;
+    drawPaintCan(b.x + 32, b.y + b.h - 14, p, 56);
+    ctx.fillStyle = '#fff'; ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
+    ctx.font = 'bold 14px system-ui, sans-serif';
+    ctx.fillText(PAINT_NAME[p].split(' ')[1], b.x + 60, b.y + 30);
+    ctx.font = 'bold 26px system-ui, sans-serif'; ctx.fillStyle = n ? '#ffe066' : '#9aa0aa';
+    ctx.fillText('× ' + n, b.x + 62, b.y + 60);
+    ctx.globalAlpha = 1;
+  });
+
+  // Fahrzeuge zum Lackieren
+  for (const card of paintCarCards()) {
+    const v = card.v, k = KINDS[v.kind];
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.05)';
+    rr(card.x, card.y, card.w, card.h, 12); ctx.fill();
+    ctx.strokeStyle = paintSel && paintSel !== v.special && paints[paintSel] ? '#7dffb0' : '#3a3f4b'; ctx.lineWidth = 2; ctx.stroke();
+    ctx.save(); ctx.beginPath(); ctx.rect(card.x, card.y, card.w, card.h); ctx.clip();
+    drawVehiclePreview(v, card.x + card.w / 2, card.y + 80, 128, 0.8);
+    ctx.restore();
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillStyle = '#fff'; ctx.font = 'bold 15px system-ui, sans-serif';
+    ctx.fillText(k.name, card.x + card.w / 2, card.y + 96);
+    ctx.fillStyle = v.special ? '#ffe066' : 'rgba(255,255,255,0.55)'; ctx.font = '13px system-ui, sans-serif';
+    ctx.fillText(v.special ? PAINT_NAME[v.special] + '-Lack' : 'normaler Lack', card.x + card.w / 2, card.y + 115);
+    ctx.fillStyle = '#7dd3fc'; ctx.font = 'bold 13px system-ui, sans-serif';
+    ctx.fillText('⚡ ' + v.ps + ' PS', card.x + card.w / 2, card.y + 133);
+  }
+  const pages = Math.max(1, Math.ceil(fleet.length / PAINT_CARS));
+  if (paintPage > 0) drawButton(PREV_BTN, '◀ Zurück', '#444b5c', 20);
+  if (paintPage < pages - 1) drawButton(NEXT_BTN, 'Weiter ▶', '#3657b8', 20);
+  drawMenuMsg(paintSel && paints[paintSel] ? 'Jetzt ein Fahrzeug antippen: es bekommt ' + PAINT_NAME[paintSel] + '-Lack (+' + PAINT_PS[paintSel] + ' PS)'
+    : 'Wähle oben eine Lack-Dose, dann ein Fahrzeug  ·  Seite ' + (paintPage + 1) + '/' + pages, 516);
+  drawParticles();
+}
+
+function updatePaints(dt) {
+  if (!paintPull) return;
+  const before = paintPull.t;
+  paintPull.t += dt;
+  if (paintPull.t > 0.3 && paintPull.t < 1.2 && Math.floor(paintPull.t * 12) !== Math.floor(before * 12)) beep(200 + paintPull.t * 300, 0.05, 'triangle', 0.05);
+  if (before < 1.2 && paintPull.t >= 1.2) {
+    const p = paintPull.paint, rank = PAINT_ORDER.indexOf(p), c = PAINT_CARD;
+    for (let i = 0; i < 30 + rank * 25; i++) {
+      particles.push({ x: c.x + c.w / 2 + rand(-30, 30), y: c.y + 160, vx: rand(-300, 300), vy: rand(-420, -100), life: 0, max: rand(0.8, 1.4),
+        color: { gold: pick(['#ffd700', '#fff6c2']), rainbow: pick(COLORS), diamond: pick(['#bfefff', '#ffffff', '#7fd0ff']), obsidian: pick(['#8b5cf6', '#c9a2ff']) }[p],
+        size: rand(3, 7), g: 600 });
+    }
+    [523, 659, 784, 1047, 1319].slice(0, 2 + rank).forEach((f, i) => beep(f, 0.14, 'triangle', 0.08, i * 0.12));
+    showMenuMsg('Du hast ' + PAINT_NAME[p] + '-Lack gezogen! 🎉', 3);
+    paintSel = p;
+  }
+  if (paintPull.t > 2.4) paintPull = null;
+}
+
+function paintsTap(px, py) {
+  if (inRect(px, py, BACK_BTN)) { openMenu('shop'); return; }
+  const pages = Math.max(1, Math.ceil(fleet.length / PAINT_CARS));
+  if (paintPage > 0 && inRect(px, py, PREV_BTN)) { paintPage--; return; }
+  if (paintPage < pages - 1 && inRect(px, py, NEXT_BTN)) { paintPage++; return; }
+  if (inRect(px, py, PAINT_CARD)) {
+    if (paintPull) return;
+    if (wallet < PAINT_GATE.price) {
+      showMenuMsg('Dir fehlen noch ' + (PAINT_GATE.price - wallet) + ' Münzen für das Lack-Tor.');
+      beep(200, 0.15, 'square', 0.05);
+      return;
+    }
+    wallet -= PAINT_GATE.price;
+    let r = Math.random() * 100, got = 'gold';
+    for (const p of PAINT_ORDER) { r -= PAINT_GATE.odds[p]; if (r < 0) { got = p; break; } }
+    paints[got] = (paints[got] || 0) + 1;
+    storeJSON('autoRetterCoins', wallet);
+    savePaints();
+    paintPull = { paint: got, t: 0 };
+    return;
+  }
+  for (let i = 0; i < PAINT_ORDER.length; i++) {
+    if (!inRect(px, py, paintSlot(i))) continue;
+    const p = PAINT_ORDER[i];
+    if (!paints[p]) { showMenuMsg('Du hast noch keinen ' + PAINT_NAME[p] + '-Lack – zieh einen im Lack-Tor!'); return; }
+    paintSel = paintSel === p ? null : p;
+    beep(620, 0.06, 'triangle', 0.05);
+    return;
+  }
+  for (const card of paintCarCards()) {
+    if (!inRect(px, py, card)) continue;
+    if (!paintSel || !paints[paintSel]) { showMenuMsg('Wähle zuerst oben eine Lack-Dose aus.'); return; }
+    applyPaint(card.v, paintSel, card);
+    return;
+  }
+}
+
+function applyPaint(v, paint, card) {
+  const name = KINDS[v.kind].name;
+  if (v.special === paint) { showMenuMsg(name + ' hat schon ' + PAINT_NAME[paint] + '-Lack.'); return; }
+  const old = v.special;
+  v.ps = Math.max(5, v.ps + (PAINT_PS[paint] || 0) - (PAINT_PS[old] || 0));
+  v.special = paint;
+  if (PAINT_BODY[paint]) v.color = PAINT_BODY[paint];
+  else if (PAINT_BODY[old]) v.color = KINDS[v.kind].color || pick(COLORS); // Regenbogen: wieder eine normale Grundfarbe
+  paints[paint]--;
+  if (old) paints[old] = (paints[old] || 0) + 1; // alter Lack zurück in die Dose
+  if (!paints[paint]) paintSel = null;
+  delete previews[v.id];
+  storeJSON('autoRetterFleet', fleet);
+  savePaints();
+  showMenuMsg('🎨 ' + name + ' hat jetzt ' + PAINT_NAME[paint] + '-Lack! ' + v.ps + ' PS' + (old ? ' · der alte Lack ist wieder in der Dose' : ''), 4);
+  for (let i = 0; i < 40; i++) {
+    particles.push({ x: card.x + card.w / 2 + rand(-40, 40), y: card.y + 60, vx: rand(-260, 260), vy: rand(-360, -80), life: 0, max: rand(0.6, 1.2),
+      color: { gold: pick(['#ffd700', '#fff6c2']), rainbow: pick(COLORS), diamond: pick(['#bfefff', '#ffffff']), obsidian: pick(['#8b5cf6', '#c9a2ff']) }[paint],
+      size: rand(3, 6), g: 500 });
+  }
+  beep(880, 0.12, 'triangle', 0.07); beep(1175, 0.18, 'triangle', 0.07, 0.1);
 }
 
 // --- Tor geht auf: das neue Fahrzeug wird enthüllt ---
@@ -3985,6 +4184,7 @@ canvas.addEventListener('pointerdown', e => {
   if (['race', 'raceload', 'drag', 'dragload', 'city', 'cityload', 'stunt', 'stuntload'].includes(state)) return;
   if (state === 'shop') { shopTap(px, py); return; }
   if (state === 'collection') { collectionTap(px, py); return; }
+  if (state === 'paints') { paintsTap(px, py); return; }
   if (state === 'reveal') { if (reveal.t > REVEAL_AT + 0.2) openMenu('shop'); return; }
 
   const coin = coinAt(px, py);
@@ -3998,7 +4198,7 @@ window.addEventListener('keydown', e => {
     if (state === 'title' || (state === 'over' && overTime > 0.8)) openMenu('select');
     else if (state === 'select') selectTap(GO_BTN.x + 1, GO_BTN.y + 1);
   }
-  if (e.code === 'Escape' && state === 'collection') openMenu('shop');
+  if (e.code === 'Escape' && (state === 'collection' || state === 'paints')) openMenu('shop');
   else if (e.code === 'Escape' && ['select', 'shop', 'admin', 'racemenu', 'raceresult', 'dragmenu', 'dragresult'].includes(state)) openMenu('title');
 });
 
