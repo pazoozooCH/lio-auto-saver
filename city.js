@@ -989,7 +989,7 @@ function honk() {
 const KEYS = { ArrowLeft: 'left', KeyA: 'left', ArrowRight: 'right', KeyD: 'right', ArrowUp: 'gas', KeyW: 'gas', ArrowDown: 'brake', KeyS: 'brake',
   Space: 'drift', ShiftLeft: 'drift', ShiftRight: 'drift' };
 function onKey(e) {
-  if (!city) return;
+  if (!city || (e.target && e.target.tagName === 'INPUT')) return; // im Chat wird geschrieben, nicht gefahren
   if (e.code === 'KeyH' && e.type === 'keydown') { honk(); e.preventDefault(); return; }
   const k = KEYS[e.code];
   if (!k) return;

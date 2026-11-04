@@ -16,7 +16,8 @@ Browser-Spiel ohne Build: `index.html` + `game.js` (Spiellogik, Menüs und 2D-Ze
 - `stunt.js`: 3D-Stuntpark mit eigener Physik in der Höhe (Rampen als Formen in `SHAPES`, Looping, Feuerringe, Salto/Schraube).
   Testen: `startStuntMode()`, dann `window.__stunt()` (`me`, `input`, `score`).
 - `netcars.js`: Mitspieler beim freien Fahren online (Stadt, Stuntpark): senden, glätten, Namensschild, Zusammenstösse.
-- `chat.js`: Schnell-Chat beim freien Fahren online (nur feste Sprüche, gespeichert wird die Nummer; neue Sprüche hinten anhängen).
+- `chat.js`: Chat beim freien Fahren online: feste Sprüche (gespeichert wird die Nummer; neue Sprüche hinten anhängen),
+  freier Text nur in privaten Räumen, ohne Wortfilter (Entscheid der Eltern; Regeln prüfen Länge, Rate und privat).
 - `online.js`: Online-Spiel (Lobby, Räume, Live-Daten) über Firebase Realtime Database mit anonymer Anmeldung.
   Regeln in `database.rules.json`, Einrichtung und Admin-Befehle im README. Freundes-Schlüssel nie ins Repo schreiben.
 - `sound.js`: Geräusche aus dem Synthesizer (Motor mit Gängen, Reifen, Gras/Kies/Randstein, Wind, Crashs), ohne Tondateien.

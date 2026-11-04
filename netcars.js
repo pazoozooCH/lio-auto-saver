@@ -29,7 +29,9 @@ function bubble(text) {
   const c = document.createElement('canvas');
   c.width = 512; c.height = 96;
   const g = c.getContext('2d');
-  g.font = 'bold 40px system-ui, sans-serif';
+  let size = 40; // lange Texte: kleiner schreiben, notfalls kürzen
+  for (; size > 22; size -= 2) { g.font = `bold ${size}px system-ui, sans-serif`; if (g.measureText(text).width <= 460) break; }
+  while (g.measureText(text).width > 460 && text.length > 4) text = text.slice(0, -2) + '…';
   const w = Math.min(500, g.measureText(text).width + 40);
   g.fillStyle = '#ffffff';
   g.beginPath(); g.roundRect((512 - w) / 2, 6, w, 68, 22); g.fill();

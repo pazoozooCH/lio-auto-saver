@@ -500,7 +500,7 @@ function buildDom() {
 
 const KEYS = { ArrowLeft: 'left', KeyA: 'left', ArrowRight: 'right', KeyD: 'right', ArrowUp: 'gas', KeyW: 'gas', ArrowDown: 'brake', KeyS: 'brake' };
 function onKey(e) {
-  if (!P) return;
+  if (!P || (e.target && e.target.tagName === 'INPUT')) return; // im Chat wird geschrieben, nicht gefahren
   if (e.code === 'KeyR' && e.type === 'keydown') { resetCar(P.me); P.combo = 0; return; }
   const k = KEYS[e.code];
   if (!k) return;

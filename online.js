@@ -256,6 +256,7 @@ const ACTIONS = {
 async function enterRoom(code, slot, host, lastRound = 0, isPublic = false) {
   stopPublic();
   room = { code, slot, host, data: null, lastRound, racing: false, results: null, public: isPublic, pubN: 1, pubState: 'lobby' };
+  if (!host) fb.get(publicRef(code)).then(snap => { if (room && room.code === code) room.public = snap.exists(); }).catch(() => {}); // für die Anzeige
   // Bricht die Verbindung ab, räumt Firebase selbst auf: eigener Platz weg, als Gastgeber der ganze Raum
   await fb.onDisconnect(roomRef(code, 'live/' + slot)).remove();
   await fb.onDisconnect(roomRef(code, 'players/' + slot)).remove();
@@ -305,7 +306,8 @@ function showRoom() {
     ${room.results ? resultsHtml() : ''}
     <div class="status"></div>
     ${free ? `<button class="go" data-act="drive">▶ Losfahren</button>
-      <p class="hint">${driving ? '🚗 ' + driving + ' fahren schon herum. ' : ''}Jeder fährt los, wann er will – wer schon fährt, sieht dich sofort.</p>`
+      <p class="hint">${driving ? '🚗 ' + driving + ' fahren schon herum. ' : ''}Jeder fährt los, wann er will – wer schon fährt, sieht dich sofort.
+      💬 Chat: ${room.public ? 'feste Sprüche (öffentlicher Raum).' : 'Sprüche oder selber schreiben.'}</p>`
     : isHost ? `<button class="go" data-act="start"${ready ? '' : ' disabled'}>▶ ${room.results ? 'Nochmal fahren' : 'Start'}</button>`
       : '<p class="hint">Warte, bis 👑 das Rennen startet …</p>'}
     <button class="grey" data-act="leave">Raum verlassen</button>
@@ -416,12 +418,16 @@ async function launch(data) {
 // Stadt oder Stuntpark: losfahren; zurück im Raum verschwindet das eigene Auto bei den anderen
 async function launchFree(data) {
   const mySlot = room.slot, code = room.code, players = data.players || {};
+  // freier Text im Chat nur in privaten Räumen (die Regeln prüfen das auch); im Zweifel gilt der Raum als öffentlich
+  const isPublic = await fb.get(publicRef(code)).then(snap => snap.exists()).catch(() => true);
   const myV = { ...vehicleOf(players[mySlot]), id: 'online', name: players[mySlot].name };
   const net = {
     mySlot, serverNow,
     players: () => (room && room.data && room.data.players) || {},
     chats: () => (room && room.data && room.data.chat) || {},
-    chat(m) { fb.set(roomRef(code, 'chat/' + mySlot), { m, t: fb.serverTimestamp() }).catch(() => {}); }, // nur die Nummer eines Spruchs (chat.js)
+    chat(m) { fb.set(roomRef(code, 'chat/' + mySlot), { m, t: fb.serverTimestamp() }).catch(() => {}); }, // Nummer eines Spruchs (chat.js)
+    canType: !isPublic,
+    chatText(x) { fb.set(roomRef(code, 'chat/' + mySlot), { x: String(x).slice(0, 80), t: fb.serverTimestamp() }).catch(() => {}); },
     send(s) { fb.set(roomRef(code, 'live/' + mySlot), { ...s, r: 0, t: fb.serverTimestamp() }).catch(() => {}); },
     latest(slot) {
       const l = room && room.data && room.data.live && room.data.live[slot];
