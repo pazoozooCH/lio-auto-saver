@@ -824,7 +824,8 @@ export function startRace({ player, opponents, kinds, topSpeed, onFinish, net = 
   window.__race = () => race; // für Tests im Browser
   window.__raceR = () => R;
   race = { cars, me, T, t: 0, phase: 'lights', lightsOut: net ? 4 : 3.4 + Math.random() * 0.8, clock: 0, input: {}, onFinish,
-    lastLights: 0, msgT: 0, endT: 0, lastLap: 1, last: performance.now(), net, sendT: 0, bumpT: 0, waitT: 0, crashT: 0, gears: gearbox(player.kind), laps: T.laps, rnd, botT: 0 };
+    lastLights: 0, msgT: 0, endT: 0, lastLap: 1, last: performance.now(), net, sendT: 0, bumpT: 0, waitT: 0, crashT: 0, gears: gearbox(player.kind), laps: T.laps, rnd, botT: 0,
+    gripBoost: (kinds[player.kind] && kinds[player.kind].grip) || 1 }; // Sonderfahrzeuge lenken besser
   R.ui.root.hidden = false;
   R.ui.lightBox.style.display = '';
   R.ui.lights.forEach(l => l.classList.remove('on'));
@@ -908,7 +909,7 @@ function step(dt) {
   else if (Math.abs(me.vl) < 1.2 || Math.abs(me.speed) < 5) me.driftMode = false;
   const sliding = me.driftMode || hand;
   // Kurven: bei hohem Tempo kann man weniger stark einlenken (die Reifen halten nur so viel); im Drift viel stärker
-  const grip = T.gripEff[me.idx];
+  const grip = T.gripEff[me.idx] * race.gripBoost;
   const vTot = Math.hypot(me.speed, me.vl);
   const yawMax = sliding ? Math.min(1.9, 30 / Math.max(vTot, 0.1)) : Math.min(1.5, grip / Math.max(Math.abs(me.speed), 0.1));
   // Für die Geräusche: Untergrund und wie stark die Reifen rutschen (Kurve am Limit oder Vollbremsung)

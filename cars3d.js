@@ -1875,6 +1875,38 @@ Object.assign(BUILD, {
     }
   },
 });
+// Geheimes Sonderfahrzeug LIONEL X: flacher Super-Sportwagen mit Leuchtlinien, doppeltem Heckflügel,
+// Düsen am Heck, lila Neonlicht und dem Namen auf der Seite
+Object.assign(BUILD, {
+  lionelx: C => {
+    profileBody(C, 'sport', { tinted: true, noGrille: true, spokes: 10, rim: C.M.gold });
+    const { X, H, L, W, M } = C;
+    const carbon = mat(0x0b0b10, { roughness: 0.3, metalness: 0.5 });
+    const glowC = new THREE.MeshStandardMaterial({ color: 0x22d3ee, emissive: 0x22d3ee, emissiveIntensity: 2.4 });
+    const glowP = new THREE.MeshStandardMaterial({ color: 0xe879f9, emissive: 0xd946ef, emissiveIntensity: 2.2 });
+    for (const sz of [-1, 1]) {
+      C.box(L * 0.82, 0.04, 0.04, glowC, X(0.48), H * 0.36, sz * (W / 2 + 0.02)); // Leuchtlinie an der Seite
+      C.box(L * 0.3, 0.035, 0.035, glowP, X(0.72), H * 0.5, sz * (W / 2 - 0.05));
+      C.ext([[X(0.02), H * 0.5], [X(0.06), H * 1.05], [X(0.14), H * 0.95], [X(0.22), H * 0.52]], 0.05, C.paint, 0.02, sz * 0.62); // Haifischflossen
+      C.box(0.12, 0.6, 0.06, carbon, X(0.07), H * 0.82, sz * 0.62); // Flügelstützen
+    }
+    C.box(0.62, 0.06, W + 0.2, carbon, X(0.06), H * 1.12, 0); // oberer Heckflügel
+    C.box(0.5, 0.05, W, carbon, X(0.04), H * 0.86, 0);        // unterer Heckflügel
+    C.box(0.6, 0.02, W + 0.22, glowC, X(0.06), H * 1.155, 0);  // leuchtende Kante
+    C.box(0.04, 0.05, W * 0.8, glowC, L / 2 - 0.1, H * 0.42, 0); // Lichtband vorne
+    for (const sz of [-0.35, 0, 0.35]) { // drei Düsen hinten mit Glühen
+      C.cyl(0.13, 0.16, 0.3, M.steel, -L / 2 + 0.05, H * 0.4, sz, [0, 0, PI / 2], 14);
+      C.cyl(0.1, 0.1, 0.05, new THREE.MeshStandardMaterial({ color: 0xff7a1a, emissive: 0xff4500, emissiveIntensity: 2.5 }), -L / 2 - 0.1, H * 0.4, sz, [0, 0, PI / 2], 14);
+    }
+    C.decal(L * 0.5, H * 0.2, X(0.42), H * 0.26, text('LIONEL X', '#facc15'), 0.004);
+    C.decal(0.34, 0.34, X(0.86), H * 0.42, text('⚡', '#facc15'), 0.004);
+    const glow = new THREE.Mesh(new THREE.PlaneGeometry(L * 1.08, W * 1.4), // lila Neonlicht unter dem Auto
+      new THREE.MeshBasicMaterial({ color: 0xa855f7, map: M.shadow.map, transparent: true, opacity: 0.9, blending: THREE.AdditiveBlending, depthWrite: false }));
+    glow.rotation.x = -PI / 2; glow.position.y = 0.07; glow.renderOrder = 1;
+    C.group.add(glow);
+  },
+});
+SPEC_HINT.lionelx = { arch: 'sport' };
 SPEC_HINT.candy = { arch: 'box' };
 SPEC_HINT.racetruck = { arch: 'pickup' };
 SPEC_HINT.hyper = { arch: 'sport' };

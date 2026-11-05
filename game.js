@@ -383,6 +383,10 @@ const KINDS = {
                info: '💨 Hypercar: Antippen = TURBO! Fast so schnell wie ein Rennauto.' },
   sleigh:    { name: 'Samichlaus-Schlitten', tier: 'legendary', w: [140, 150], h: [58, 62], color: '#b91c1c', ability: 'rocket', coins: 5, points: 8, look: 'royal', badge: '🎅',
                info: '🎅 Samichlaus-Schlitten: Antippen = fliegt davon! 8 Punkte und 5 Münzen.' },
+  // --- Geheimes Sonderfahrzeug (secret: nicht im Shop, nicht bei Gegnern; grip: lenkt besser, hält immer) ---
+  lionelx:   { name: 'LIONEL X', tier: 'legendary', secret: true, w: [118, 128], h: [34, 38], wheel: 12, speed: 1.8, grip: 1.8, color: '#7c3aed',
+               ability: 'turbo', armor: 2, points: 10, coins: 3, look: 'sports', badge: '⚡',
+               info: '⚡ LIONEL X: das geheime Sonderfahrzeug! Turbo, lenkt super und hält ZWEI Schläge aus.' },
 };
 
 // Münzen und Fahrzeugpark bleiben gespeichert
@@ -2772,8 +2776,30 @@ function drawVersion() {
 }
 
 // Wer das Spiel gemacht hat: klein oben rechts auf dem Startbildschirm (unter dem Update-Knopf, falls er da ist)
+const creditsY = () => appUpdate.info ? UPDATE_BTN.y + UPDATE_BTN.h + 10 : 16;
+const creditsArea = () => ({ x: W - 190, y: creditsY() - 6, w: 186, h: 46 });
+// Geheimtrick: 5× innert 3 Sekunden auf „Ersteller: LIONEL“ tippen = Sonderfahrzeug LIONEL X.
+// Ging nur kurz nach diesem Update (bis SECRET_UNTIL), damit es nur Lionel bekommt.
+const SECRET_UNTIL = 1793907586000; // 05.11.2026 20:39
+let secretTaps = [];
+function creditsTap() {
+  const now = Date.now();
+  secretTaps = secretTaps.filter(t => now - t < 3000);
+  secretTaps.push(now);
+  if (secretTaps.length < 5) return;
+  secretTaps = [];
+  if (now > SECRET_UNTIL) return; // vorbei
+  if (fleet.some(v => v.kind === 'lionelx')) { showMenuMsg('Du hast LIONEL X schon! ⚡', 3); return; }
+  const v = makeVehicle('lionelx');
+  fleet.push(v);
+  if (selectedIds.size < MAX_SELECTED) selectedIds.add(v.id);
+  raceVehicleId = v.id;
+  storeJSON('autoRetterFleet', fleet); storeJSON('autoRetterRaceCar', v.id); saveSelection();
+  openMenu('reveal');
+  reveal = { v, gate: { name: '⚡ Geheimgarage', color: '#4c1d95' }, t: 0, burst: false };
+}
 function drawCredits() {
-  const y = appUpdate.info ? UPDATE_BTN.y + UPDATE_BTN.h + 10 : 16;
+  const y = creditsY();
   ctx.textAlign = 'right';
   ctx.textBaseline = 'top';
   ctx.fillStyle = 'rgba(255,255,255,0.6)';
@@ -3011,6 +3037,7 @@ function drawSelect() {
 }
 
 function sellVehicle(v, card) {
+  if (KINDS[v.kind].secret) { showMenuMsg(KINDS[v.kind].name + ' ist einmalig – das kann man nicht verkaufen! ⚡'); beep(200, 0.15, 'square', 0.05); return; }
   if (fleet.length <= 1) {
     showMenuMsg('Dein letztes Fahrzeug kannst du nicht verkaufen!');
     beep(200, 0.15, 'square', 0.05);
@@ -3177,7 +3204,7 @@ function rollGate(g) {
     roll -= g.odds[t];
     if (roll < 0) { tier = t; break; }
   }
-  const kind = pick(Object.keys(KINDS).filter(kd => KINDS[kd].tier === tier));
+  const kind = pick(Object.keys(KINDS).filter(kd => KINDS[kd].tier === tier && !KINDS[kd].secret));
   let sr = Math.random() * 100, special = null;
   for (const paint of ['obsidian', 'diamond', 'rainbow', 'gold']) {
     sr -= g[paint];
@@ -3216,8 +3243,8 @@ function shopTap(px, py) {
 const COLLECTION_BTN = { x: 172, y: 18, w: 190, h: 44 };
 let collectionPage = 0;
 
-function collectionKinds() {
-  return Object.keys(KINDS).sort((a, b) =>
+function collectionKinds() { // geheime Fahrzeuge nur, wenn man sie hat
+  return Object.keys(KINDS).filter(kd => !KINDS[kd].secret || fleet.some(v => v.kind === kd)).sort((a, b) =>
     TIER_VALUE[KINDS[b].tier] - TIER_VALUE[KINDS[a].tier] || KINDS[a].name.localeCompare(KINDS[b].name));
 }
 
@@ -3277,7 +3304,7 @@ function drawCollection() {
 }
 
 function collectionTap(px, py) {
-  const pages = pageCount(Object.keys(KINDS).length);
+  const pages = pageCount(collectionKinds().length);
   if (inRect(px, py, BACK_BTN)) openMenu('shop');
   else if (collectionPage > 0 && inRect(px, py, PREV_BTN)) collectionPage--;
   else if (collectionPage < pages - 1 && inRect(px, py, NEXT_BTN)) collectionPage++;
@@ -3941,7 +3968,7 @@ function startRaceMode() {
   const cup = CUPS[raceCup], v = raceVehicle();
   raceVehicleId = v.id;
   storeJSON('autoRetterRaceCar', v.id);
-  const pool = Object.keys(KINDS).filter(kind => cup.tiers.includes(KINDS[kind].tier));
+  const pool = Object.keys(KINDS).filter(kind => cup.tiers.includes(KINDS[kind].tier) && !KINDS[kind].secret);
   const names = [...RACER_NAMES].sort(() => Math.random() - 0.5).slice(0, 5);
   const opponents = names.map(name => {
     const paint = raceCup >= 2 && Math.random() < 0.3 ? pick(['gold', 'rainbow', 'diamond']) : null;
@@ -4059,7 +4086,7 @@ function makeDragOpponents() {
   const names = [...RACER_NAMES].sort(() => Math.random() - 0.5);
   dragOpponents = DRAG_LEVELS.map((lv, i) => {
     const tier = TIER_ORDER[Math.max(0, Math.min(TIER_ORDER.length - 1, tierIdx + lv.tierShift))];
-    const kind = pick(Object.keys(KINDS).filter(kd => KINDS[kd].tier === tier));
+    const kind = pick(Object.keys(KINDS).filter(kd => KINDS[kd].tier === tier && !KINDS[kd].secret));
     const paint = lv.tierShift > 0 && Math.random() < 0.3 ? pick(['gold', 'rainbow', 'diamond']) : null;
     const v = makeVehicle(kind, paint);
     v.ps = Math.max(5, Math.round(mine.ps * rand(lv.ps[0], lv.ps[1]))) + (PAINT_PS[paint] || 0);
@@ -4195,6 +4222,8 @@ function finishDrag(res) {
     fleet.push(won);
     if (selectedIds.size < MAX_SELECTED) selectedIds.add(won.id);
     dragResult = { win: true, car: won, opp, res };
+  } else if (KINDS[mine.kind].secret) { // Sonderfahrzeug: bleibt bei dir
+    dragResult = { win: false, car: mine, opp, res, kept: true };
   } else {
     // Dein Auto geht an den Gewinner
     fleet = fleet.filter(v => v !== mine);
@@ -4225,7 +4254,7 @@ function drawDragResult() {
   ctx.textBaseline = 'middle';
   ctx.fillStyle = '#fff';
   ctx.font = 'bold 22px system-ui, sans-serif';
-  ctx.fillText(r.win ? 'Der ' + k.name + ' von ' + r.opp.name + ' gehört jetzt dir!' : 'Dein ' + k.name + ' gehört jetzt ' + r.opp.name + '.', W / 2, 92);
+  ctx.fillText(r.win ? 'Der ' + k.name + ' von ' + r.opp.name + ' gehört jetzt dir!' : r.kept ? 'Dein ' + k.name + ' ist geschützt – du behältst es! ⚡' : 'Dein ' + k.name + ' gehört jetzt ' + r.opp.name + '.', W / 2, 92);
   drawVehiclePreview(r.car, W / 2, 300, 340, 1.8);
   ctx.globalAlpha = 1;
   dragCarInfo(r.car, W / 2, 330);
@@ -4395,6 +4424,7 @@ canvas.addEventListener('pointerdown', e => {
       if (inRect(px, py, QUIT_BTN)) quitApp();
       else if (appUpdate.info && inRect(px, py, UPDATE_BTN)) applyUpdate();
       else if (inRect(px, py, VERSION_AREA)) secretTap();
+      else if (inRect(px, py, creditsArea())) creditsTap();
       else if (inRect(px, py, RACE_BTN)) openMenu('racemenu');
       else if (inRect(px, py, DRAG_BTN)) openDragMenu();
       else if (inRect(px, py, ONLINE_BTN)) openOnline();

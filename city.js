@@ -626,7 +626,7 @@ function stepMe(dt) {
   else if (Math.abs(me.vl) < 1.2 || Math.abs(me.speed) < 5) me.driftMode = false;
   const sliding = me.driftMode;
   const total = Math.hypot(me.speed, me.vl); // Tempo in alle Richtungen (auch seitwärts)
-  const yawMax = hand || sliding ? Math.min(1.9, 30 / Math.max(total, 0.1)) : Math.min(1.6, GRIP / Math.max(Math.abs(me.speed), 0.1));
+  const yawMax = hand || sliding ? Math.min(1.9, 30 / Math.max(total, 0.1)) : Math.min(1.6 * city.gripBoost, GRIP * city.gripBoost / Math.max(Math.abs(me.speed), 0.1));
   const turn = Math.abs(me.speed) > 0.3 ? me.steer * yawMax * dt * Math.sign(me.speed) : 0;
   me.heading += turn;
   // Die Bewegung bleibt in der alten Richtung (Trägheit): vorwärts (speed) und seitwärts (vl) neu aufteilen
@@ -641,7 +641,7 @@ function stepMe(dt) {
   me.pos.z += (fz * me.speed + fx * me.vl) * dt;
   me.drifting = Math.abs(me.vl) > 2.5 && Math.abs(me.speed) > 5;
   const latA = Math.abs(me.steer) * yawMax * Math.abs(me.speed);
-  me.slip = 0.7 * Math.min(1, Math.max(0, (latA - 10.8) / 1.2)) * Math.min(1, Math.max(0, (Math.abs(me.speed) - 16) / 8));
+  me.slip = 0.7 * Math.min(1, Math.max(0, (latA - 10.8 * city.gripBoost) / 1.2)) * Math.min(1, Math.max(0, (Math.abs(me.speed) - 16) / 8));
   if (brake && me.speed > 6) me.slip = Math.max(me.slip, 0.45 + 0.55 * Math.min(1, me.speed / 40));
   if (me.drifting) me.slip = Math.max(me.slip, Math.min(1, Math.abs(me.vl) / 7));
 
@@ -1358,7 +1358,7 @@ export function startCity({ player, kinds, topSpeed, onExit, pay = () => 0, earn
     maxV: Math.min(55, topSpeed(player.ps)), acc: 4 + player.ps * 0.06, radius: Math.max(1.3, mesh.userData.radius * 0.8),
     len: mesh.userData.length, slip: 0, surface: 'asphalt' };
   city = { me, cars: spawnTraffic(kinds), input: {}, t: Math.random() * CYCLE, msgT: 0, crashT: 0, hornT: 0, inCross: false, tod: 0.02, turbo: 0, fuelT: 0, washT: 0, mission: null,
-    gears: gearbox(player.kind), onExit, last: performance.now(), kinds, pay, fines: 0, police: null, pulled: 0, ticket: false,
+    gears: gearbox(player.kind), onExit, last: performance.now(), kinds, pay, gripBoost: (kinds[player.kind] && kinds[player.kind].grip) || 1, fines: 0, police: null, pulled: 0, ticket: false,
     earn, net, netCars: net ? makeNetCars({ scene: S.scene, kinds, net }) : null, drift: 0, driftT: 0, driftBest: (() => { try { return +localStorage.getItem('autoRetterDriftBest') || 0; } catch (e) { return 0; } })() };
   S.fx.clear();
   S.scene.add(mesh);

@@ -355,7 +355,7 @@ function stepMe(dt) {
   if ((hand && Math.abs(me.speed) > 8) || Math.abs(me.vl) > 3.5) me.driftMode = true;
   else if (Math.abs(me.vl) < 1.2 || Math.abs(me.speed) < 5) me.driftMode = false;
   const sliding = me.driftMode || hand;
-  const yawMax = sliding ? Math.min(1.9, 30 / Math.max(Math.hypot(me.speed, me.vl), 0.1)) : Math.min(1.6, GRIP / Math.max(Math.abs(me.speed), 0.1));
+  const yawMax = sliding ? Math.min(1.9, 30 / Math.max(Math.hypot(me.speed, me.vl), 0.1)) : Math.min(1.6 * P.gripBoost, GRIP * P.gripBoost / Math.max(Math.abs(me.speed), 0.1));
   const turn = Math.abs(me.speed) > 0.3 ? me.steer * yawMax * dt * Math.sign(me.speed) : 0;
   me.heading += turn;
   if (sliding) { const c = Math.cos(turn), sn = Math.sin(turn), vf = me.speed * c + me.vl * sn; me.vl = -me.speed * sn + me.vl * c; me.speed = vf; }
@@ -703,7 +703,8 @@ export function startStunt({ player, kinds, topSpeed, onExit, earn = () => {}, n
   resetCar(me, -170, net ? (net.mySlot - 2.5) * 6 : 0);
   let best = 0;
   try { best = +localStorage.getItem(BEST_KEY) || 0; } catch (e) { /* egal */ }
-  P = { me, input: {}, t: 0, msgT: 0, last: performance.now(), onExit, earn, score: 0, best, combo: 0, comboT: 0, drift: 0, driftT: 0, gears: gearbox(player.kind), net,
+  P = { me, input: {}, t: 0, msgT: 0, last: performance.now(), onExit, earn, score: 0, best, combo: 0, comboT: 0, drift: 0, driftT: 0,
+    gripBoost: (kinds[player.kind] && kinds[player.kind].grip) || 1, gears: gearbox(player.kind), net,
     netCars: net ? makeNetCars({ scene: S.scene, kinds, net }) : null };
   window.__stunt = () => P; // für Tests im Browser
   window.__stuntS = () => S;
