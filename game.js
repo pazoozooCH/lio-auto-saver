@@ -3549,6 +3549,35 @@ function drawTuning() {
   drawParticles();
 }
 
+// Text eingeben: eigenes Feld über dem Spiel (window.prompt ist auf Handys, im Vollbild und in der
+// installierten App oft blockiert). onDone(text) nur bei OK.
+function askText(title, value, maxLen, onDone) {
+  let box = document.getElementById('asktext');
+  if (!box) {
+    box = document.createElement('div');
+    box.id = 'asktext';
+    box.style.cssText = 'position:fixed;inset:0;z-index:50;background:rgba(0,0,0,.6);display:flex;align-items:center;justify-content:center;'
+      + 'font-family:system-ui,sans-serif;touch-action:manipulation';
+    box.innerHTML = `<form style="background:#1f2430;color:#fff;border-radius:16px;padding:18px 20px;width:min(420px,88vw);box-shadow:0 10px 40px rgba(0,0,0,.6)">
+      <div class="t" style="font-weight:800;font-size:20px;margin-bottom:12px"></div>
+      <input autocomplete="off" autocapitalize="characters" spellcheck="false" style="width:100%;box-sizing:border-box;font:800 26px system-ui,sans-serif;
+        text-transform:uppercase;letter-spacing:2px;padding:10px 12px;border-radius:10px;border:2px solid #475569;background:#f7f7f4;color:#111">
+      <div style="display:flex;gap:10px;margin-top:14px;justify-content:flex-end">
+        <button type="button" class="no" style="font:700 18px system-ui;border:none;border-radius:10px;padding:10px 16px;background:#4b5563;color:#fff">Abbrechen</button>
+        <button type="submit" style="font:800 18px system-ui;border:none;border-radius:10px;padding:10px 18px;background:#16a34a;color:#fff">OK</button></div></form>`;
+    document.body.appendChild(box);
+  }
+  const input = box.querySelector('input'), form = box.querySelector('form');
+  box.querySelector('.t').textContent = title;
+  input.maxLength = maxLen; input.value = value;
+  box.hidden = false; box.style.display = 'flex';
+  form.style.transform = rotated ? 'rotate(90deg)' : 'none'; // wie das Spiel: im Hochformat quer
+  const close = () => { box.style.display = 'none'; form.onsubmit = null; box.querySelector('.no').onclick = null; input.blur(); };
+  form.onsubmit = e => { e.preventDefault(); const v = input.value; close(); onDone(v); };
+  box.querySelector('.no').onclick = close;
+  setTimeout(() => { input.focus(); input.select(); }, 50);
+}
+
 function tuneSave(v, text, x, y) {
   delete previews[v.id];
   storeJSON('autoRetterFleet', fleet);
@@ -3582,12 +3611,16 @@ function tuningTap(px, py) {
         return;
       }
       if (b.act === 'plate') {
-        const text = (window.prompt('Was soll auf dem Nummernschild stehen? (höchstens 8 Zeichen)', t.plate || '') || '')
-          .toUpperCase().replace(/[^A-Z0-9ÄÖÜ -]/g, '').trim().slice(0, 8);
-        if (!text || text === t.plate) return;
-        if (wallet < row.price) { showMenuMsg('Dir fehlen ' + (row.price - wallet) + ' Münzen.'); beep(200, 0.15, 'square', 0.05); return; }
-        wallet -= row.price; t.plate = text;
-        tuneSave(v, '🔤 Neues Nummernschild: ' + text, b.x + b.w / 2, b.y);
+        if (wallet < row.price && !t.plate) { showMenuMsg('Dir fehlen ' + (row.price - wallet) + ' Münzen.'); beep(200, 0.15, 'square', 0.05); return; }
+        askText('🔤 Was soll auf dem Nummernschild stehen?', t.plate || '', 8, raw => {
+          const text = raw.toUpperCase().replace(/[^A-Z0-9ÄÖÜ -]/g, '').trim().slice(0, 8);
+          if (!text) { showMenuMsg('Nur Buchstaben, Zahlen, Leerzeichen und - gehen.'); return; }
+          if (text === t.plate) return;
+          if (wallet < row.price) { showMenuMsg('Dir fehlen ' + (row.price - wallet) + ' Münzen.'); beep(200, 0.15, 'square', 0.05); return; }
+          wallet -= row.price; t.plate = text;
+          tuneSave(v, '🔤 Neues Nummernschild: ' + text + '  (−' + row.price + ' 🪙)', b.x + b.w / 2, b.y);
+          beep(880, 0.1, 'triangle', 0.07);
+        });
         return;
       }
       const val = b.val === undefined ? true : b.val, price = row.id === 'finish' ? FINISH[val].price : row.price;
@@ -4386,6 +4419,7 @@ canvas.addEventListener('pointerdown', e => {
 });
 
 window.addEventListener('keydown', e => {
+  if (e.target && e.target.tagName === 'INPUT') return; // es wird gerade Text eingegeben
   if (e.code === 'Space' || e.code === 'Enter') {
     if (state === 'title' || (state === 'over' && overTime > 0.8)) openMenu('select');
     else if (state === 'select') selectTap(GO_BTN.x + 1, GO_BTN.y + 1);
