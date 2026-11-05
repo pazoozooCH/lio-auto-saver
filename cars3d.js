@@ -1958,7 +1958,7 @@ Object.assign(BUILD, {
     under.userData.pulse = true;
     C.group.add(under);
     // links und rechts je ein galoppierender Stier, darüber schwebt „ADMIN“
-    for (const sz of [-1, 1]) C.body.add(bull(X(0.55), 0.6 * H, sz * (W / 2 + 0.3), sz)); // schweben neben dem Fenster
+    for (const sz of [-1, 1]) C.body.add(bull(X(0.55), 0.7 * H, sz * (W / 2 + 0.55), sz)); // schweben neben dem Fenster
     C.body.add(floatingLabel('ADMIN', 0.94 * H + 1.3));
   },
 });
