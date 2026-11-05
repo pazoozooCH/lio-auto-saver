@@ -6,6 +6,19 @@
       ".read": false,
       ".write": false
     },
+    "stats": {
+      ".read": "auth != null",
+      "devices": {
+        ".write": "auth != null",
+        ".validate": "newData.isNumber() && newData.val() === (data.exists() ? data.val() : 0) + 1"
+      },
+      "days": {
+        "$day": {
+          ".write": "auth != null",
+          ".validate": "$day.matches(/^20[0-9][0-9]-[0-9][0-9]-[0-9][0-9]$/) && newData.isNumber() && newData.val() === (data.exists() ? data.val() : 0) + 1"
+        }
+      }
+    },
     "scores": {
       ".read": "auth != null",
       ".indexOn": ["best"],

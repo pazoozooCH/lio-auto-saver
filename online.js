@@ -44,6 +44,19 @@ async function connect() {
   return fb;
 }
 const serverNow = () => Date.now() + (fb ? fb.offset : 0);
+
+// ---------- Besucherzähler ----------
+// Ohne persönliche Daten: jedes Gerät zählt einmal (stats/devices) und höchstens einmal pro Tag (stats/days/<Datum>).
+// Die Regeln erlauben nur +1. Der Test-Server (Port 8124) zählt nicht mit. Gibt die Anzahl Geräte zurück.
+export async function countVisit() {
+  if (location.port === '8124') return null;
+  await connect();
+  const today = new Date().toLocaleDateString('sv'); // JJJJ-MM-TT
+  const plus = path => fb.runTransaction(fb.ref(fb.db, path), n => (n || 0) + 1);
+  if (load('autoRetterCounted') !== '1') { await plus('stats/devices'); store('autoRetterCounted', '1'); }
+  if (load('autoRetterCountedDay') !== today) { await plus('stats/days/' + today); store('autoRetterCountedDay', today); }
+  return (await fb.get(fb.ref(fb.db, 'stats/devices'))).val() || 0;
+}
 const roomRef = (code, path = '') => fb.ref(fb.db, 'rooms/' + code + (path ? '/' + path : ''));
 const publicRef = (code = '') => fb.ref(fb.db, 'public' + (code ? '/' + code : ''));
 let publicWatch = null; // Abo der Liste offener Räume (nur im Online-Menü)

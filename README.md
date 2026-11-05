@@ -73,6 +73,9 @@ Online spielen läuft ohne eigenen Server: Das Spiel verbindet sich direkt mit e
   jedes Gerät für sich. Wer zurück in den Raum geht, verschwindet bei den anderen.
 - **Fangis** (Stadt online): 🏃 startet, wer startet ist dran; berühren gibt „dran“ weiter (zurückfangen erst nach 3 s).
   Im Raum steht `tag = { it, by, t }`; wer dran ist, prüft die Berührung selbst.
+- **Besucherzähler:** Beim Start lädt das Spiel im Hintergrund Firebase und zählt das Gerät einmal insgesamt und einmal
+  pro Tag (Merker im `localStorage`, keine persönlichen Daten). Die Zahl steht klein auf der Startseite.
+  Der Test-Server (Port 8124) zählt nicht mit. Abfragen: `curl -H "Authorization: Bearer $TOKEN" "$DB/stats.json"`
 - **Stunt-Rangliste** (Online-Startseite): bester Stuntpark-Rekord je Gerät mit Spitzname unter `scores/<uid>`, die 10 besten.
 - **Chat** (nur Stadt und Stuntpark online): Schnell-Nachrichten (feste Sprüche, Liste `QUICK` in `chat.js`) in allen Räumen,
   **freier Text nur in privaten Räumen** (bis 80 Zeichen). Die Regeln erzwingen: nur Spieler im Raum, höchstens eine
@@ -94,6 +97,8 @@ rooms/<CODE>/  host, key, created, mode (race|drag|city|stunt), state (lobby|run
 rooms/<CODE>/players/<0–5>: uid, name, kind, color, special, ps
 rooms/<CODE>/tag:           it (wer dran ist, −1 = kein Fangis), by (wer gefangen hat), t (Serverzeit)
 scores/<uid>:                name, best (Stunt-Rekord), t                     Stunt-Rangliste
+stats/devices:               Anzahl Geräte, die das Spiel geöffnet haben (je Gerät einmal, nur +1 erlaubt)
+stats/days/<JJJJ-MM-TT>:     Anzahl Geräte an diesem Tag
 rooms/<CODE>/chat/<0–5>:    m (Nummer der Schnell-Nachricht 0–63) oder x (Text ≤ 80, nur private Räume), t (Serverzeit)
 rooms/<CODE>/live/<0–5>:    x, z, h, v, p, g, fin, r (Runde), t (Serverzeit); freies Fahren: y (Höhe), a/b (Neigung), p (Stunt-Punkte), r = 0
 ```

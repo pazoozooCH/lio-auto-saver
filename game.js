@@ -2748,6 +2748,10 @@ function drawVersion() {
   ctx.textAlign = 'right';
   ctx.textBaseline = 'bottom';
   ctx.fillText(versionText(), W - 12, H - 8);
+  if (visitors) { // wie viele Geräte schon gespielt haben
+    ctx.textAlign = 'left';
+    ctx.fillText('👀 ' + visitors + (visitors === 1 ? ' Gerät hat' : ' Geräte haben') + ' schon gespielt', 12, H - 8);
+  }
   if (appUpdate.info) { // neue Version gefunden: Knopf oben rechts
     const pulse = 1 + 0.04 * Math.sin(time * 5);
     ctx.save();
@@ -2830,6 +2834,9 @@ async function applyUpdate() {
 }
 
 setTimeout(() => checkUpdate(), 3000);
+// Besucherzähler (online.js, im Hintergrund; offline passiert nichts)
+let visitors = null;
+setTimeout(() => import('./online.js').then(m => m.countVisit()).then(n => { visitors = n; }).catch(() => {}), 4000);
 setInterval(() => checkUpdate(), 10 * 60 * 1000);
 document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') { appUpdate.last = 0; checkUpdate(true); } });
 

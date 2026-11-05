@@ -38,6 +38,7 @@ Texte im Spiel sind Deutsch (Schweizer Schreibweise, kein ß).
 - Spiel für alle im LAN: Port **8123** (`.claude/launch.json` → `auto-retter`, `serve.py --host 0.0.0.0`).
   Dort liegt der echte Spielstand im `localStorage` – beim Testen nicht anfassen.
 - Tests nur auf Port **8124** (`auto-retter-test`, nur `127.0.0.1`). Anderer Port = eigener `localStorage`.
+  Auf 8124 zählt der Besucherzähler (`countVisit` in `online.js`) nicht mit.
 - Prüfen: `node --check game.js`; die Module (alle anderen .js) als Modul prüfen: `node --input-type=module --check < race.js`
   (sonst werden z.B. doppelte `const` nicht gefunden). Dann im Browser auf 8124 ansehen; Spielzustand lässt sich per
   JavaScript setzen (`start(...)`, `openMenu('shop')`, `fleet`, `wallet` usw. sind globale Variablen).
