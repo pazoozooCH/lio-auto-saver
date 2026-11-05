@@ -2780,7 +2780,7 @@ const creditsY = () => appUpdate.info ? UPDATE_BTN.y + UPDATE_BTN.h + 10 : 16;
 const creditsArea = () => ({ x: W - 190, y: creditsY() - 6, w: 186, h: 46 });
 // Geheimtrick: 5× innert 3 Sekunden auf „Ersteller: LIONEL“ tippen = Sonderfahrzeug LIONEL X.
 // Ging nur kurz nach diesem Update (bis SECRET_UNTIL), damit es nur Lionel bekommt.
-const SECRET_UNTIL = 1793907586000; // 05.11.2026 20:39
+const SECRET_UNTIL = 1793908866000; // 05.11.2026 21:01
 let secretTaps = [];
 function creditsTap() {
   const now = Date.now();
