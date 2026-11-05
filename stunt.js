@@ -56,18 +56,43 @@ add({ kind: 'curve', x: 158, z: 0, w: 360, R: 10, max: deg(75), color: 0xc8924f 
 add({ kind: 'box', x: 158 + curveLen(10, deg(75)), z: 0, w: 360, len: 12, h0: 10 * (1 - Math.cos(deg(75))), color: 0x64748b });
 add({ kind: 'curve', x: 0, z: 158, ang: Math.PI / 2, w: 300, R: 10, max: deg(75), color: 0xc8924f });
 add({ kind: 'box', x: 0, z: 158 + curveLen(10, deg(75)), ang: Math.PI / 2, w: 300, len: 12, h0: 10 * (1 - Math.cos(deg(75))), color: 0x64748b });
+// Bus-Sprung: Schanze, fünf Schulbusse (darauf kann man auch landen), Landehügel
+add({ kind: 'curve', x: 50, z: -90, w: 10, R: 18, max: deg(35), color: 0xdc2626 });
+const BUSES = [66.5, 69.4, 72.3, 75.2, 78.1];
+for (const bx of BUSES) add({ kind: 'box', x: bx, z: -90 - 3.45, ang: Math.PI / 2, w: 2.6, len: 6.9, h0: 2.9, hidden: true });
+add({ kind: 'ramp', x: 84, z: -90, w: 16, len: 14, h0: 0, h1: 4.5, color: 0x15803d });
+add({ kind: 'ramp', x: 98, z: -90, w: 16, len: 44, h0: 4.5, h1: 0, color: 0x16a34a });
+// Halfpipe: zwei Wände gegenüber, dazwischen 15 m Boden (man fährt der Länge nach hinein)
+const HP_R = 9, HP_LEN = curveLen(HP_R, deg(75)), HP_H = HP_R * (1 - Math.cos(deg(75)));
+add({ kind: 'curve', x: 100, z: 40, ang: -Math.PI / 2, w: 70, R: HP_R, max: deg(75), color: 0xc8924f });
+add({ kind: 'box', x: 100, z: 40 - HP_LEN, ang: -Math.PI / 2, w: 70, len: 6, h0: HP_H, color: 0x64748b });
+add({ kind: 'curve', x: 100, z: 55, ang: Math.PI / 2, w: 70, R: HP_R, max: deg(75), color: 0xc8924f });
+add({ kind: 'box', x: 100, z: 55 + HP_LEN, ang: Math.PI / 2, w: 70, len: 6, h0: HP_H, color: 0x64748b });
+// Funbox: Kasten mit Rampen auf allen vier Seiten
+add({ kind: 'box', x: 54, z: 120, w: 12, len: 12, h0: 3, color: 0x9333ea });
+add({ kind: 'ramp', x: 47.5, z: 120, w: 12, len: 6.5, h0: 0, h1: 3, color: 0xa855f7 });
+add({ kind: 'ramp', x: 66, z: 120, w: 12, len: 6.5, h0: 3, h1: 0, color: 0xa855f7 });
+add({ kind: 'ramp', x: 60, z: 107.5, ang: Math.PI / 2, w: 12, len: 6.5, h0: 0, h1: 3, color: 0xa855f7 });
+add({ kind: 'ramp', x: 60, z: 126, ang: Math.PI / 2, w: 12, len: 6.5, h0: 3, h1: 0, color: 0xa855f7 });
+// Trampoline: schleudern dich hoch in die Luft (drei hintereinander)
+const TRAMPS = [-125, -100, -75];
+for (const tx of TRAMPS) add({ kind: 'tramp', x: tx - 5, z: 60, w: 10, len: 10, h0: 0.45 });
 for (const s of SHAPES) { s.c = Math.cos(s.ang); s.s = Math.sin(s.ang); }
 
+// Turbo-Felder: drüberfahren = Vollgas und mehr (vor Looping, Bus-Sprung und grossem Looping)
+const BOOSTS = [{ x: -40, z: 70 }, { x: 50, z: -30 }];
+
 // Looping: Einfahrt bei (x, z) in Richtung ang, Ausfahrt um shift seitlich versetzt (Schraube, damit sich die Bahn nicht kreuzt)
-const LOOP = { x: 0, z: 70, ang: 0, R: 9, w: 8, shift: 10 };
-LOOP.c = Math.cos(LOOP.ang); LOOP.s = Math.sin(LOOP.ang);
+const LOOPS = [{ x: 0, z: 70, ang: 0, R: 9, w: 8, shift: 10 }, { x: 95, z: -30, ang: 0, R: 13, w: 8, shift: 11 }];
+for (const L of LOOPS) { L.c = Math.cos(L.ang); L.s = Math.sin(L.ang); }
 // Feuerringe: Mitte und Radius; man fliegt in x-Richtung hindurch
-const RINGS = [{ x: -30, y: 10, z: 10, r: 4.5 }, { x: 40, y: 17, z: -130, r: 6 }, { x: 42, y: 7, z: -50, r: 4 }];
+const RINGS = [{ x: -30, y: 10, z: 10, r: 4.5 }, { x: 40, y: 17, z: -130, r: 6 }, { x: 42, y: 7, z: -50, r: 4 },
+  { x: 72, y: 11, z: -90, r: 5 }, { x: -87.5, y: 16, z: 60, r: 5 }, { x: 62, y: 7, z: 120, r: 4 }];
 
 function shapeHeight(s, x, z) {
   const dx = x - s.x, dz = z - s.z, u = dx * s.c + dz * s.s, v = -dx * s.s + dz * s.c;
   if (u < 0 || u > s.len || Math.abs(v) > s.w / 2) return -Infinity;
-  if (s.kind === 'box') return s.h0;
+  if (s.kind === 'box' || s.kind === 'tramp') return s.h0;
   if (s.kind === 'ramp') return s.h0 + (s.h1 - s.h0) * u / s.len;
   return s.h0 + s.R - Math.sqrt(Math.max(0, s.R * s.R - u * u));
 }
@@ -96,7 +121,7 @@ let S = null;   // Szene, Renderer, Oberfläche (einmal gebaut)
 let P = null;   // laufende Fahrt
 
 // ---------- Welt ----------
-function buildWorld() {
+function buildWorld(kinds) {
   const renderer = new THREE.WebGLRenderer({ antialias: true });
   renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, LITE ? 1.25 : 1.5));
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
@@ -154,7 +179,17 @@ function buildWorld() {
   const sideMat = mat({ color: 0x8b6b4a, roughness: 0.9 });
   const mats = new Map();
   const topMat = col => { if (!mats.has(col)) mats.set(col, mat({ color: col, roughness: 0.55 })); return mats.get(col); };
+  const tramp = mat({ color: 0x111827, roughness: 0.6 }), trampFrame = mat({ color: 0x2563eb, metalness: 0.4, roughness: 0.4 });
   for (const s of SHAPES) {
+    if (s.hidden) continue; // z.B. unter den Bussen
+    if (s.kind === 'tramp') { // Trampolin: blauer Rahmen, schwarzes Sprungtuch, Federn
+      const cx = s.x + s.c * s.len / 2, cz = s.z + s.s * s.len / 2;
+      const frame = new THREE.Mesh(new THREE.BoxGeometry(s.len, s.h0 - 0.05, s.w), trampFrame);
+      frame.position.set(cx, (s.h0 - 0.05) / 2, cz); frame.castShadow = frame.receiveShadow = true; scene.add(frame);
+      const top = new THREE.Mesh(new THREE.BoxGeometry(s.len - 0.8, 0.08, s.w - 0.8), tramp);
+      top.position.set(cx, s.h0, cz); top.receiveShadow = true; scene.add(top);
+      continue;
+    }
     const pts = [];
     if (s.kind === 'curve') for (let k = 0; k <= 16; k++) { const u = s.len * k / 16; pts.push([u, shapeHeight(s, s.x + s.c * u, s.z + s.s * u)]); }
     else pts.push([0, s.h0], [s.len, s.kind === 'box' ? s.h0 : s.h1]);
@@ -174,8 +209,32 @@ function buildWorld() {
     }
   }
 
-  // Looping: Fahrbahn auf der Innenseite eines senkrechten Kreises, seitlich versetzt
-  const L = LOOP, steps = 140, pos = [], idx = [], uvs = [];
+  // Schulbusse für den Bus-Sprung (stehen quer zur Sprungrichtung)
+  for (const bx of BUSES) {
+    const bus = buildCar({ kind: 'schoolbus', color: '#f5b700', special: null }, kinds);
+    bus.position.set(bx, 0, -90); bus.rotation.y = -Math.PI / 2;
+    scene.add(bus);
+  }
+  // Turbo-Felder: leuchtende Pfeile am Boden
+  const boostTex = (() => {
+    const c = document.createElement('canvas'); c.width = 128; c.height = 256;
+    const g = c.getContext('2d'); g.fillStyle = '#0b1120'; g.fillRect(0, 0, 128, 256);
+    g.fillStyle = '#facc15';
+    for (let k = 0; k < 3; k++) { const y = 200 - k * 75; g.beginPath(); g.moveTo(14, y); g.lineTo(64, y - 50); g.lineTo(114, y); g.lineTo(114, y + 26); g.lineTo(64, y - 24); g.lineTo(14, y + 26); g.fill(); }
+    const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; return t;
+  })();
+  const boostMat = new THREE.MeshStandardMaterial({ map: boostTex, emissive: 0xffffff, emissiveMap: boostTex, emissiveIntensity: 0.9, polygonOffset: true, polygonOffsetFactor: -2 });
+  for (const b of BOOSTS) {
+    const m = new THREE.Mesh(new THREE.PlaneGeometry(4, 8), boostMat);
+    m.rotation.set(-Math.PI / 2, 0, -Math.PI / 2); // Pfeile zeigen in +x
+    m.position.set(b.x, 0.03, b.z);
+    scene.add(m);
+  }
+
+  // Loopings: Fahrbahn auf der Innenseite eines senkrechten Kreises, seitlich versetzt
+  for (const L of LOOPS) buildLoop(L);
+  function buildLoop(L) {
+  const steps = 140, pos = [], idx = [], uvs = [];
   for (let k = 0; k <= steps; k++) {
     const th = (k / steps) * Math.PI * 2;
     for (const side of [-1, 1]) {
@@ -207,6 +266,7 @@ function buildWorld() {
     p.position.set(L.x - L.s * v, L.R + 0.5, L.z + L.c * v);
     p.castShadow = true;
     scene.add(p);
+  }
   }
 
   // Feuerringe
@@ -311,22 +371,36 @@ function stepMe(dt) {
     return;
   }
   // Abheben: der Boden fällt schneller weg, als das Auto fallen würde (Schanzenkante, Kante oben auf dem Turm)
-  me.vyG = me.speed * Math.sin(sl.pitch); // senkrechtes Tempo auf der Rampe
-  const ballistic = me.y + me.vyG * dt - 0.5 * G * dt * dt;
+  // senkrechtes Tempo auf der Rampe; an einer Kante zählt auch der Schwung vom Schritt davor
+  // (sonst hängt das Abheben davon ab, wo genau ein Rechenschritt über die Kante fällt)
+  const vyPrev = me.vyG || 0, shapePrev = me.shapePrev;
+  me.vyG = me.speed * Math.sin(sl.pitch);
+  me.shapePrev = shapeAt(me.x, me.z);
+  const vyT = Math.max(vyPrev, me.vyG);
+  const ballistic = me.y + vyT * dt - 0.5 * G * dt * dt;
   if (h < ballistic - (0.02 + 0.25 * Math.abs(dist)) && Math.abs(me.speed) > 2) {
     me.air = true;
-    const vh = me.speed * Math.cos(sl.pitch), wall = shapeAt(me.x, me.z);
-    me.vx = fx * vh - fz * me.vl; me.vz = fz * vh + fx * me.vl; me.vy = me.vyG; // im Drift fliegt man schräg ab
+    const isWall = w => w && w.kind === 'curve' && w.max > 1.2, here = shapeAt(me.x, me.z);
+    const wall = isWall(here) ? here : isWall(shapePrev) ? shapePrev : null;
+    const vh = Math.sqrt(Math.max(0, me.speed * me.speed - vyT * vyT)) * Math.sign(me.speed || 1);
+    me.vx = fx * vh - fz * me.vl; me.vz = fz * vh + fx * me.vl; me.vy = vyT; // im Drift fliegt man schräg ab
     me.vl = 0; me.drifting = false;
     // über die Kante einer Halfpipe-Wand: senkrecht hoch und wieder zurück in die Wand (nicht auf die Plattform)
-    me.wallAir = wall && wall.kind === 'curve' && wall.max > 1.2 && me.speed > 0 ? wall : null;
+    me.wallAir = wall && me.speed > 0 ? wall : null;
     if (me.wallAir) { me.vx = -wall.c * 0.4; me.vz = -wall.s * 0.4; me.vy = Math.min(me.vy, 13); } // höchstens etwa 8 m über die Kante
     me.x = nx; me.z = nz; me.y = ballistic;
-    me.pitch = Math.atan2(me.vyG, Math.abs(vh)) * Math.sign(me.speed || 1); // Neigung = Flugbahn (nicht über die Kante gemessen)
+    me.pitch = Math.atan2(vyT, Math.abs(vh)) * Math.sign(me.speed || 1); // Neigung = Flugbahn (nicht über die Kante gemessen)
     startAir(me, input);
     return;
   }
   me.x = nx; me.z = nz; me.y = h;
+  const top = shapeAt(me.x, me.z);
+  if (top && top.kind === 'tramp' && Math.abs(me.speed) > 1) { // aufs Trampolin gefahren: hoch hinaus!
+    me.vx = fx * me.speed - fz * me.vl; me.vz = fz * me.speed + fx * me.vl; me.pitch = 0.15;
+    trampBounce(me, input);
+    return;
+  }
+  boostCheck(me);
   const ns = slopeAt(me.x, me.z, me.heading);
   me.pitch = ns.pitch; me.roll = ns.roll;
   me.camH = me.heading;
@@ -368,6 +442,14 @@ function stepAir(me, input, dt) {
   });
   const h = groundAt(me.x, me.z);
   if (me.y > h || me.vy > 0) return;
+  const top = shapeAt(me.x, me.z);
+  if (top && top.kind === 'tramp') { // auf dem Trampolin gelandet: Punkte, und gleich wieder hoch (egal wie man landet)
+    const sc = landPoints(me);
+    if (sc.pts) addPoints(sc.pts + 50, '🦘 Trampolin +50' + (sc.parts.length ? ' · ' + sc.parts.join(' · ') : ''), sc.big);
+    me.y = h; me.pitch = 0.15; me.roll = 0;
+    trampBounce(me, input);
+    return;
+  }
   if (me.wallAir) { // Halfpipe-Air: immer vorwärts zurück in die Wand, Drehungen zählen
     const w = me.wallAir, spins = Math.floor((Math.abs(me.spin) + 0.7) / (Math.PI * 2));
     me.wallAir = null; me.air = false; me.vyG = 0; me.y = h;
@@ -388,13 +470,50 @@ function stepAir(me, input, dt) {
   const fx = Math.cos(me.heading), fz = Math.sin(me.heading);
   me.speed = (me.vx * fx + me.vz * fz) * Math.cos(sl.pitch) + me.vy * Math.sin(sl.pitch);
   me.pitch = sl.pitch; me.roll = sl.roll;
+  const sc = landPoints(me);
+  if (sc.pts) addPoints(sc.pts, sc.parts.join(' · '), sc.big);
+}
+
+// Trampolin: hoch hinaus, und wenn vorne ein weiteres Trampolin steht, genau dorthin (boing, boing, boing)
+const TRAMP_VY = 19;
+function trampBounce(me, input) {
+  const t = 2 * TRAMP_VY / G; // Flugzeit bis zur gleichen Höhe
+  let vx = me.vx, vz = me.vz, vh = Math.hypot(vx, vz);
+  const dir = vh > 0.5 ? Math.atan2(vz, vx) : me.heading;
+  let next = null, best = Infinity;
+  for (const s of SHAPES) {
+    if (s.kind !== 'tramp') continue;
+    const cx = s.x + s.c * s.len / 2, cz = s.z + s.s * s.len / 2, d = Math.hypot(cx - me.x, cz - me.z);
+    if (d < 8 || d > 45 || Math.abs(wrap(Math.atan2(cz - me.z, cx - me.x) - dir)) > 0.6) continue;
+    if (d < best) { best = d; next = [cx, cz]; }
+  }
+  if (next) { vx = (next[0] - me.x) / t; vz = (next[1] - me.z) / t; }
+  else if (vh > 8) { vx *= 8 / vh; vz *= 8 / vh; }
+  me.vx = vx; me.vz = vz; me.vy = TRAMP_VY; me.vl = 0; me.drifting = false;
+  startAir(me, input);
+  window.beep && window.beep(330 + Math.random() * 60, 0.18, 'sine', 0.08);
+}
+
+// Punkte für einen Flug: Flugzeit, Saltos, Schrauben
+function landPoints(me) {
   const flips = Math.floor((Math.abs(me.flip) + 0.9) / (Math.PI * 2)), spins = Math.floor((Math.abs(me.spin) + 0.7) / (Math.PI * 2));
   const parts = [];
   let pts = 0;
   if (me.airT > 0.6) { const p = Math.round(me.airT * 100); pts += p; parts.push('✈️ ' + me.airT.toFixed(1) + ' s +' + p); }
   if (flips) { pts += flips * 500; parts.push((flips > 1 ? flips + '× ' : '') + (me.flip > 0 ? 'Rückwärts-Salto' : 'Salto') + ' +' + flips * 500); }
   if (spins) { pts += spins * 300; parts.push((spins > 1 ? spins + '× ' : '') + 'Schraube +' + spins * 300); }
-  if (pts) addPoints(pts, parts.join(' · '), flips + spins > 0);
+  return { pts, parts, big: flips + spins > 0 };
+}
+
+// Turbo-Feld: kurz Vollgas und noch mehr (einmal pro Überfahren)
+function boostCheck(me) {
+  const on = BOOSTS.some(b => Math.abs(me.x - b.x) < 4 && Math.abs(me.z - b.z) < 2.2);
+  if (on && !me.boostIn && me.speed > 0) {
+    me.speed = Math.max(me.speed, me.maxV * 1.25);
+    showMsg('⚡ TURBO!', 0.9);
+    window.beep && window.beep(988, 0.12, 'sawtooth', 0.04);
+  }
+  me.boostIn = on;
 }
 
 function crashLand(me) {
@@ -409,13 +528,16 @@ function crashLand(me) {
 
 // Looping: Einfahrt erkennen (richtig ausgerichtet, schnell genug unterwegs)
 function tryLoop(me) {
-  const L = LOOP, dx = me.x - L.x, dz = me.z - L.z, u = dx * L.c + dz * L.s, v = -dx * L.s + dz * L.c;
-  if (u < -0.3 || u > 1.2 || Math.abs(v) > L.w / 2 || me.speed < 3 || Math.abs(wrap(me.heading - L.ang)) > 0.6) return;
-  me.loop = { th: Math.max(0, u) / L.R, v0: v };
-  me.vl = 0; me.drifting = false;
+  for (const LP of LOOPS) {
+    const dx = me.x - LP.x, dz = me.z - LP.z, u = dx * LP.c + dz * LP.s, v = -dx * LP.s + dz * LP.c;
+    if (u < -0.3 || u > 1.2 || Math.abs(v) > LP.w / 2 || me.speed < 3 || Math.abs(wrap(me.heading - LP.ang)) > 0.6) continue;
+    me.loop = { th: Math.max(0, u) / LP.R, v0: v, L: LP };
+    me.vl = 0; me.drifting = false;
+    return;
+  }
 }
 function stepLoop(me, input, dt) {
-  const L = me.loop, R = LOOP.R;
+  const L = me.loop, LOOP = L.L, R = LOOP.R;
   if (input.gas) me.speed += me.acc * 0.4 * dt;
   me.speed -= G * Math.sin(L.th) * dt;
   L.th += me.speed / R * dt;
@@ -433,7 +555,8 @@ function stepLoop(me, input, dt) {
   if (th <= 0) { me.loop = null; me.y = 0; me.pitch = 0; showMsg('😅 Mehr Schwung für den Looping!', 1.6); return; } // zurückgerollt
   if (th >= Math.PI * 2) {
     me.loop = null; me.y = 0; me.pitch = 0; me.vyG = 0;
-    addPoints(800, '🎢 LOOPING! +800', true);
+    const pts = LOOP.R > 10 ? 1200 : 800;
+    addPoints(pts, (LOOP.R > 10 ? '🎢 MEGA-LOOPING! +' : '🎢 LOOPING! +') + pts, true);
   }
 }
 
@@ -566,7 +689,7 @@ function showMsg(text, secs = 1.6) {
 // net (nur online): siehe netcars.js; earn(n) schreibt Münzen gut (nur offline)
 export function startStunt({ player, kinds, topSpeed, onExit, earn = () => {}, net = null }) {
   if (!S) {
-    S = buildWorld();
+    S = buildWorld(kinds);
     S.ui = buildDom();
     S.ui.root.prepend(S.renderer.domElement);
     S.fx = makeEffects(S.scene);
@@ -655,8 +778,8 @@ function render(dt) {
   for (const w of m.userData.wheels) if (w.position.x > 0) w.rotation.y = -me.steer * 0.4;
   animateCar(m, P.t, me.special, me.air || !!me.loop);
   if (me.loop) { // Looping von der Seite zeigen
-    const L = LOOP;
-    camWant.set(L.x - L.s * -28, L.R * 0.9, L.z + L.c * -28);
+    const L = me.loop.L, far = -28 * L.R / 9;
+    camWant.set(L.x - L.s * far, L.R * 0.9, L.z + L.c * far);
     camAt.set(L.x, L.R * 0.9, L.z + L.c * L.shift / 2);
   } else {
     const fx = Math.cos(me.camH), fz = Math.sin(me.camH), back = 9 + Math.abs(me.speed) * 0.03;

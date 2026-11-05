@@ -9,7 +9,8 @@ und nochmals, damit es weiterfährt – so kommen alle heil zum Ausgang.
   Driften mit Handbremse (Rauch, Bremsspuren, Drift-Punkte) und Polizei, die bei Rot verfolgt und Strafzettel verteilt;
   Tag und Nacht (6 Minuten, Laternen, Fenster, Scheinwerfer), Tankstelle (Turbo-Benzin), Waschanlage und Aufträge:
   Taxi, Pizza ausliefern, Dieb jagen (mit Polizeiauto)
-- 3D-Stuntpark: Schanzen, Tabletop, Weitsprung, Mega-Rampe vom Turm, Looping, Halfpipe-Wände, Wellenbahn und Feuerringe;
+- 3D-Stuntpark: Schanzen, Tabletop, Weitsprung, Mega-Rampe vom Turm, Bus-Sprung, zwei Loopings, Halfpipe, Funbox,
+  Trampoline (hüpfen von einem zum nächsten), Turbo-Felder, Wellenbahn und Feuerringe;
   in der Luft Salto und Schraube, Drift-Punkte, Combo und Rekord – Punkte geben Münzen (250 Punkte = 1 Münze)
 - 3D-Dragster-Bahn: 402 m geradeaus, Startampel und selber schalten – der Gewinner bekommt das Auto des Verlierers
 - Presse in einer 3D-Fabrikhalle: Autos retten bringt Münzen und +1 PS, zerquetscht kostet −3 PS
