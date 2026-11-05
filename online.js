@@ -420,7 +420,7 @@ function botsFor(players, code, round) {
   const taken = new Set(Object.keys(players).map(Number));
   let a = seedOf('bots:' + code + ':' + round);
   const rnd = () => { a = Math.imul(a ^ (a >>> 15), 2246822507) + 0x9e3779b9 >>> 0; return (a >>> 8) / 16777216; };
-  const pool = Object.keys(api.kinds).filter(k => api.kinds[k].tier !== 'legendary').sort();
+  const pool = Object.keys(api.kinds).filter(k => api.kinds[k].tier !== 'legendary' && !api.kinds[k].secret).sort();
   const ps = Object.values(players).map(p => p.ps || 0), avg = ps.reduce((x, y) => x + y, 0) / Math.max(1, ps.length);
   const names = [...BOT_NAMES];
   const bots = [];
