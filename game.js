@@ -384,7 +384,7 @@ const KINDS = {
   sleigh:    { name: 'Samichlaus-Schlitten', tier: 'legendary', w: [140, 150], h: [58, 62], color: '#b91c1c', ability: 'rocket', coins: 5, points: 8, look: 'royal', badge: '🎅',
                info: '🎅 Samichlaus-Schlitten: Antippen = fliegt davon! 8 Punkte und 5 Münzen.' },
   // --- Geheimes Sonderfahrzeug (secret: nicht im Shop, nicht bei Gegnern; grip: lenkt besser, hält immer) ---
-  lionelx:   { name: 'LIONEL X', tier: 'legendary', secret: true, w: [118, 128], h: [34, 38], wheel: 12, speed: 1.8, grip: 1.8, color: '#7c3aed',
+  lionelx:   { name: 'LIONEL X', tier: 'legendary', secret: true, w: [104, 112], h: [32, 36], wheel: 12, speed: 1.8, grip: 1.8, color: '#e10600',
                ability: 'turbo', armor: 2, points: 10, coins: 3, look: 'sports', badge: '⚡',
                info: '⚡ LIONEL X: das geheime Sonderfahrzeug! Turbo, lenkt super und hält ZWEI Schläge aus.' },
 };
@@ -426,6 +426,7 @@ fleet = fleet.filter(v => KINDS[v.kind]);
 for (const v of fleet) {
   if (typeof v.ps !== 'number') v.ps = basePS(v.kind); // ältere Spielstände ohne PS
   if (!v.paintPS) { v.ps += PAINT_PS[v.special] || 0; v.paintPS = true; } // Lack-Bonus einmal nachrüsten
+  if (v.kind === 'lionelx' && v.color === '#7c3aed') v.color = '#e10600'; // LIONEL X ist jetzt rot
 }
 storeJSON('autoRetterFleet', fleet);
 const MAX_SELECTED = 4;      // so viele Fahrzeuge darf man in eine Runde mitnehmen

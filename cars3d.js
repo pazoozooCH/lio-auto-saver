@@ -1875,71 +1875,85 @@ Object.assign(BUILD, {
     }
   },
 });
-// Sonderfahrzeug LIONEL X: Supersportwagen-Keil (sehr flach, scharfe Kanten), Y-Scheinwerfer, grosse
-// Lufteinlässe an der Seite, sechseckiger Auspuff in der Mitte, Heckflügel, lila Neonlicht (kein Markenlogo)
+// Sonderfahrzeug LIONEL X: eigener flacher Supersportwagen (Keil mit einer Glaskuppel in einem Bogen), knallrot
+// mit pulsierendem Leuchten, Y-Lichter vorne und hinten, eckige Lufteinlässe, vier Auspuffrohre (kein Markenlogo)
 Object.assign(BUILD, {
   lionelx: C => {
-    C.W = 2.05;
-    const { X, H, L, W, M } = C, r = 0.42;
-    // Seitenprofil: flache Schnauze, gerader Keil bis zum Dach, langer Motordeckel, steiles Heck
-    const body = [[0, 0.2], [0, 0.5], [0.04, 0.56], [0.3, 0.6], [0.52, 0.63], [0.72, 0.5], [0.9, 0.34], [1, 0.23], [1, 0.18], [0.97, 0.13], [0.02, 0.14]]
-      .map(([x, y]) => [X(x), y * H]);
-    const pts = roundPoly(body, 0.05);
-    C.bodyMesh = C.ext(pts, W - 0.18, C.paint, 0.09);
-    // Kabine in Wagenfarbe, flach liegende Frontscheibe (Glasplatte darauf), Seitenfenster als Aufkleber
-    const cw = W * 0.74, glassM = mat(0x0e131a, { metalness: 0.7, roughness: 0.05 });
-    C.ext(roundPoly([[X(0.26), 0.6 * H], [X(0.4), 0.93 * H], [X(0.56), 0.93 * H], [X(0.76), 0.48 * H]], 0.04), cw, C.paint, 0.03);
-    C.ext([[X(0.555), 0.925 * H], [X(0.575), 0.95 * H], [X(0.78), 0.5 * H], [X(0.76), 0.475 * H]], cw - 0.06, glassM, 0.02); // Frontscheibe
-    C.decal(X(0.75) - X(0.27), 0.33 * H, (X(0.27) + X(0.75)) / 2, 0.765 * H, (g, w, h) => { // Seitenfenster
-      const sx = w / (X(0.75) - X(0.27)), px = x => (x - X(0.27)) * sx, py = y => (0.93 * H - y) * sx;
-      g.fillStyle = '#0e131a'; g.beginPath();
-      g.moveTo(px(X(0.31)), py(0.64 * H)); g.lineTo(px(X(0.415)), py(0.89 * H)); g.lineTo(px(X(0.55)), py(0.89 * H)); g.lineTo(px(X(0.72)), py(0.53 * H));
-      g.closePath(); g.fill();
-    }, cw / 2 + 0.035 - W / 2);
-    C.roofY = 0.96 * H; C.roofX = X(0.48);
-    const dark = mat(0x08090c, { roughness: 0.35, metalness: 0.4 });
-    // grosse Lufteinlässe an der Seite (Dreieck vor den Hinterrädern)
-    C.ext([[X(0.28), 0.22 * H], [X(0.42), 0.52 * H], [X(0.46), 0.24 * H]], W + 0.02, dark, 0.02);
-    C.ext([[X(0.2), 0.6 * H], [X(0.3), 0.66 * H], [X(0.36), 0.6 * H]], W * 0.9, dark, 0.01); // Motorlüftung oben
-    // Y-Scheinwerfer vorne, Y-Rücklichter hinten (leuchtende Streifen)
-    const head = new THREE.MeshStandardMaterial({ color: 0xffffff, emissive: 0xe0f2fe, emissiveIntensity: 2.2 });
-    const tail = new THREE.MeshStandardMaterial({ color: 0x550000, emissive: 0xff1a1a, emissiveIntensity: 2 });
-    // Scheinwerfer: schmale LED-Augen auf der schrägen Haube, je zwei Streifen als spitzes „<“
-    const hoodSlope = Math.atan2((0.34 - 0.23) * H, 0.1 * L);
+    C.W = 2.0;
+    const { X, H, L, W, M } = C, r = 0.4;
+    const plain = !C.v.special && !(C.v.tune && C.v.tune.finish);
+    if (plain) { // glänzendes Rot, das leicht von innen leuchtet (pulsiert in animateCar)
+      Object.assign(C.paint, { metalness: 0.55, roughness: 0.16, clearcoat: 1, clearcoatRoughness: 0.03 });
+      C.paint.emissive = new THREE.Color(0xff1a00); C.paint.emissiveIntensity = 0.25;
+      C.paint.userData.pulse = true;
+    }
+    // Seitenprofil: Heckkante, kurzer Motordeckel, Gürtellinie, lange flache Haube, spitze Nase
+    const body = [[0, 0.2], [0, 0.48], [0.02, 0.53], [0.2, 0.56], [0.32, 0.6], [0.6, 0.6], [0.78, 0.5], [0.92, 0.38], [0.995, 0.27],
+      [1, 0.2], [0.97, 0.12], [0.03, 0.12]].map(([x, y]) => [X(x), y * H]);
+    const pts = roundPoly(body, 0.06);
+    C.bodyMesh = C.ext(pts, W - 0.16, C.paint, 0.08);
+    const dark = mat(0x0a0b0e, { roughness: 0.35, metalness: 0.4 }), glassM = mat(0x0c1118, { metalness: 0.75, roughness: 0.04 });
+    // Kuppel: ein Bogen vom Motordeckel über das Dach bis zur flachen Frontscheibe
+    // flacher Bogen; hinten in Wagenfarbe (Dach), vorne aus dunklem Glas (Front- und Seitenscheiben)
+    const arc = f => [X(0.27 + f * 0.5), (0.6 + Math.sin(Math.PI * Math.pow(f, 0.8)) * 0.25) * H];
+    const cut = 0.42, cw = W * 0.74, base = 0.6 * H;
+    const part = (f0, f1) => { const p = []; for (let k = 0; k <= 8; k++) p.push(arc(f0 + (f1 - f0) * k / 8)); return [[p[0][0], base], ...p, [p[8][0], base]]; };
+    C.ext(part(0, cut), cw, C.paint, 0.04);
+    C.ext(part(cut, 1), cw, glassM, 0.04);
+    C.decal(arc(cut)[0] - X(0.3), 0.2 * H, (X(0.3) + arc(cut)[0]) / 2, 0.72 * H, (g, w, h) => { // kleines Seitenfenster hinten
+      g.fillStyle = '#0c1118'; g.beginPath(); g.moveTo(w * 0.15, h); g.quadraticCurveTo(w * 0.55, h * 0.05, w, h * 0.05); g.lineTo(w, h); g.closePath(); g.fill();
+    }, cw / 2 + 0.025 - W / 2);
+    C.roofY = 0.86 * H; C.roofX = arc(0.45)[0];
+    // grosser Lufteinlass an der Seite (vor dem Hinterrad) und Kante darunter
+    C.ext([[X(0.27), 0.25 * H], [X(0.4), 0.5 * H], [X(0.47), 0.5 * H], [X(0.43), 0.25 * H]], W + 0.02, dark, 0.02);
+    // Front: drei eckige Lufteinlässe unten, Splitter
+    for (const [z, w] of [[0, 0.5], [-0.62, 0.42], [0.62, 0.42]]) C.box(0.08, 0.13, w, dark, L / 2 + 0.06, 0.2 * H, z);
+    C.box(0.45, 0.04, W * 0.9, dark, L / 2 - 0.12, 0.11 * H, 0);
+    // Scheinwerfer: dunkles Glas an den vorderen Ecken, darin ein leuchtendes „Y“
+    const head = new THREE.MeshStandardMaterial({ color: 0xffffff, emissive: 0xeaf6ff, emissiveIntensity: 2.4 });
+    const tailM = new THREE.MeshStandardMaterial({ color: 0x500000, emissive: 0xff1010, emissiveIntensity: 2.4 });
+    const slope = Math.atan2((0.38 - 0.27) * H, 0.075 * L), hy = 0.33 * H + 0.08;
     for (const sz of [-1, 1]) {
-      for (const [len, ry, dx] of [[0.34, 0.5, 0], [0.18, -0.6, -0.05]]) { // vorne an den Ecken, schmal und schräg
-        const h = C.box(len, 0.03, 0.05, head, X(0.972) + dx, 0.255 * H + 0.075, sz * (W / 2 - 0.3));
-        h.rotation.set(0, ry * sz, -hoodSlope);
-      }
-      for (const dy of [0.05, -0.05]) { // Rücklichter: zwei schmale Streifen pro Seite am Heck
-        const t = C.box(0.04, 0.04, 0.42, tail, -L / 2 + 0.02, 0.4 * H + dy, sz * (W / 2 - 0.4));
-        t.rotation.x = dy > 0 ? 0.25 * sz : -0.25 * sz;
+      const zc = sz * (W / 2 - 0.34);
+      const housing = C.box(0.4, 0.025, 0.14, glassM, X(0.955), hy, zc); // schmales, schräges Scheinwerferglas
+      housing.rotation.set(0, sz * 1.05, -slope);
+      const led = C.box(0.38, 0.02, 0.035, head, X(0.955), hy + 0.012, zc); // Lichtstreifen darin
+      led.rotation.set(0, sz * 1.05, -slope);
+      const led2 = C.box(0.16, 0.02, 0.03, head, X(0.94), hy + 0.01, zc + sz * 0.08); // kurzer Strich: Pfeil-Form
+      led2.rotation.set(0, sz * 0.1, -slope);
+      // Rücklicht: dunkles Band mit rotem Y
+      const tz = sz * (W / 2 - 0.36);
+      for (const [h, rx, dy] of [[0.24, 0, 0], [0.14, 0.8, 0.05], [0.14, -0.8, -0.05]]) {
+        const b = C.box(0.03, 0.035, h, tailM, -L / 2 + 0.06, 0.43 * H + dy, tz + (rx ? sz * 0.12 : 0));
+        b.rotation.x = rx * sz;
       }
     }
-    C.box(0.06, 0.1, W * 0.7, dark, L / 2 + 0.07, 0.2 * H, 0); // Lufteinlass vorne unten
-    C.box(0.5, 0.05, W * 0.92, dark, L / 2 - 0.15, 0.12 * H, 0); // Frontsplitter
-    for (let i = -3; i <= 3; i++) C.box(0.36, 0.18, 0.025, dark, -L / 2 + 0.16, 0.22 * H, i * 0.26); // Diffusor-Rippen
-    C.cyl(0.13, 0.13, 0.22, M.chrome, -L / 2 + 0.02, 0.3 * H, 0, [0, 0, PI / 2], 6); // sechseckiger Auspuff
-    C.cyl(0.09, 0.09, 0.05, mat(0x111111), -L / 2 - 0.09, 0.3 * H, 0, [0, 0, PI / 2], 6);
-    // Heckflügel auf zwei Stützen
-    for (const sz of [-0.55, 0.55]) C.box(0.1, 0.32, 0.06, dark, X(0.06), 0.62 * H, sz);
-    C.box(0.55, 0.06, W * 0.98, dark, X(0.06), 0.78 * H, 0);
-    // Leuchtlinie an der Seite, Name, Blitz
-    const glow = new THREE.MeshStandardMaterial({ color: 0xc084fc, emissive: 0xa855f7, emissiveIntensity: 2.2 });
-    for (const sz of [-1, 1]) C.box(L * 0.5, 0.03, 0.03, glow, X(0.62), 0.33 * H, sz * (W / 2 + 0.005));
-    C.decal(L * 0.36, H * 0.13, X(0.62), H * 0.43, text('LIONEL X', '#facc15'), 0.004);
-    // Räder: gross, goldene Felgen
-    C.wheelPair(X(0.19), r, 0.38, M.gold, 10); C.wheelPair(X(0.8), r, 0.34, M.gold, 10);
-    C.box(L * 0.84, 0.12, W * 0.8, M.dark, 0, 0.1 * H, 0); // Unterboden
-    // Radkästen und Türfuge wie bei den anderen Autos (sideDetails)
-    C.side = { pts, bottom: 0.14 * H, top: 0.63 * H, tall: false, doors: [X(0.66), X(0.36)], doorTop: 0.58 * H };
-    const under = new THREE.Mesh(new THREE.PlaneGeometry(L * 1.08, W * 1.4), // lila Neonlicht unter dem Auto
-      new THREE.MeshBasicMaterial({ color: 0xa855f7, map: M.shadow.map, transparent: true, opacity: 0.9, blending: THREE.AdditiveBlending, depthWrite: false }));
+    C.box(0.04, 0.16, W * 0.9, dark, -L / 2 + 0.04, 0.43 * H, 0); // dunkles Heckband
+    // Diffusor mit Rippen, vier Auspuffrohre in der Mitte
+    for (let i = -3; i <= 3; i++) C.box(0.32, 0.16, 0.025, dark, -L / 2 + 0.14, 0.2 * H, i * 0.24);
+    for (const z of [-0.33, -0.17, 0.17, 0.33]) {
+      C.box(0.18, 0.09, 0.13, M.chrome, -L / 2 + 0.03, 0.28 * H, z);
+      C.box(0.05, 0.06, 0.1, mat(0x111111), -L / 2 - 0.04, 0.28 * H, z);
+    }
+    C.box(0.36, 0.035, W * 0.7, dark, X(0.03), 0.56 * H + 0.03, 0); // kleiner Spoiler an der Heckkante
+    // Seitenschweller mit roter Leuchtlinie, Name, Unterboden
+    const glow = new THREE.MeshStandardMaterial({ color: 0xff4d4d, emissive: 0xff1a1a, emissiveIntensity: 2.2 });
+    for (const sz of [-1, 1]) { C.box(L * 0.56, 0.1, 0.06, dark, X(0.5), 0.15 * H, sz * (W / 2 - 0.01)); C.box(L * 0.52, 0.025, 0.03, glow, X(0.5), 0.205 * H, sz * (W / 2 + 0.025)); }
+    C.decal(L * 0.28, H * 0.11, X(0.58), H * 0.36, text('LIONEL X', '#ffffff'), 0.004);
+    C.box(L * 0.86, 0.1, W * 0.8, M.dark, 0, 0.08 * H, 0);
+    // grosse Räder: helle Felgen, rote Bremssättel
+    const rim = mat(0xd9dee6, { metalness: 1, roughness: 0.2 });
+    C.wheelPair(X(0.2), r, 0.4, rim, 10); C.wheelPair(X(0.82), r * 0.95, 0.34, rim, 10);
+    for (const [x, rr] of [[X(0.2), r], [X(0.82), r * 0.95]]) for (const sz of [-1, 1]) C.box(0.22, 0.14, 0.05, mat(0xd10000), x + 0.12, rr + 0.08, sz * (W / 2 - 0.2));
+    C.side = { pts, bottom: 0.12 * H, top: 0.6 * H, tall: false, doors: [X(0.68), X(0.4)], doorTop: 0.57 * H };
+    const under = new THREE.Mesh(new THREE.PlaneGeometry(L * 1.1, W * 1.45), // rotes Leuchten unter dem Auto (pulsiert)
+      new THREE.MeshBasicMaterial({ color: 0xff2a1a, map: M.shadow.map, transparent: true, opacity: 0.9, blending: THREE.AdditiveBlending, depthWrite: false }));
     under.rotation.x = -PI / 2; under.position.y = 0.07; under.renderOrder = 1;
+    under.userData.pulse = true;
     C.group.add(under);
   },
 });
-SPEC_HINT.lionelx = { width: 2.05 };
+SPEC_HINT.lionelx = { width: 2.0 };
 SPEC_HINT.candy = { arch: 'box' };
 SPEC_HINT.racetruck = { arch: 'pickup' };
 SPEC_HINT.hyper = { arch: 'sport' };
@@ -1957,5 +1971,8 @@ export function animateCar(mesh, t, special, flying = false) {
     if (u.blink) o.material.emissiveIntensity = Math.floor(t * 6 + (u.blink > 0 ? 1 : 0)) % 2 ? 3 : 0;
   });
   if (special === 'rainbow' && !mesh.userData.finish) mesh.userData.paint.color.setHSL((t * 0.25) % 1, 0.85, 0.5);
+  const paint = mesh.userData.paint; // Sonderfahrzeug: Lack und Unterboden-Leuchten pulsieren
+  if (paint && paint.userData.pulse) paint.emissiveIntensity = 0.2 + 0.18 * (1 + Math.sin(t * 3));
+  for (const o of mesh.children) if (o.userData.pulse) o.material.opacity = 0.6 + 0.35 * (1 + Math.sin(t * 3)) / 2;
   if (mesh.userData.shadow) mesh.userData.shadow.visible = !flying && mesh.position.y < 0.3;
 }
