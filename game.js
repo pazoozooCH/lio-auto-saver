@@ -1116,6 +1116,14 @@ function drawTune2D(c, x, y, w, h) {
     ctx.fillStyle = '#facc15';
     poly([[x + w * 0.25, sy + sh * 0.5], [x + w * 0.45, sy], [x + w * 0.44, sy + sh * 0.4], [x + w * 0.72, sy + sh * 0.5], [x + w * 0.52, sy + sh], [x + w * 0.53, sy + sh * 0.6]]);
   }
+  if (t.plate) { // eigenes Nummernschild hinten unten
+    const pw = 34, ph = 10, px = x + 3, py = y - h * 0.42;
+    ctx.fillStyle = '#f7f7f4'; ctx.strokeStyle = '#111'; ctx.lineWidth = 1;
+    rr(px, py, pw, ph, 2); ctx.fill(); ctx.stroke();
+    ctx.fillStyle = '#d52b1e'; ctx.fillRect(px + 2, py + 2, 5, 6);
+    ctx.fillStyle = '#111'; ctx.font = 'bold 7px system-ui, sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillText(t.plate, px + pw / 2 + 3, py + ph / 2 + 0.5, pw - 9);
+  }
   if (t.spoiler) {
     ctx.fillStyle = '#111214';
     ctx.fillRect(x + 6, top - 9, 4, 11);

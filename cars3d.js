@@ -292,10 +292,13 @@ function profileBody(C, name, opts = {}) {
     C.box(0.06, 0.2, W * 0.46, M.chrome, gx - 0.01, gy, 0);
     C.box(0.06, 0.15, W * 0.42, mat(0x0d0e10, { roughness: 0.35, metalness: 0.4 }), gx + 0.005, gy, 0);
   }
+  // Nummernschilder: vor die abgerundete Kante der Karosserie (die ist um bevelSize ≈ 0,08 m grösser als das Profil);
+  // eigene Schilder (Tuning) etwas grösser, damit man den Text lesen kann
+  const own = C.v.tune && C.v.tune.plate, ph = own ? 0.17 : 0.12, pw = own ? 0.72 : 0.5;
   const py = bottom + 0.2;
-  C.box(0.03, 0.12, 0.5, M.plate, edgeAt(pts, py, true) + 0.02, py, 0);
+  C.box(0.03, ph, pw, M.plate, edgeAt(pts, py, true) + 0.1, py, 0);
   const pyR = P.tall ? bottom + 0.25 : lyRear - 0.18;
-  C.box(0.03, 0.12, 0.5, M.plate, edgeAt(pts, pyR, false) - 0.02, pyR, 0);
+  C.box(0.03, ph, pw, M.plate, edgeAt(pts, pyR, false) - 0.1, pyR, 0);
   if (!opts.noExhaust) C.cyl(0.045, 0.05, 0.22, M.chrome, rx - 0.02, bottom + 0.03, W * 0.28, [0, 0, PI / 2], 12);
   C.box(L * 0.84, 0.16, W * 0.8, M.dark, 0, bottom - 0.03, 0); // Unterboden
 }

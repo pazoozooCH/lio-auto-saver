@@ -95,7 +95,7 @@ keys/<Schlüssel>: true                        Freundes-Schlüssel (nicht lesbar
 public/<CODE>: mode, name (Gastgeber), n (Spieler), state, created   Liste der öffentlichen Räume
 rooms/<CODE>/  host, key, created, mode (race|drag|city|stunt), state (lobby|running), start,
                round (= Rennen × 8 + Strecke: so wählt der Gastgeber die Strecke ohne eigenes Feld in den Regeln)
-rooms/<CODE>/players/<0–5>: uid, name, kind, color, special, ps
+rooms/<CODE>/players/<0–5>: uid, name, kind, color, special, ps, tune (wheels, spoiler, neon, sticker, plate, finish)
 rooms/<CODE>/tag:           it (wer dran ist, −1 = kein Fangis), by (wer gefangen hat), t (Serverzeit)
 scores/<uid>:                name, best (Stunt-Rekord), t                     Stunt-Rangliste
 stats/devices:               Anzahl Geräte, die das Spiel geöffnet haben (je Gerät einmal, nur +1 erlaubt)

@@ -210,6 +210,8 @@ function readForm() {
   store(LS.car, carId);
   const me = { name, kind: v.kind, color: String(v.color || '#888888').slice(0, 10), ps: Math.min(1000, Math.max(0, Math.round(v.ps))) };
   if (v.special) me.special = v.special;
+  const t = cleanTune(v.tune);
+  if (t) me.tune = t; // Tuning sehen auch die Mitspieler
   return me;
 }
 
@@ -233,7 +235,9 @@ const ACTIONS = {
       for (let tries = 0; tries < 8; tries++) {
         const code = String(1000 + Math.floor(Math.random() * 9000)); // vier Ziffern: schnell eingetippt
         if ((await fb.get(roomRef(code))).exists()) continue;
-        await fb.set(roomRef(code), { host: fb.uid, key, created: fb.serverTimestamp(), mode, state: 'lobby', round: 0, players: { 0: { uid: fb.uid, ...me } } });
+        const room0 = p => ({ host: fb.uid, key, created: fb.serverTimestamp(), mode, state: 'lobby', round: 0, players: { 0: { uid: fb.uid, ...p } } });
+        try { await fb.set(roomRef(code), room0(me)); }
+        catch (e) { if (!me.tune || !/permission/i.test(e.message)) throw e; const { tune, ...rest } = me; await fb.set(roomRef(code), room0(rest)); }
         if (isPublic) { // in die öffentliche Liste eintragen (verschwindet mit dem Raum)
           await fb.set(publicRef(code), { mode, name: me.name, n: 1, state: 'lobby', created: fb.serverTimestamp() });
           await fb.onDisconnect(publicRef(code)).remove();
@@ -263,9 +267,9 @@ const ACTIONS = {
       if (slot === undefined) {
         for (let s = 0; s < MAX_PLAYERS[data.mode]; s++) {
           if (players[s]) continue;
-          try { await fb.set(roomRef(code, 'players/' + s), { uid: fb.uid, ...me }); slot = s; break; } catch (e) { /* gerade besetzt */ }
+          try { await setPlayer(roomRef(code, 'players/' + s), { uid: fb.uid, ...me }); slot = s; break; } catch (e) { /* gerade besetzt */ }
         }
-      } else await fb.set(roomRef(code, 'players/' + slot), { uid: fb.uid, ...me });
+      } else await setPlayer(roomRef(code, 'players/' + slot), { uid: fb.uid, ...me });
       if (slot === undefined) { status('Der Raum ist schon voll.'); busy(false); return; }
       await enterRoom(code, +slot, false, data.round || 0);
     } catch (err) {
@@ -382,7 +386,25 @@ async function leaveRoom(byUser, msg = '') {
 // ---------- Rennen starten ----------
 function vehicleOf(p) {
   const kind = api.kinds[p.kind] ? p.kind : 'car';
-  return { kind, color: p.color, special: p.special || null, ps: p.ps };
+  return { kind, color: p.color, special: p.special || null, ps: p.ps, tune: cleanTune(p.tune) || undefined };
+}
+// Tuning für die Datenbank: nur bekannte Teile, kurz (die Regeln prüfen dasselbe)
+function cleanTune(t) {
+  if (!t) return null;
+  const o = {};
+  if (t.wheels) o.wheels = true;
+  if (t.spoiler) o.spoiler = true;
+  for (const [k, n] of [['neon', 9], ['sticker', 10], ['plate', 8], ['finish', 7]]) if (typeof t[k] === 'string' && t[k]) o[k] = t[k].slice(0, n);
+  return Object.keys(o).length ? o : null;
+}
+// Platz im Raum schreiben; lehnt die Datenbank ab (ältere Regeln ohne Tuning), nochmals ohne Tuning
+async function setPlayer(ref, data) {
+  try { await fb.set(ref, data); }
+  catch (e) {
+    if (!data.tune || !/permission/i.test(e.message)) throw e;
+    const { tune, ...rest } = data;
+    await fb.set(ref, rest);
+  }
 }
 
 // Bots für die freien Startplätze im Rennen (bis 6 Autos). Alle Geräte rechnen sie aus Raum-Code und Runde
@@ -416,6 +438,8 @@ async function launch(data) {
   const round = data.round, players = data.players, mySlot = room.slot, code = room.code;
   const others = Object.keys(players).filter(s => +s !== mySlot).map(s => ({ slot: +s, name: players[s].name, v: vehicleOf(players[s]) }));
   const myV = { ...vehicleOf(players[mySlot]), id: 'online', name: players[mySlot].name };
+  const own = api.fleet().find(f => f.id === load(LS.car));
+  if (own && own.kind === myV.kind && own.tune) myV.tune = own.tune; // eigenes Tuning immer
   const net = {
     mySlot, startAt: data.start, round, serverNow, remotes: others, seed: seedOf('race:' + code + ':' + round),
     send(s) { fb.set(roomRef(code, 'live/' + mySlot), { ...s, r: round, t: fb.serverTimestamp() }).catch(() => {}); },
@@ -460,6 +484,8 @@ async function launchFree(data) {
   // freier Text im Chat nur in privaten Räumen (die Regeln prüfen das auch); im Zweifel gilt der Raum als öffentlich
   const isPublic = await fb.get(publicRef(code)).then(snap => snap.exists()).catch(() => true);
   const myV = { ...vehicleOf(players[mySlot]), id: 'online', name: players[mySlot].name };
+  const own = api.fleet().find(f => f.id === load(LS.car));
+  if (own && own.kind === myV.kind && own.tune) myV.tune = own.tune; // eigenes Tuning immer
   const net = {
     mySlot, serverNow,
     players: () => (room && room.data && room.data.players) || {},

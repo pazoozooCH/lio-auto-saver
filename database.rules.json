@@ -75,6 +75,15 @@
             "color": { ".validate": "newData.isString() && newData.val().length <= 10" },
             "special": { ".validate": "newData.isString() && newData.val().length <= 10" },
             "ps": { ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 1000" },
+            "tune": {
+              "wheels": { ".validate": "newData.isBoolean()" },
+              "spoiler": { ".validate": "newData.isBoolean()" },
+              "neon": { ".validate": "newData.isString() && newData.val().length <= 9" },
+              "sticker": { ".validate": "newData.isString() && newData.val().length <= 10" },
+              "plate": { ".validate": "newData.isString() && newData.val().length <= 8" },
+              "finish": { ".validate": "newData.isString() && newData.val().length <= 7" },
+              "$other": { ".validate": false }
+            },
             "$other": { ".validate": false }
           }
         },

@@ -80,11 +80,11 @@ export function makeNetCars({ scene, kinds, net }) {
         const l = net.latest(slot);
         const fresh = l && now - l.t < 5000;
         let c = cars.get(slot);
-        const key = p.kind + '|' + p.color + '|' + (p.special || '');
+        const key = p.kind + '|' + p.color + '|' + (p.special || '') + '|' + JSON.stringify(p.tune || {});
         if (c && c.key !== key) { remove(slot); c = null; } // anderes Auto gewählt
         if (!fresh) { if (c) c.mesh.visible = c.tag.visible = false; continue; }
         if (!c) {
-          const mesh = buildCar({ kind: kinds[p.kind] ? p.kind : 'car', color: p.color, special: p.special || null }, kinds);
+          const mesh = buildCar({ kind: kinds[p.kind] ? p.kind : 'car', color: p.color, special: p.special || null, tune: p.tune || undefined }, kinds);
           mesh.rotation.order = 'YZX';
           const tag = nameTag(p.name, p.color || '#fff');
           scene.add(mesh, tag);
