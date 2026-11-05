@@ -1958,7 +1958,7 @@ Object.assign(BUILD, {
     under.userData.pulse = true;
     C.group.add(under);
     // links und rechts je ein galoppierender Stier, darüber schwebt „ADMIN“
-    for (const sz of [-1, 1]) C.body.add(bull(sz * (W / 2 + 1.1), sz));
+    for (const sz of [-1, 1]) C.body.add(bull(sz * (W / 2 + 0.8), sz));
     C.body.add(floatingLabel('ADMIN', 0.94 * H + 1.3));
   },
 });
@@ -1968,9 +1968,9 @@ Object.assign(BUILD, {
 function bull(z, side) {
   const g = new THREE.Group();
   g.position.set(0.2, 0, z);
-  g.scale.setScalar(0.8);
+  g.scale.setScalar(0.55);
   g.userData.bob = { base: 0, phase: side > 0 ? 0 : 1.6 };
-  const hide = mat(0x2a1a12, { roughness: 0.8 }), dark = mat(0x140c08, { roughness: 0.9 }), horn = mat(0xf1e4c8, { roughness: 0.5 });
+  const hide = mat(0xc8100a, { roughness: 0.45, metalness: 0.2 }), dark = mat(0x3a0503, { roughness: 0.8 }), horn = mat(0xf1e4c8, { roughness: 0.5 });
   const add = (m, x, y, zz) => { m.position.set(x, y, zz); m.castShadow = true; g.add(m); return m; };
   const body = add(new THREE.Mesh(new THREE.CapsuleGeometry(0.42, 1.0, 6, 12), hide), 0, 1.15, 0);
   body.rotation.z = PI / 2;
@@ -1983,7 +1983,7 @@ function bull(z, side) {
   for (const s2 of [-1, 1]) {
     const h1 = hm(new THREE.Mesh(new THREE.ConeGeometry(0.06, 0.42, 8), horn), 0.12, 0.2, s2 * 0.3);
     h1.rotation.set(s2 * 1.1, 0, -0.3); // Horn zur Seite und nach vorne
-    hm(new THREE.Mesh(new THREE.SphereGeometry(0.05, 8, 6), new THREE.MeshStandardMaterial({ color: 0x300000, emissive: 0xff2200, emissiveIntensity: 2.5 })), 0.38, 0.06, s2 * 0.16);
+    hm(new THREE.Mesh(new THREE.SphereGeometry(0.05, 8, 6), new THREE.MeshStandardMaterial({ color: 0x302000, emissive: 0xffd000, emissiveIntensity: 2.5 })), 0.38, 0.06, s2 * 0.16);
   }
   const ring = hm(new THREE.Mesh(new THREE.TorusGeometry(0.06, 0.015, 6, 12), mat(0xd4af37, { metalness: 1, roughness: 0.3 })), 0.6, -0.2, 0); // Nasenring
   ring.rotation.y = PI / 2;
@@ -2033,7 +2033,7 @@ export function animateCar(mesh, t, special, flying = false) {
     if (u.rainbow) o.material.color.setHSL((t * 0.3) % 1, 0.85, 0.6);
     if (u.blink) o.material.emissiveIntensity = Math.floor(t * 6 + (u.blink > 0 ? 1 : 0)) % 2 ? 3 : 0;
     if (u.gallop !== undefined) o.rotation.z = Math.sin(t * 11 + u.gallop) * 0.65; // Stier: Beine im Galopp
-    if (u.bob) o.position.y = Math.abs(Math.sin(t * 5.5 + u.bob.phase)) * 0.18;
+    if (u.bob) o.position.y = Math.abs(Math.sin(t * 5.5 + u.bob.phase)) * 0.1;
     if (u.nod !== undefined) o.rotation.z = Math.sin(t * 11 + u.nod) * 0.12;
     if (u.tail !== undefined) o.rotation.x = Math.sin(t * 7 + u.tail) * 0.5;
     if (u.float !== undefined) o.position.y = u.float + Math.sin(t * 2) * 0.15; // schwebende Schrift
