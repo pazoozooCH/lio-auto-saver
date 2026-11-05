@@ -2361,6 +2361,16 @@ function drawCar(c) {
       drawSparkle(x + 8 + fx * (w - 16), y - h + 6 + fy * (h * 0.6), 6 * glow);
     }
   }
+  if (c.kind === 'lionelx') { // „ADMIN“ schwebt über LIONEL X
+    ctx.save();
+    ctx.font = 'bold 18px system-ui, sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.shadowColor = '#ff2a1a'; ctx.shadowBlur = 12;
+    ctx.lineWidth = 4; ctx.strokeStyle = '#7f0000';
+    const ay = top - 40 + Math.sin(time * 2) * 3;
+    ctx.strokeText('ADMIN', x + w / 2, ay);
+    ctx.fillStyle = '#ffd5cc'; ctx.fillText('ADMIN', x + w / 2, ay);
+    ctx.restore();
+  }
   ctx.restore();
 }
 

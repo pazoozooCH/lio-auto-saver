@@ -1900,9 +1900,15 @@ Object.assign(BUILD, {
     const part = (f0, f1) => { const p = []; for (let k = 0; k <= 8; k++) p.push(arc(f0 + (f1 - f0) * k / 8)); return [[p[0][0], base], ...p, [p[8][0], base]]; };
     C.ext(part(0, cut), cw, C.paint, 0.04);
     C.ext(part(cut, 1), cw, glassM, 0.04);
-    C.decal(arc(cut)[0] - X(0.3), 0.2 * H, (X(0.3) + arc(cut)[0]) / 2, 0.72 * H, (g, w, h) => { // kleines Seitenfenster hinten
-      g.fillStyle = '#0c1118'; g.beginPath(); g.moveTo(w * 0.15, h); g.quadraticCurveTo(w * 0.55, h * 0.05, w, h * 0.05); g.lineTo(w, h); g.closePath(); g.fill();
-    }, cw / 2 + 0.025 - W / 2);
+    { // kleines Seitenfenster hinten, steigt nach vorne zur Glaskuppel an (als Teil, damit beide Seiten gleich sind)
+      const x0 = X(0.3), x1 = arc(cut)[0], ww = x1 - x0, y0 = 0.62 * H, y1 = 0.81 * H, win = [[x0 + ww * 0.15, y0]];
+      for (let k = 1; k <= 8; k++) { // Bogen wie quadraticCurveTo
+        const t = k / 8, a0 = (1 - t) * (1 - t), a1 = 2 * t * (1 - t), a2 = t * t;
+        win.push([a0 * (x0 + ww * 0.15) + a1 * (x0 + ww * 0.55) + a2 * x1, a0 * y0 + a1 * y1 + a2 * y1]);
+      }
+      win.push([x1, y0]);
+      C.ext(win, cw + 0.05, glassM, 0.01);
+    }
     C.roofY = 0.86 * H; C.roofX = arc(0.45)[0];
     // grosser Lufteinlass an der Seite (vor dem Hinterrad) und Kante darunter
     C.ext([[X(0.27), 0.25 * H], [X(0.4), 0.5 * H], [X(0.47), 0.5 * H], [X(0.43), 0.25 * H]], W + 0.02, dark, 0.02);
@@ -1951,8 +1957,65 @@ Object.assign(BUILD, {
     under.rotation.x = -PI / 2; under.position.y = 0.07; under.renderOrder = 1;
     under.userData.pulse = true;
     C.group.add(under);
+    // links und rechts je ein galoppierender Stier, darüber schwebt „ADMIN“
+    for (const sz of [-1, 1]) C.body.add(bull(sz * (W / 2 + 1.1), sz));
+    C.body.add(floatingLabel('ADMIN', 0.94 * H + 1.3));
   },
 });
+
+// Stier (eigene einfache Form): Körper, Kopf mit Hörnern, glühende Augen, vier Beine mit Gelenk oben, Schwanz.
+// Beine, Kopf und Schwanz bewegen sich in animateCar (userData.gallop / bob / tail)
+function bull(z, side) {
+  const g = new THREE.Group();
+  g.position.set(0.2, 0, z);
+  g.scale.setScalar(0.8);
+  g.userData.bob = { base: 0, phase: side > 0 ? 0 : 1.6 };
+  const hide = mat(0x2a1a12, { roughness: 0.8 }), dark = mat(0x140c08, { roughness: 0.9 }), horn = mat(0xf1e4c8, { roughness: 0.5 });
+  const add = (m, x, y, zz) => { m.position.set(x, y, zz); m.castShadow = true; g.add(m); return m; };
+  const body = add(new THREE.Mesh(new THREE.CapsuleGeometry(0.42, 1.0, 6, 12), hide), 0, 1.15, 0);
+  body.rotation.z = PI / 2;
+  add(new THREE.Mesh(new THREE.SphereGeometry(0.5, 14, 10), hide), 0.38, 1.28, 0).scale.set(1, 1, 0.85); // Buckel vorne
+  const head = new THREE.Group(); head.position.set(0.95, 1.32, 0); g.add(head);
+  head.userData.nod = side > 0 ? 0 : 1.6;
+  const hm = (m, x, y, zz) => { m.position.set(x, y, zz); m.castShadow = true; head.add(m); return m; };
+  hm(new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.42, 0.4), hide), 0.18, -0.05, 0);
+  hm(new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.26, 0.34), dark), 0.48, -0.14, 0); // Schnauze
+  for (const s2 of [-1, 1]) {
+    const h1 = hm(new THREE.Mesh(new THREE.ConeGeometry(0.06, 0.42, 8), horn), 0.12, 0.2, s2 * 0.3);
+    h1.rotation.set(s2 * 1.1, 0, -0.3); // Horn zur Seite und nach vorne
+    hm(new THREE.Mesh(new THREE.SphereGeometry(0.05, 8, 6), new THREE.MeshStandardMaterial({ color: 0x300000, emissive: 0xff2200, emissiveIntensity: 2.5 })), 0.38, 0.06, s2 * 0.16);
+  }
+  const ring = hm(new THREE.Mesh(new THREE.TorusGeometry(0.06, 0.015, 6, 12), mat(0xd4af37, { metalness: 1, roughness: 0.3 })), 0.6, -0.2, 0); // Nasenring
+  ring.rotation.y = PI / 2;
+  // Beine: Drehpunkt an der Hüfte, damit sie schwingen
+  [[0.5, 0.25, 0], [0.5, -0.25, Math.PI], [-0.5, 0.25, Math.PI], [-0.5, -0.25, 0]].forEach(([x, zz, ph]) => {
+    const hip = new THREE.Group(); hip.position.set(x, 0.95, zz); g.add(hip);
+    const leg = new THREE.Mesh(new THREE.CylinderGeometry(0.1, 0.08, 0.85, 8), hide); leg.position.y = -0.42; leg.castShadow = true; hip.add(leg);
+    const hoof = new THREE.Mesh(new THREE.CylinderGeometry(0.1, 0.11, 0.1, 8), dark); hoof.position.y = -0.88; hip.add(hoof);
+    hip.userData.gallop = ph + (side > 0 ? 0 : 1.6);
+  });
+  const tail = new THREE.Group(); tail.position.set(-0.9, 1.3, 0); g.add(tail);
+  const tm = new THREE.Mesh(new THREE.CylinderGeometry(0.025, 0.035, 0.6, 6), hide); tm.position.y = -0.3; tail.add(tm);
+  const tuft = new THREE.Mesh(new THREE.SphereGeometry(0.08, 8, 6), dark); tuft.position.y = -0.62; tail.add(tuft);
+  tail.rotation.z = 0.5; tail.userData.tail = side > 0 ? 0 : 1.6;
+  return g;
+}
+
+// Leuchtende Schrift, die in der Luft schwebt (wippt in animateCar)
+function floatingLabel(textStr, y) {
+  const c = document.createElement('canvas'); c.width = 512; c.height = 128;
+  const g = c.getContext('2d');
+  g.font = 'bold 96px system-ui, sans-serif'; g.textAlign = 'center'; g.textBaseline = 'middle';
+  g.shadowColor = '#ff2a1a'; g.shadowBlur = 28;
+  g.lineWidth = 10; g.strokeStyle = '#7f0000'; g.strokeText(textStr, 256, 66);
+  g.fillStyle = '#ffd5cc'; g.fillText(textStr, 256, 66);
+  const tex = new THREE.CanvasTexture(c); tex.colorSpace = THREE.SRGBColorSpace;
+  const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, transparent: true, depthWrite: false }));
+  s.scale.set(3.2, 0.8, 1);
+  s.position.y = y;
+  s.userData.float = y;
+  return s;
+}
 SPEC_HINT.lionelx = { width: 2.0 };
 SPEC_HINT.candy = { arch: 'box' };
 SPEC_HINT.racetruck = { arch: 'pickup' };
@@ -1969,6 +2032,11 @@ export function animateCar(mesh, t, special, flying = false) {
     if (u.flame) { o.visible = flying; o.scale.set(1, 0.8 + Math.random() * 0.5, 1); }
     if (u.rainbow) o.material.color.setHSL((t * 0.3) % 1, 0.85, 0.6);
     if (u.blink) o.material.emissiveIntensity = Math.floor(t * 6 + (u.blink > 0 ? 1 : 0)) % 2 ? 3 : 0;
+    if (u.gallop !== undefined) o.rotation.z = Math.sin(t * 11 + u.gallop) * 0.65; // Stier: Beine im Galopp
+    if (u.bob) o.position.y = Math.abs(Math.sin(t * 5.5 + u.bob.phase)) * 0.18;
+    if (u.nod !== undefined) o.rotation.z = Math.sin(t * 11 + u.nod) * 0.12;
+    if (u.tail !== undefined) o.rotation.x = Math.sin(t * 7 + u.tail) * 0.5;
+    if (u.float !== undefined) o.position.y = u.float + Math.sin(t * 2) * 0.15; // schwebende Schrift
   });
   if (special === 'rainbow' && !mesh.userData.finish) mesh.userData.paint.color.setHSL((t * 0.25) % 1, 0.85, 0.5);
   const paint = mesh.userData.paint; // Sonderfahrzeug: Lack und Unterboden-Leuchten pulsieren
