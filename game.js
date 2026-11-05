@@ -2777,27 +2777,6 @@ function drawVersion() {
 
 // Wer das Spiel gemacht hat: klein oben rechts auf dem Startbildschirm (unter dem Update-Knopf, falls er da ist)
 const creditsY = () => appUpdate.info ? UPDATE_BTN.y + UPDATE_BTN.h + 10 : 16;
-const creditsArea = () => ({ x: W - 190, y: creditsY() - 6, w: 186, h: 46 });
-// Geheimtrick: 5× innert 3 Sekunden auf „Ersteller: LIONEL“ tippen = Sonderfahrzeug LIONEL X.
-// Ging nur kurz nach diesem Update (bis SECRET_UNTIL), damit es nur Lionel bekommt.
-const SECRET_UNTIL = 1793908866000; // 05.11.2026 21:01
-let secretTaps = [];
-function creditsTap() {
-  const now = Date.now();
-  secretTaps = secretTaps.filter(t => now - t < 3000);
-  secretTaps.push(now);
-  if (secretTaps.length < 5) return;
-  secretTaps = [];
-  if (now > SECRET_UNTIL) return; // vorbei
-  if (fleet.some(v => v.kind === 'lionelx')) { showMenuMsg('Du hast LIONEL X schon! ⚡', 3); return; }
-  const v = makeVehicle('lionelx');
-  fleet.push(v);
-  if (selectedIds.size < MAX_SELECTED) selectedIds.add(v.id);
-  raceVehicleId = v.id;
-  storeJSON('autoRetterFleet', fleet); storeJSON('autoRetterRaceCar', v.id); saveSelection();
-  openMenu('reveal');
-  reveal = { v, gate: { name: '⚡ Geheimgarage', color: '#4c1d95' }, t: 0, burst: false };
-}
 function drawCredits() {
   const y = creditsY();
   ctx.textAlign = 'right';
@@ -4424,7 +4403,6 @@ canvas.addEventListener('pointerdown', e => {
       if (inRect(px, py, QUIT_BTN)) quitApp();
       else if (appUpdate.info && inRect(px, py, UPDATE_BTN)) applyUpdate();
       else if (inRect(px, py, VERSION_AREA)) secretTap();
-      else if (inRect(px, py, creditsArea())) creditsTap();
       else if (inRect(px, py, RACE_BTN)) openMenu('racemenu');
       else if (inRect(px, py, DRAG_BTN)) openDragMenu();
       else if (inRect(px, py, ONLINE_BTN)) openOnline();
