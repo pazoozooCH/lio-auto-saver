@@ -17,6 +17,8 @@ und nochmals, damit es weiterfährt – so kommen alle heil zum Ausgang.
 - Fahrzeugpark mit 110 Fahrzeugen in fünf Seltenheitsstufen, viele mit Spezialkräften
 - Shop mit Garagentoren (Holz bis Obsidian), Spezial-Lacke (Gold, Regenbogen, Diamant, Obsidian);
   in der Lack-Garage Lack-Dosen ziehen und auf eigene Fahrzeuge sprühen (der alte Lack kommt zurück in die Dose)
+- 3D-Ansicht: in Werkstatt, Rennmenü und Sammlung ein Fahrzeug antippen und mit dem Finger rundherum drehen;
+  beim Fahren wechselt 📷 (Taste V) die Kamera: hinten, Seite, vorne, oben
 - Tuning-Werkstatt (im Rennmenü): grosse Räder, Spoiler, Neonlicht, Sticker, eigenes Nummernschild und die Lacke
   Chrom, Neon und Lava – kostet Münzen, sieht man in 2D und 3D
 - Münzen sammeln, Fahrzeuge verkaufen, Level werden schnell schwieriger

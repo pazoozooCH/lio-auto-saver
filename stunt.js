@@ -9,7 +9,7 @@ import { makeNoise, rng, smoothstep, surface, terrain, cloudDome } from './world
 import { createCarSound, crash, gearbox } from './sound.js';
 import { makeNetCars } from './netcars.js';
 import { makeChat } from './chat.js';
-import { makeEffects } from './fx.js';
+import { makeEffects, camView, CAM_NAMES } from './fx.js';
 
 const G = 9.81;
 const EDGE = 188;               // so weit geht der Platz (±)
@@ -603,6 +603,8 @@ const CSS = `
 #stunt .board { position: absolute; top: 76px; left: 12px; background: rgba(0,0,0,.45); border-radius: 10px; padding: 4px 10px; font-size: 14px; }
 #stunt .board[hidden] { display: none; }
 #stunt .air { position: absolute; top: 22%; width: 100%; text-align: center; font-size: 24px; font-weight: 900; text-shadow: 0 2px 8px rgba(0,0,0,.7); pointer-events: none; }
+#stunt .cam { position: absolute; top: 58px; right: 12px; width: 42px; height: 42px; border-radius: 50%; border: none;
+  background: rgba(0,0,0,.55); color: #fff; font-size: 20px; }
 #stunt .quit { position: absolute; top: 10px; right: 12px; width: 42px; height: 42px; border-radius: 50%; border: none;
   background: rgba(0,0,0,.55); color: #fff; font-size: 20px; }
 #stunt .reset { position: absolute; top: 10px; left: 12px; width: 58px; height: 58px; border-radius: 50%; border: 3px solid rgba(255,255,255,.65);
@@ -630,6 +632,7 @@ function buildDom() {
     <div class="score">⭐ <span class="pts">0</span><small class="best"></small></div>
     <div class="board" hidden></div>
     <button class="quit" title="Stuntpark verlassen">✕</button>
+    <button class="cam" title="Kamera wechseln (V)">📷</button>
     <div class="air"></div>
     <div class="msg"></div>
     <div class="speed"><span class="kmh">0</span> km/h<small class="ps"></small></div>
@@ -652,6 +655,7 @@ function buildDom() {
   }
   if (touch) ui.hint.style.display = 'none';
   $('.quit').addEventListener('pointerdown', e => { e.preventDefault(); if (P) endStunt(); });
+  $('.cam').addEventListener('pointerdown', e => { e.preventDefault(); nextCam(); });
   $('.reset').addEventListener('pointerdown', e => { e.preventDefault(); if (P) { resetCar(P.me); P.combo = 0; } });
   root.addEventListener('contextmenu', e => e.preventDefault());
   return ui;
@@ -659,9 +663,17 @@ function buildDom() {
 
 const KEYS = { ArrowLeft: 'left', KeyA: 'left', ArrowRight: 'right', KeyD: 'right', ArrowUp: 'gas', KeyW: 'gas', ArrowDown: 'brake', KeyS: 'brake',
   Space: 'drift', ShiftLeft: 'drift', ShiftRight: 'drift' };
+// Kamera wechseln (bleibt eingestellt)
+let camMode = 0;
+function nextCam() {
+  if (!P) return;
+  camMode = (camMode + 1) % CAM_NAMES.length;
+  showMsg(CAM_NAMES[camMode], 1);
+}
 function onKey(e) {
   if (!P || (e.target && e.target.tagName === 'INPUT')) return; // im Chat wird geschrieben, nicht gefahren
   if (e.code === 'KeyR' && e.type === 'keydown') { resetCar(P.me); P.combo = 0; return; }
+  if (e.code === 'KeyV' && e.type === 'keydown') { nextCam(); e.preventDefault(); return; }
   const k = KEYS[e.code];
   if (!k) return;
   P.input[k] = e.type === 'keydown';
@@ -782,7 +794,7 @@ function render(dt) {
     const L = me.loop.L, far = -28 * L.R / 9;
     camWant.set(L.x - L.s * far, L.R * 0.9, L.z + L.c * far);
     camAt.set(L.x, L.R * 0.9, L.z + L.c * L.shift / 2);
-  } else {
+  } else if (!camView(camMode, me.x, me.y, me.z, me.camH, camWant, camAt)) {
     const fx = Math.cos(me.camH), fz = Math.sin(me.camH), back = 9 + Math.abs(me.speed) * 0.03;
     camWant.set(me.x - fx * back, me.y + 3.6, me.z - fz * back);
     camAt.set(me.x + fx * 5, me.y + 1.2, me.z + fz * 5);

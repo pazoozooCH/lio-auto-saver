@@ -74,3 +74,15 @@ export function makeEffects(scene) {
     clear() { sp.fill(0); sGeo.attributes.position.needsUpdate = true; for (const p of parts) p.life = p.max; last[0] = last[1] = null; },
   };
 }
+
+// Kamera beim Fahren: 0 = hinter dem Auto, 1 = seitlich, 2 = von vorne, 3 = von oben (Taste 📷 oder V wechselt)
+export const CAM_NAMES = ['📷 Kamera: hinten', '📷 Kamera: Seite', '📷 Kamera: vorne', '📷 Kamera: oben'];
+// Wohin die Kamera soll (want) und wohin sie schaut (look) für ein Auto bei (x, y, z) mit Richtung heading.
+// back: Abstand für die normale Ansicht; gibt null für Modus 0 zurück (dann rechnet der Modus selbst)
+export function camView(mode, x, y, z, heading, want, look) {
+  const fx = Math.cos(heading), fz = Math.sin(heading);
+  if (mode === 1) { want.set(x - fz * 7.5, y + 2.2, z + fx * 7.5); look.set(x, y + 0.7, z); return true; }
+  if (mode === 2) { want.set(x + fx * 8.5, y + 2.4, z + fz * 8.5); look.set(x, y + 0.8, z); return true; }
+  if (mode === 3) { want.set(x - fx * 3, y + 26, z - fz * 3); look.set(x + fx * 3, y, z + fz * 3); return true; }
+  return false;
+}

@@ -2822,7 +2822,7 @@ function drawQuit() {
 // auf dem Startbildschirm ein Update-Knopf; kommt man auf dem Startbildschirm in die App zurück, wird gleich aktualisiert.
 // APP_FILES: alle Dateien des Spiels (beim Hinzufügen einer Datei hier ergänzen).
 const APP_FILES = ['./', 'index.html', 'game.js', 'version.js', 'press3d.js', 'race.js', 'drag.js', 'cars3d.js', 'world3d.js',
-  'online.js', 'sound.js', 'city.js', 'tracks.js', 'stunt.js', 'netcars.js', 'chat.js', 'fx.js', 'manifest.webmanifest', 'icon-192.png', 'icon-512.png', 'apple-touch-icon.png', 'favicon.png'];
+  'online.js', 'sound.js', 'city.js', 'tracks.js', 'stunt.js', 'netcars.js', 'chat.js', 'fx.js', 'viewer.js', 'manifest.webmanifest', 'icon-192.png', 'icon-512.png', 'apple-touch-icon.png', 'favicon.png'];
 const UPDATE_BTN = { x: W - 262, y: 14, w: 248, h: 46 };
 const appUpdate = { info: null, busy: false, last: 0 };
 
@@ -3280,11 +3280,17 @@ function drawCollection() {
 
   if (collectionPage > 0) drawButton(PREV_BTN, '◀ Zurück', '#444b5c', 20);
   if (collectionPage < pages - 1) drawButton(NEXT_BTN, 'Weiter ▶', '#3657b8', 20);
-  drawMenuMsg('Grün = hast du schon (×Anzahl)  ·  🔒 = fehlt noch  ·  Seite ' + (collectionPage + 1) + '/' + pages);
+  drawMenuMsg('Grün = hast du schon (antippen = 3D)  ·  🔒 = fehlt noch  ·  Seite ' + (collectionPage + 1) + '/' + pages);
 }
 
 function collectionTap(px, py) {
   const pages = pageCount(collectionKinds().length);
+  for (const card of gridCards(collectionKinds(), collectionPage)) { // eigenes Fahrzeug antippen = 3D-Ansicht
+    if (!inRect(px, py, card)) continue;
+    const mine = fleet.filter(v => v.kind === card.item).sort((a, b) => vehicleValue(b) - vehicleValue(a));
+    if (mine.length) show3D(mine[0]); else showMenuMsg('Das hast du noch nicht – zieh es im Shop! 🔒');
+    return;
+  }
   if (inRect(px, py, BACK_BTN)) openMenu('shop');
   else if (collectionPage > 0 && inRect(px, py, PREV_BTN)) collectionPage--;
   else if (collectionPage < pages - 1 && inRect(px, py, NEXT_BTN)) collectionPage++;
@@ -3528,10 +3534,12 @@ function drawTuning() {
   ctx.fillText('⚡ ' + v.ps + ' PS', 220, 142);
   const parts = [t.wheels && '🛞', t.spoiler && '🪽', t.neon && '💡', t.sticker && STICKER_ICON[t.sticker], t.plate && '🔤 ' + t.plate, t.finish && '✨ ' + FINISH[t.finish].name].filter(Boolean);
   ctx.fillStyle = 'rgba(255,255,255,0.75)'; ctx.font = '16px system-ui, sans-serif';
-  ctx.fillText(parts.length ? 'Eingebaut: ' + parts.join('  ') : 'Noch nichts eingebaut', 220, 400);
+  ctx.fillText(parts.length ? 'Eingebaut: ' + parts.join('  ') : 'Noch nichts eingebaut', 220, 396);
   if (fleet.length > 1) { drawButton(TUNE_PREV, '◀', '#444b5c', 24); drawButton(TUNE_NEXT, '▶', '#444b5c', 24); }
+  drawButton(TUNE_3D_BTN, '🔄 3D', '#0e7490', 16);
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
   ctx.font = '13px system-ui, sans-serif'; ctx.fillStyle = 'rgba(255,255,255,0.55)';
-  ctx.fillText('Mit diesem Auto fährst du Rennen, Stadt und Stuntpark', 220, 455);
+  ctx.fillText('Mit diesem Auto fährst du Rennen, Stadt und Stuntpark', 220, 464);
 
   TUNE_ROWS.forEach((row, i) => {
     const y = tuneRowY(i);
@@ -3563,6 +3571,15 @@ function drawTuning() {
   drawMenuMsg('Antippen = einbauen (kostet Münzen)  ·  Ausbauen ist gratis, gibt aber nichts zurück', 505);
   drawParticles();
 }
+
+// 3D-Ansicht eines Fahrzeugs (viewer.js): rundherum drehen und zoomen
+function show3D(v) {
+  const k = KINDS[v.kind];
+  import('./viewer.js')
+    .then(m => m.openViewer({ v, kinds: KINDS, title: k.name + (v.special ? '  ' + specialLabel(v) : ''), sub: TIERS[k.tier].label + ' · ⚡ ' + v.ps + ' PS' }))
+    .catch(() => showMenuMsg('Die 3D-Ansicht braucht Internet.'));
+}
+const TUNE_3D_BTN = { x: 150, y: 418, w: 140, h: 34 }, RACE_3D_BTN = { x: 786, y: 390, w: 150, h: 40 };
 
 // Text eingeben: eigenes Feld über dem Spiel (window.prompt ist auf Handys, im Vollbild und in der
 // installierten App oft blockiert). onDone(text) nur bei OK.
@@ -3605,6 +3622,7 @@ function tuneSave(v, text, x, y) {
 
 function tuningTap(px, py) {
   if (inRect(px, py, BACK_BTN)) { openMenu('racemenu'); return; }
+  if (inRect(px, py, TUNE_3D_BTN) || inRect(px, py, { x: 90, y: 170, w: 260, h: 200 })) { show3D(raceVehicle()); return; }
   const list = fleetByPS();
   const step = inRect(px, py, TUNE_PREV) ? -1 : inRect(px, py, TUNE_NEXT) ? 1 : 0;
   if (step && list.length > 1) {
@@ -3858,6 +3876,7 @@ function drawRaceMenu() {
   }
 
   drawButton(TUNE_BTN, '🔧 TUNING', '#7c3aed', 18);
+  drawButton(RACE_3D_BTN, '🔄 3D', '#0e7490', 18);
   drawButton(RACE_GO_BTN, '🏁 RENNEN STARTEN', '#c0392b', 24);
   drawMenuMsg('Mehr PS = schneller! PS trainierst du in der Presse: retten +1, zerquetscht −3.', 452);
   drawParticles();
@@ -3884,6 +3903,7 @@ function raceMenuTap(px, py) {
     return;
   }
   if (inRect(px, py, TUNE_BTN)) { openMenu('tuning'); return; }
+  if (inRect(px, py, RACE_3D_BTN) || inRect(px, py, { x: 500, y: 300, w: 250, h: 105 })) { show3D(raceVehicle()); return; }
   const list = fleetByPS();
   const step = inRect(px, py, RACE_PREV_BTN) ? -1 : inRect(px, py, RACE_NEXT_BTN) ? 1 : 0;
   if (step && list.length > 1) {

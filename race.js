@@ -1,7 +1,7 @@
 // Rennstrecke in 3D (three.js). Wird von game.js erst geladen, wenn ein Rennen startet.
 import * as THREE from 'three';
 import { Sky } from 'three/addons/objects/Sky.js';
-import { makeEffects } from './fx.js';
+import { makeEffects, camView, CAM_NAMES } from './fx.js';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { buildCar, animateCar, warmUp, makeQuality, mergeStatic } from './cars3d.js';
@@ -682,6 +682,8 @@ const CSS = `
 #race .mirror { position: absolute; top: 10px; border: 3px solid #15161a; border-radius: 10px; margin: -3px;
   box-shadow: 0 2px 10px rgba(0,0,0,.5); pointer-events: none; }
 #race .minimap { position: absolute; top: 10px; right: 62px; background: rgba(0,0,0,.4); border-radius: 10px; }
+#race .cam { position: absolute; top: 58px; right: 12px; width: 42px; height: 42px; border-radius: 50%; border: none;
+  background: rgba(0,0,0,.55); color: #fff; font-size: 20px; }
 #race .quit { position: absolute; top: 10px; right: 12px; width: 42px; height: 42px; border-radius: 50%; border: none;
   background: rgba(0,0,0,.55); color: #fff; font-size: 20px; }
 #race .lights { position: absolute; top: 18%; left: 50%; transform: translateX(-50%); display: flex; gap: 12px;
@@ -710,6 +712,7 @@ function buildDom() {
     <div class="top"><div class="pill pos">P6/6</div><div class="pill lap">Runde 1/3</div></div>
     <canvas class="minimap" width="170" height="120"></canvas>
     <button class="quit" title="Rennen beenden">✕</button>
+    <button class="cam" title="Kamera wechseln (V)">📷</button>
     <div class="lights"><span></span><span></span><span></span><span></span><span></span></div>
     <div class="mirror"></div>
     <div class="msg"></div>
@@ -740,13 +743,22 @@ function buildDom() {
   }
   if (touch) ui.hint.style.display = 'none';
   ui.quit.addEventListener('pointerdown', e => { e.preventDefault(); if (race) endRace(true); });
+  root.querySelector('.cam').addEventListener('pointerdown', e => { e.preventDefault(); nextCam(); });
   root.addEventListener('contextmenu', e => e.preventDefault());
   return ui;
 }
 
 const KEYS = { ArrowLeft: 'left', KeyA: 'left', ArrowRight: 'right', KeyD: 'right', ArrowUp: 'gas', KeyW: 'gas', ArrowDown: 'brake', KeyS: 'brake',
   Space: 'drift', ShiftLeft: 'drift', ShiftRight: 'drift' };
+// Kamera wechseln (bleibt für das nächste Rennen eingestellt)
+let camMode = 0;
+function nextCam() {
+  if (!race) return;
+  camMode = (camMode + 1) % CAM_NAMES.length;
+  showMsg(CAM_NAMES[camMode], 1);
+}
 function onKey(e) {
+  if (e.code === 'KeyV' && e.type === 'keydown' && race) { nextCam(); e.preventDefault(); return; }
   const k = KEYS[e.code];
   if (!k || !race) return;
   race.input[k] = e.type === 'keydown';
@@ -1195,9 +1207,12 @@ function render(dt) {
   const fx = Math.cos(me.heading), fz = Math.sin(me.heading);
   const back = 8.5 + Math.abs(me.speed) * 0.03;
   const my = me.y || 0;
-  const want = camWant.set(me.pos.x - fx * back, my + 3.2 + Math.abs(me.speed) * 0.01, me.pos.z - fz * back);
-  R.camera.position.lerp(want, 1 - Math.exp(-dt * 6));
-  camLook.lerp(camAhead.set(me.pos.x + fx * 6, my + 1.2, me.pos.z + fz * 6), 1 - Math.exp(-dt * 10));
+  if (!camView(camMode, me.pos.x, my, me.pos.z, me.heading, camWant, camAhead)) {
+    camWant.set(me.pos.x - fx * back, my + 3.2 + Math.abs(me.speed) * 0.01, me.pos.z - fz * back);
+    camAhead.set(me.pos.x + fx * 6, my + 1.2, me.pos.z + fz * 6);
+  }
+  R.camera.position.lerp(camWant, 1 - Math.exp(-dt * 6));
+  camLook.lerp(camAhead, 1 - Math.exp(-dt * 10));
   R.camera.lookAt(camLook);
   // Weiterer Blickwinkel bei Tempo, aber weich nachgeführt: bei einem plötzlichen Stopp (Wand, Unfall)
   // springt das Bild sonst so, als würde man heranzoomen

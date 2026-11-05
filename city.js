@@ -8,7 +8,7 @@ import { makeNoise, rng, smoothstep, surface, terrain, cloudDome } from './world
 import { createCarSound, crash, gearbox, horn, createSiren } from './sound.js';
 import { makeNetCars } from './netcars.js';
 import { makeChat } from './chat.js';
-import { makeEffects } from './fx.js';
+import { makeEffects, camView, CAM_NAMES } from './fx.js';
 
 const N = 8;                    // Blöcke pro Seite
 const BLOCK = 64;               // Abstand der Kreuzungen (Meter)
@@ -1151,6 +1151,8 @@ const CSS = `
 #city .goal .arrow { display: inline-block; color: #facc15; font-size: 22px; transition: transform .1s; }
 #city .clock { position: absolute; top: 206px; right: 62px; width: 190px; text-align: center; font-weight: 800; font-size: 17px;
   background: rgba(0,0,0,.45); border-radius: 8px; padding: 3px 0; }
+#city .cam { position: absolute; top: 58px; right: 12px; width: 42px; height: 42px; border-radius: 50%; border: none;
+  background: rgba(0,0,0,.55); color: #fff; font-size: 20px; }
 #city .quit { position: absolute; top: 10px; right: 12px; width: 42px; height: 42px; border-radius: 50%; border: none;
   background: rgba(0,0,0,.55); color: #fff; font-size: 20px; }
 #city .msg { position: absolute; top: 30%; width: 100%; text-align: center; font-size: 40px; font-weight: 900;
@@ -1190,6 +1192,7 @@ function buildDom() {
     <canvas class="minimap" width="190" height="190"></canvas>
     <div class="clock"></div>
     <button class="quit" title="Stadt verlassen">✕</button>
+    <button class="cam" title="Kamera wechseln (V)">📷</button>
     <button class="horn" title="Hupen (H)">📯</button>
     <button class="jobs" title="Aufträge (J)">📋</button>
     <button class="tagbtn" title="Fangis (online)" hidden>🏃</button>
@@ -1243,6 +1246,7 @@ function buildDom() {
   }
   if (touch) ui.hint.style.display = 'none';
   $('.quit').addEventListener('pointerdown', e => { e.preventDefault(); if (city) endCity(); });
+  $('.cam').addEventListener('pointerdown', e => { e.preventDefault(); nextCam(); });
   $('.horn').addEventListener('pointerdown', e => { e.preventDefault(); honk(); });
   root.addEventListener('contextmenu', e => e.preventDefault());
   return ui;
@@ -1264,6 +1268,7 @@ function onKey(e) {
   if (!city || (e.target && e.target.tagName === 'INPUT')) return; // im Chat wird geschrieben, nicht gefahren
   if (e.code === 'KeyH' && e.type === 'keydown') { honk(); e.preventDefault(); return; }
   if (e.code === 'KeyJ' && e.type === 'keydown') { toggleJobs(); e.preventDefault(); return; }
+  if (e.code === 'KeyV' && e.type === 'keydown') { nextCam(); e.preventDefault(); return; }
   const k = KEYS[e.code];
   if (!k) return;
   city.input[k] = e.type === 'keydown';
@@ -1461,12 +1466,23 @@ function updateHud(dt) {
 }
 
 const camWant = new THREE.Vector3(), camLook = new THREE.Vector3(), camAhead = new THREE.Vector3();
+// Kamera wechseln (bleibt eingestellt)
+let camMode = 0;
+function nextCam() {
+  if (!city) return;
+  camMode = (camMode + 1) % CAM_NAMES.length;
+  showMsg(CAM_NAMES[camMode], 1);
+}
 function render(dt) {
   const me = city.me, cam = S.camera;
   const fx = Math.cos(me.heading), fz = Math.sin(me.heading);
   const back = 8.5 + Math.abs(me.speed) * 0.03;
-  cam.position.lerp(camWant.set(me.pos.x - fx * back, 3.3 + Math.abs(me.speed) * 0.01, me.pos.z - fz * back), 1 - Math.exp(-dt * 6));
-  camLook.lerp(camAhead.set(me.pos.x + fx * 6, 1.2, me.pos.z + fz * 6), 1 - Math.exp(-dt * 10));
+  if (!camView(camMode, me.pos.x, 0, me.pos.z, me.heading, camWant, camAhead)) {
+    camWant.set(me.pos.x - fx * back, 3.3 + Math.abs(me.speed) * 0.01, me.pos.z - fz * back);
+    camAhead.set(me.pos.x + fx * 6, 1.2, me.pos.z + fz * 6);
+  }
+  cam.position.lerp(camWant, 1 - Math.exp(-dt * 6));
+  camLook.lerp(camAhead, 1 - Math.exp(-dt * 10));
   cam.lookAt(camLook);
   cam.fov = 62 + Math.min(16, Math.abs(me.speed) * 0.15);
   cam.updateProjectionMatrix();
