@@ -17,6 +17,7 @@ Browser-Spiel ohne Build: `index.html` + `game.js` (Spiellogik, Menüs und 2D-Ze
   Testen: `startStuntMode()`, dann `window.__stunt()` (`me`, `input`, `score`).
 - `viewer.js`: 3D-Ansicht eines Fahrzeugs zum Drehen (eigener Renderer, wird beim Schliessen freigegeben).
 - `fx.js`: Kamera-Ansichten beim Fahren (`camView`), Reifenrauch und Bremsspuren (Stadt, Rennen, Stuntpark); Driften selbst steckt in der Physik des jeweiligen Modus.
+  Dazu das Fliegen (`fly: true` in `KINDS`, nur Stadt und Stuntpark): Höhe und Knöpfe hier, Hindernisse im jeweiligen Modus.
 - `netcars.js`: Mitspieler beim freien Fahren online (Stadt, Stuntpark): senden, glätten, Namensschild, Zusammenstösse.
 - `chat.js`: Chat beim freien Fahren online: feste Sprüche (gespeichert wird die Nummer; neue Sprüche hinten anhängen),
   freier Text nur in privaten Räumen, ohne Wortfilter (Entscheid der Eltern; Regeln prüfen Länge, Rate und privat).

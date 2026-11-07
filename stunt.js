@@ -9,10 +9,11 @@ import { makeNoise, rng, smoothstep, surface, terrain, cloudDome } from './world
 import { createCarSound, crash, gearbox } from './sound.js';
 import { makeNetCars } from './netcars.js';
 import { makeChat } from './chat.js';
-import { makeEffects, camView, CAM_NAMES } from './fx.js';
+import { makeEffects, camView, CAM_NAMES, FLY_HTML, FLY_KEYS, flyCss, flyHelp, flyToggle, flyStep } from './fx.js';
 
 const G = 9.81;
 const EDGE = 188;               // so weit geht der Platz (±)
+const FLY_MAX = 70, FLY_SPEED = 1.25; // Fliegen: höchste Höhe, schneller als am Boden
 const GRIP = 11;
 const BRAKE = 14;
 const LITE = matchMedia('(pointer: coarse)').matches || /iPhone|iPad|iPod|Android/.test(navigator.userAgent);
@@ -332,12 +333,13 @@ function buildWorld(kinds) {
 // ---------- Fahren ----------
 function resetCar(me, x = -170, z = 0, heading = 0) {
   Object.assign(me, { x, z, y: groundAt(x, z), heading, speed: 0, vl: 0, driftMode: false, drifting: false, air: false, loop: null, vx: 0, vy: 0, vz: 0, vyG: 0,
-    pitch: 0, roll: 0, airT: 0, flip: 0, spin: 0, camH: heading, frozen: 0, ringsNow: [], wallAir: null });
+    pitch: 0, roll: 0, airT: 0, flip: 0, spin: 0, camH: heading, frozen: 0, ringsNow: [], wallAir: null, fly: false, landing: false });
 }
 
 function stepMe(dt) {
   const me = P.me, input = me.frozen > 0 ? {} : P.input;
   if (me.frozen > 0) me.frozen -= dt;
+  if (me.fly) { stepFly(me, input, dt); return; }
   if (me.loop) { stepLoop(me, input, dt); return; }
   if (me.air) { stepAir(me, input, dt); return; }
 
@@ -405,6 +407,45 @@ function stepMe(dt) {
   me.pitch = ns.pitch; me.roll = ns.roll;
   me.camH = me.heading;
   tryLoop(me);
+}
+
+// Fliegen: lenken und Gas wie am Boden, ohne Saltos; gibt keine Punkte (Feuerringe zählen nur beim Springen)
+function toggleFly() {
+  const me = P && P.me;
+  if (!me || !P.canFly || me.loop || me.frozen > 0) return;
+  if (!me.fly && me.air) { // Schwung vom Sprung mitnehmen
+    me.speed = Math.hypot(me.vx, me.vz);
+    if (me.speed > 3) me.heading = Math.atan2(me.vz, me.vx);
+    me.wallAir = null;
+  }
+  flyToggle(me, me.y);
+  if (!me.landing) showMsg(flyHelp(), 2);
+}
+function stepFly(me, input, dt) {
+  me.air = true; me.airT = 0; me.vl = 0; me.drifting = false;
+  me.steer += ((input.left ? -1 : 0) + (input.right ? 1 : 0) - me.steer) * Math.min(1, dt * 7);
+  const maxV = me.maxV * FLY_SPEED;
+  if (input.gas) me.speed += me.acc * Math.max(0, 1 - me.speed / maxV) * dt;
+  else if (!input.brake) me.speed -= Math.sign(me.speed) * Math.min(Math.abs(me.speed), 1.8 * dt);
+  if (input.brake) me.speed = me.speed > 0 ? Math.max(0, me.speed - BRAKE * dt) : Math.max(-8, me.speed - 6 * dt);
+  const yawMax = Math.min(1.6 * P.gripBoost, GRIP * P.gripBoost / Math.max(Math.abs(me.speed), 0.1));
+  if (Math.abs(me.speed) > 0.3) me.heading += me.steer * yawMax * dt * Math.sign(me.speed);
+  const fx = Math.cos(me.heading), fz = Math.sin(me.heading), nx = me.x + fx * me.speed * dt, nz = me.z + fz * me.speed * dt;
+  if (groundAt(nx, nz) > me.y + 0.7) { // gegen eine Wand geflogen
+    if (Math.abs(me.speed) > 6) crash(Math.abs(me.speed) / 40, 'tyres');
+    me.speed *= -0.25;
+  } else { me.x = nx; me.z = nz; }
+  const h = groundAt(me.x, me.z);
+  me.y = flyStep(me, input, dt, me.y, h, FLY_MAX);
+  me.vx = fx * me.speed; me.vz = fz * me.speed; me.vy = me.flyVy;
+  me.pitch += (me.flyPitch - wrap(me.pitch)) * Math.min(1, dt * 6);
+  me.roll += (me.flyRoll - wrap(me.roll)) * Math.min(1, dt * 6);
+  me.camH = me.heading;
+  if (me.landing && me.y <= h + 0.03) {
+    const sl = slopeAt(me.x, me.z, me.heading);
+    Object.assign(me, { fly: false, landing: false, air: false, y: h, vyG: 0, pitch: sl.pitch, roll: sl.roll });
+    showMsg('🛬 Gelandet', 1.2);
+  }
 }
 
 // Abheben: Tasten, die man schon vorher gedrückt hat (z.B. Gas), zählen in der Luft erst nach neuem Drücken
@@ -615,7 +656,7 @@ const CSS = `
   background: rgba(0,0,0,.35); color: #fff; font-size: 30px; font-weight: 900; touch-action: none; }
 #stunt .ctl.on { background: rgba(255,255,255,.4); }
 #stunt .ctl.hand { width: 84px; height: 84px; font-size: 16px; border-color: #fb923c; }
-#stunt .ctl.gas { border-color: #4ade80; font-size: 20px; } #stunt .ctl.brake { border-color: #f87171; font-size: 16px; }
+${flyCss('stunt')}#stunt .ctl.gas { border-color: #4ade80; font-size: 20px; } #stunt .ctl.brake { border-color: #f87171; font-size: 16px; }
 #stunt .hint { position: absolute; bottom: 86px; left: 50%; transform: translateX(-50%); font-size: 15px; opacity: .85;
   background: rgba(0,0,0,.45); padding: 4px 12px; border-radius: 10px; white-space: nowrap; }
 `;
@@ -641,10 +682,12 @@ function buildDom() {
     <button class="ctl" data-k="right" style="left:124px">▶</button>
     <button class="ctl brake" data-k="brake" style="right:124px">BREMSE<br>↺</button>
     <button class="ctl gas" data-k="gas" style="right:16px">GAS<br>↻</button>
-    <button class="ctl hand" data-k="drift" style="right:70px; bottom:120px">DRIFT</button>`;
+    <button class="ctl hand" data-k="drift" style="right:70px; bottom:120px">DRIFT</button>
+    ${FLY_HTML}`;
   document.body.appendChild(root);
   const $ = s => root.querySelector(s);
   const ui = { root, kmh: $('.kmh'), ps: $('.ps'), msg: $('.msg'), air: $('.air'), pts: $('.pts'), best: $('.best'), board: $('.board'),
+    flybtn: $('.flybtn'), flyctl: $('.flyctl'),
     hint: $('.hint'), ctls: [...root.querySelectorAll('.ctl')] };
   const touch = matchMedia('(pointer: coarse)').matches || 'ontouchstart' in window;
   for (const b of ui.ctls) {
@@ -656,13 +699,14 @@ function buildDom() {
   if (touch) ui.hint.style.display = 'none';
   $('.quit').addEventListener('pointerdown', e => { e.preventDefault(); if (P) endStunt(); });
   $('.cam').addEventListener('pointerdown', e => { e.preventDefault(); nextCam(); });
+  $('.flybtn').addEventListener('pointerdown', e => { e.preventDefault(); toggleFly(); });
   $('.reset').addEventListener('pointerdown', e => { e.preventDefault(); if (P) { resetCar(P.me); P.combo = 0; } });
   root.addEventListener('contextmenu', e => e.preventDefault());
   return ui;
 }
 
 const KEYS = { ArrowLeft: 'left', KeyA: 'left', ArrowRight: 'right', KeyD: 'right', ArrowUp: 'gas', KeyW: 'gas', ArrowDown: 'brake', KeyS: 'brake',
-  Space: 'drift', ShiftLeft: 'drift', ShiftRight: 'drift' };
+  Space: 'drift', ShiftLeft: 'drift', ShiftRight: 'drift', ...FLY_KEYS };
 // Kamera wechseln (bleibt eingestellt)
 let camMode = 0;
 function nextCam() {
@@ -674,6 +718,7 @@ function onKey(e) {
   if (!P || (e.target && e.target.tagName === 'INPUT')) return; // im Chat wird geschrieben, nicht gefahren
   if (e.code === 'KeyR' && e.type === 'keydown') { resetCar(P.me); P.combo = 0; return; }
   if (e.code === 'KeyV' && e.type === 'keydown') { nextCam(); e.preventDefault(); return; }
+  if (e.code === 'KeyF' && e.type === 'keydown' && !e.repeat) { toggleFly(); e.preventDefault(); return; }
   const k = KEYS[e.code];
   if (!k) return;
   P.input[k] = e.type === 'keydown';
@@ -716,7 +761,7 @@ export function startStunt({ player, kinds, topSpeed, onExit, earn = () => {}, n
   let best = 0;
   try { best = +localStorage.getItem(BEST_KEY) || 0; } catch (e) { /* egal */ }
   P = { me, input: {}, t: 0, msgT: 0, last: performance.now(), onExit, earn, score: 0, best, combo: 0, comboT: 0, drift: 0, driftT: 0,
-    gripBoost: (kinds[player.kind] && kinds[player.kind].grip) || 1, gears: gearbox(player.kind), net,
+    gripBoost: (kinds[player.kind] && kinds[player.kind].grip) || 1, canFly: !!(kinds[player.kind] && kinds[player.kind].fly), gears: gearbox(player.kind), net,
     netCars: net ? makeNetCars({ scene: S.scene, kinds, net }) : null };
   window.__stunt = () => P; // für Tests im Browser
   window.__stuntS = () => S;
@@ -726,6 +771,7 @@ export function startStunt({ player, kinds, topSpeed, onExit, earn = () => {}, n
   S.ui.root.hidden = false;
   S.ui.ps.textContent = '⚡ ' + player.ps + ' PS';
   S.ui.board.hidden = !net;
+  S.ui.flybtn.hidden = !P.canFly;
   if (net) P.chat = makeChat({ parent: S.ui.root, net, mode: 'stunt', onSay: (slot, text) => P.netCars.say(slot, text) });
   layout();
   showMsg(net ? '🤸 Stuntpark online – zeig, was du kannst!' : '🤸 Rampen, Schanzen, Looping – los geht’s!', 2.6);
@@ -765,6 +811,8 @@ function updateHud(dt) {
   const me = P.me, ui = S.ui;
   ui.kmh.textContent = Math.round(Math.abs(me.air ? Math.hypot(me.vx, me.vz, me.vy) : me.speed) * 3.6);
   ui.pts.textContent = P.score;
+  ui.flybtn.textContent = me.fly && !me.landing ? '🛬' : '✈️';
+  ui.flyctl.hidden = !me.fly || me.landing;
   ui.best.textContent = '🏆 Rekord ' + P.best;
   ui.air.textContent = P.drift > 20 ? '🔥 DRIFT ' + Math.round(P.drift) : me.air && me.airT > 0.4 ? '✈️ ' + me.airT.toFixed(1) + ' s' + (Math.abs(me.flip) > 3 ? '  🔄' : '') + (Math.abs(me.spin) > 3 ? '  🌀' : '') : '';
   if (P.net) { // Punkte aller Mitspieler (aus den Live-Daten, Feld p)

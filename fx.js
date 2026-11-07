@@ -86,3 +86,31 @@ export function camView(mode, x, y, z, heading, want, look) {
   if (mode === 3) { want.set(x - fx * 3, y + 26, z - fz * 3); look.set(x + fx * 3, y, z + fz * 3); return true; }
   return false;
 }
+
+// Fliegen (Fahrzeuge mit fly in KINDS, z.B. LIONEL X; Stadt und Stuntpark): ✈️ oder F hebt ab und landet, ▲ ▼ oder E Q = höher, tiefer.
+// Der Modus prüft Hindernisse selbst; hier steckt nur, was überall gleich ist. me: fly, landing, flyWant, flyVy, flyRoll, flyPitch
+export const FLY_HTML = `<button class="flybtn" title="Fliegen (F)" hidden>✈️</button>
+    <div class="flyctl" hidden><button class="ctl" data-k="up" style="left:16px; bottom:120px">▲</button>
+    <button class="ctl" data-k="down" style="left:124px; bottom:120px">▼</button></div>`;
+export const flyCss = id => `#${id} .flybtn { position: absolute; right: 228px; bottom: 21px; width: 84px; height: 84px; border-radius: 50%;
+  border: 3px solid #7dd3fc; background: rgba(0,0,0,.35); color: #fff; font-size: 34px; touch-action: none; }
+#${id} .flybtn[hidden], #${id} .flyctl[hidden] { display: none; }
+`;
+export const FLY_KEYS = { KeyE: 'up', KeyQ: 'down' };
+export const flyHelp = () => '✈️ Abheben! ' + ('ontouchstart' in window ? '▲ ▼' : 'E / Q') + ' = höher / tiefer';
+// Abheben, landen oder das Landen abbrechen; y: jetzige Höhe
+export function flyToggle(me, y) {
+  if (!me.fly) Object.assign(me, { fly: true, landing: false, flyWant: y + 14, flyVy: 0, flyRoll: 0, flyPitch: 0 });
+  else if (me.landing) { me.landing = false; me.flyWant = y; }
+  else me.landing = true;
+}
+// Ein Schritt in der Höhe: gibt die neue Höhe zurück; floor = tiefste erlaubte Höhe an dieser Stelle
+export function flyStep(me, input, dt, y, floor, max) {
+  if (!me.landing) me.flyWant = Math.max(floor + 1, Math.min(max, me.flyWant + ((input.up ? 1 : 0) - (input.down ? 1 : 0)) * 16 * dt));
+  let v = Math.max(-16, Math.min(16, ((me.landing ? floor : me.flyWant) - y) * 2.5));
+  if (me.landing) v = Math.min(-1.5, Math.max(-9, v)); // am Boden nicht ewig schweben
+  me.flyVy += (v - me.flyVy) * Math.min(1, dt * 5);
+  me.flyRoll += (me.steer * 0.4 - me.flyRoll) * Math.min(1, dt * 5); // in die Kurve legen
+  me.flyPitch += (Math.max(-0.3, Math.min(0.3, me.flyVy * 0.03)) - me.flyPitch) * Math.min(1, dt * 5);
+  return Math.max(floor, y + me.flyVy * dt);
+}

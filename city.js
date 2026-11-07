@@ -8,7 +8,7 @@ import { makeNoise, rng, smoothstep, surface, terrain, cloudDome } from './world
 import { createCarSound, crash, gearbox, horn, createSiren } from './sound.js';
 import { makeNetCars } from './netcars.js';
 import { makeChat } from './chat.js';
-import { makeEffects, camView, CAM_NAMES } from './fx.js';
+import { makeEffects, camView, CAM_NAMES, FLY_HTML, FLY_KEYS, flyCss, flyHelp, flyToggle, flyStep } from './fx.js';
 
 const N = 8;                    // Blöcke pro Seite
 const BLOCK = 64;               // Abstand der Kreuzungen (Meter)
@@ -16,6 +16,7 @@ const ROAD = 14;                // Strassenbreite: eine Spur je Richtung
 const LANE = 3.5;               // Spurmitte rechts neben der Strassenmitte
 const HALF = N * BLOCK / 2;     // halbe Stadtgrösse
 const LIMIT = HALF + 70;        // so weit darf man fahren
+const FLY_MAX = 100, FLY_SPEED = 1.25; // Fliegen: höchste Höhe (über dem höchsten Haus), schneller als am Boden
 const STOP = BLOCK - 12;        // Haltelinie (Abstand von der vorigen Kreuzung); die Wagenmitte hält eine halbe Länge davor
 const CYCLE = 22;               // Ampelzyklus in Sekunden
 const TRAFFIC = 46;             // so viele Autos fahren herum
@@ -235,7 +236,7 @@ function buildWorld() {
   const box = (w, h, d, m, x, y, z, solidToo) => {
     const b = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), m);
     b.position.set(x, y, z); b.castShadow = b.receiveShadow = true; decor.add(b);
-    if (solidToo) solid.push({ x0: x - w / 2, x1: x + w / 2, z0: z - d / 2, z1: z + d / 2 });
+    if (solidToo) solid.push({ x0: x - w / 2, x1: x + w / 2, z0: z - d / 2, z1: z + d / 2, h: y + h / 2 });
     return b;
   };
   const tarmac = mat({ map: asphalt.map, roughness: 0.85 });
@@ -246,7 +247,7 @@ function buildWorld() {
     for (const [dx, dz] of [[-10, -12.5], [10, -12.5], [-10, 0.5], [10, 0.5]]) { box(0.6, 5.2, 0.6, metal, cx + dx, 2.7, cz + dz); round.push({ x: cx + dx, z: cz + dz, r: 0.5 }); }
     for (const dx of [-4, 4]) { box(1.1, 1.8, 0.7, mat({ color: 0xdc2626 }), cx + dx, 1.06, cz - 6, true); box(0.8, 0.5, 0.05, mat({ color: 0x111827, emissive: 0x22d3ee, emissiveIntensity: 0.6 }), cx + dx, 1.5, cz - 6.38); }
     const shop = wallBox(16, 4.5, 8, walls[3], 8); shop.position.set(cx, 2.41, cz + 13); decor.add(shop);
-    solid.push({ x0: cx - 8, x1: cx + 8, z0: cz + 9, z1: cz + 17 });
+    solid.push({ x0: cx - 8, x1: cx + 8, z0: cz + 9, z1: cz + 17, h: 5 });
     const s1 = sign('⛽ TANKSTELLE', '#dc2626', '#ffffff', 12, 2); s1.position.set(cx, 6.6, cz - 13.2); decor.add(s1);
     places.gas = { x: cx, z: cz - 6, w: 18, d: 10 };
   }
@@ -269,7 +270,7 @@ function buildWorld() {
   }
   function buildPizza(cx, cz) { // Pizzeria mit gestreifter Markise; abgeholt wird vorne an der Strasse
     const shop = wallBox(18, 6, 12, walls[1], 8); shop.position.set(cx, 3.16, cz + 4); decor.add(shop);
-    solid.push({ x0: cx - 9, x1: cx + 9, z0: cz - 2, z1: cz + 10 });
+    solid.push({ x0: cx - 9, x1: cx + 9, z0: cz - 2, z1: cz + 10, h: 6.5 });
     const st = document.createElement('canvas'); st.width = 128; st.height = 8;
     const sg = st.getContext('2d'); for (let i = 0; i < 8; i++) { sg.fillStyle = i % 2 ? '#ffffff' : '#16a34a'; sg.fillRect(i * 16, 0, 16, 8); }
     const awn = new THREE.Mesh(new THREE.BoxGeometry(18, 0.2, 3), mat({ map: new THREE.CanvasTexture(st) }));
@@ -322,7 +323,7 @@ function buildWorld() {
         roof.position.set(bx, 0.17 + hgt, bz); roof.castShadow = roof.receiveShadow = true;
         decor.add(roof);
         if (r() < 0.5) { const ch = new THREE.Mesh(new THREE.BoxGeometry(0.6, 1.6, 0.6), roofMat); ch.position.set(bx + hw * 0.4, 0.17 + hgt + rh * 0.6, bz + (r() - 0.5) * D * 0.5); ch.castShadow = true; decor.add(ch); }
-        solid.push({ x0: bx - W / 2, x1: bx + W / 2, z0: bz - D / 2, z1: bz + D / 2 });
+        solid.push({ x0: bx - W / 2, x1: bx + W / 2, z0: bz - D / 2, z1: bz + D / 2, h: hgt + rh + 0.2 });
       }
       for (let k = 0; k < 3; k++) trees.push([cx + (r() - 0.5) * 6, 0.17, cz + (r() - 0.5) * 6, 0.6 + r() * 0.4]);
       continue;
@@ -343,7 +344,7 @@ function buildWorld() {
         a.position.set(bx + (r() - 0.5) * (w - 5), 0.16 + hgt + 1.2, bz + (r() - 0.5) * (d - 5)); a.castShadow = true;
         decor.add(a);
       }
-      solid.push({ x0: bx - w / 2, x1: bx + w / 2, z0: bz - d / 2, z1: bz + d / 2 });
+      solid.push({ x0: bx - w / 2, x1: bx + w / 2, z0: bz - d / 2, z1: bz + d / 2, h: hgt + 2 });
     }
   }
 
@@ -363,7 +364,7 @@ function buildWorld() {
     trunkM.setMatrixAt(k, m4.compose(p3.set(x, y + 1.5 * s, z), q, sc.set(s, s, s)));
     crownM.setMatrixAt(k, m4.compose(p3.set(x, y + 4.6 * s, z), q, sc.set(s, s * 1.1, s)));
     crownM.setColorAt(k, col.setHSL(0.24 + r() * 0.08, 0.5, 0.09 + r() * 0.06));
-    round.push({ x, z, r: 0.7 * s });
+    round.push({ x, z, r: 0.7 * s, h: 7.5 * s });
   });
   trunkM.castShadow = crownM.castShadow = true;
   decor.add(trunkM, crownM);
@@ -518,7 +519,7 @@ function followLimit(c, me) {
   };
   for (const o of city.cars) if (o !== c) check(o.x, o.z, o.len, false);
   if (city.police) check(city.police.pos.x, city.police.pos.z, 5, false);
-  check(me.pos.x, me.pos.z, me.len, true);
+  if (me.alt < 2.5) check(me.pos.x, me.pos.z, me.len, true); // wer darüber fliegt, stört nicht
   return { lim, byMe };
 }
 
@@ -606,13 +607,14 @@ function pullOver(me, dt) {
 function stepMe(dt) {
   const stopped = city.pulled > 0 || city.ticket || (city.police && city.police.state === 'stop');
   if (!stopped) city.me.pullT = 0;
+  if (stopped && city.me.fly) city.me.landing = true; // die Polizei holt dich herunter
   const me = city.me, input = stopped ? pullOver(me, dt) : city.input; // von der Polizei angehalten: rechts ranfahren
-  const gas = input.gas, brake = input.brake, hand = !!input.drift && !stopped; // Handbremse zum Driften
+  const gas = input.gas, brake = input.brake, hand = !!input.drift && !stopped && !me.fly; // Handbremse zum Driften
   const steerTarget = (input.left ? -1 : 0) + (input.right ? 1 : 0);
   me.steer += (steerTarget - me.steer) * Math.min(1, dt * 7);
-  me.surface = surfaceAt(me.pos.x, me.pos.z);
+  me.surface = me.fly ? 'asphalt' : surfaceAt(me.pos.x, me.pos.z);
   const boost = city.turbo > 0 ? 1.3 : 1; // Turbo-Benzin von der Tankstelle
-  const maxV = (me.surface === 'grass' ? me.maxV * 0.55 : me.maxV) * boost;
+  const maxV = (me.fly ? me.maxV * FLY_SPEED : me.surface === 'grass' ? me.maxV * 0.55 : me.maxV) * boost;
   if (gas) {
     if (me.speed < 0) me.speed = Math.min(0, me.speed + BRAKE * dt);
     else me.speed += me.acc * boost * Math.max(0, 1 - me.speed / maxV) * dt;
@@ -644,14 +646,16 @@ function stepMe(dt) {
   me.slip = 0.7 * Math.min(1, Math.max(0, (latA - 10.8 * city.gripBoost) / 1.2)) * Math.min(1, Math.max(0, (Math.abs(me.speed) - 16) / 8));
   if (brake && me.speed > 6) me.slip = Math.max(me.slip, 0.45 + 0.55 * Math.min(1, me.speed / 40));
   if (me.drifting) me.slip = Math.max(me.slip, Math.min(1, Math.abs(me.vl) / 7));
+  if (me.fly) me.slip = 0;
 
-  // Häuser, Bäume und der Brunnen sind fest
+  // Häuser, Bäume und der Brunnen sind fest (wer höher fliegt, kommt darüber hinweg)
   const R = me.radius;
-  let hit = 0;
+  let hit = 0, floor = 0;
   for (const b of S.solid) {
     const qx = Math.max(b.x0, Math.min(me.pos.x, b.x1)), qz = Math.max(b.z0, Math.min(me.pos.z, b.z1));
     const dx = me.pos.x - qx, dz = me.pos.z - qz, dd = Math.hypot(dx, dz);
     if (dd < R) {
+      if (me.alt > b.h - 0.4) { floor = Math.max(floor, b.h + 0.5); continue; }
       if (dd > 0.001) { me.pos.x += dx / dd * (R - dd); me.pos.z += dz / dd * (R - dd); }
       else { me.pos.x -= Math.cos(me.heading) * R; me.pos.z -= Math.sin(me.heading) * R; }
       hit = Math.max(hit, Math.abs(me.speed));
@@ -659,12 +663,13 @@ function stepMe(dt) {
   }
   for (const o of S.round) {
     const dx = me.pos.x - o.x, dz = me.pos.z - o.z, dd = Math.hypot(dx, dz), min = R * 0.7 + o.r;
+    if (dd < min && me.alt > (o.h || 6) - 0.4) { floor = Math.max(floor, (o.h || 6) + 0.5); continue; }
     if (dd < min && dd > 0.001) { me.pos.x += dx / dd * (min - dd); me.pos.z += dz / dd * (min - dd); hit = Math.max(hit, Math.abs(me.speed)); }
   }
   // Mit Autos zusammenstossen: du wirst weggeschoben, das andere Auto bleibt kurz stehen
   for (const c of city.cars) {
     const dx = me.pos.x - c.x, dz = me.pos.z - c.z, dd = Math.hypot(dx, dz), min = (R + c.mesh.userData.radius) * 0.8;
-    if (dd < min && dd > 0.001) {
+    if (dd < min && dd > 0.001 && me.alt < 2.5) {
       me.pos.x += dx / dd * (min - dd); me.pos.z += dz / dd * (min - dd);
       const rel = Math.abs(me.speed - c.speed);
       if (rel > 2 && city.crashT <= 0) { crash(0.15 + rel / 18, 'car'); city.crashT = 0.5; c.blocked = 2; c.honkT = 0.4; c.waitMe = 2; }
@@ -678,6 +683,10 @@ function stepMe(dt) {
     if (city.drift > 0) bankDrift(true);
   }
   city.crashT -= dt;
+  if (me.fly) {
+    me.alt = flyStep(me, input, dt, me.alt, floor, FLY_MAX);
+    if (me.landing && me.alt <= 0.03) { me.fly = me.landing = false; me.alt = 0; showMsg('🛬 Gelandet', 1.2); }
+  }
   // Am Stadtrand ist Schluss
   if (Math.abs(me.pos.x) > LIMIT || Math.abs(me.pos.z) > LIMIT) {
     me.pos.x = Math.max(-LIMIT, Math.min(LIMIT, me.pos.x)); me.pos.z = Math.max(-LIMIT, Math.min(LIMIT, me.pos.z));
@@ -687,26 +696,26 @@ function stepMe(dt) {
   // Über eine rote Ampel gefahren?
   const ni = Math.round(me.pos.x / BLOCK + N / 2), nj = Math.round(me.pos.z / BLOCK + N / 2);
   const inX = inGrid(ni, nj) && Math.abs(me.pos.x - node(ni)) < ROAD / 2 && Math.abs(me.pos.z - node(nj)) < ROAD / 2;
-  if (inX && !city.inCross && hasLights(ni, nj) && Math.abs(me.speed) > 5) {
+  if (inX && !city.inCross && hasLights(ni, nj) && Math.abs(me.speed) > 5 && me.alt < 2.5) {
     const ax = Math.abs(Math.cos(me.heading)) > Math.abs(Math.sin(me.heading)) ? 'x' : 'z';
     if (lightState(ax, city.t) === 'red' && !POLICE_KINDS.includes(me.v.kind)) { showMsg('🚦 Über Rot gefahren!', 1.6); startChase(); } // Polizei darf (im Einsatz)
   }
   city.inCross = inX;
   const m = me.mesh;
-  m.position.set(me.pos.x, 0, me.pos.z);
-  m.rotation.y = -me.heading;
+  m.position.set(me.pos.x, me.alt, me.pos.z);
+  m.rotation.set(me.fly ? me.flyRoll : 0, -me.heading, me.fly ? me.flyPitch : 0);
   for (const w of m.userData.wheels) {
     w.rotation.z -= me.speed * dt / 0.35;
     if (w.position.x > 0) w.rotation.y = -me.steer * 0.4;
   }
-  animateCar(m, city.t, me.v.special);
+  animateCar(m, city.t, me.v.special, me.fly);
 }
 
 // ---------- Reifenrauch und Bremsspuren ----------
 // Rauch, Spuren und Drift-Punkte nach jedem Schritt
 function stepDrift(dt) {
   const me = city.me, fx = Math.cos(me.heading), fz = Math.sin(me.heading);
-  const skid = me.drifting || (city.input.brake && me.speed > 10) || (city.input.drift && Math.abs(me.speed) > 6);
+  const skid = !me.fly && (me.drifting || (city.input.brake && me.speed > 10) || (city.input.drift && Math.abs(me.speed) > 6));
   const onRoad = surfaceAt(me.pos.x, me.pos.z) === 'asphalt';
   const ni = node(Math.round(me.pos.x / BLOCK + N / 2)), nj = node(Math.round(me.pos.z / BLOCK + N / 2));
   const inCity = Math.abs(me.pos.x) < HALF + ROAD / 2 && Math.abs(me.pos.z) < HALF + ROAD / 2;
@@ -745,7 +754,7 @@ function stepPlaces(dt) {
   const me = city.me, P = S.places, x = me.pos.x, z = me.pos.z;
   if (city.turbo > 0) city.turbo -= dt;
   // Tankstelle: unter dem Dach anhalten = Turbo-Benzin (30 s schneller), kostet 3 Münzen (ohne Münzen gratis)
-  if (inZone(P.gas, x, z) && Math.abs(me.speed) < 1.5) {
+  if (inZone(P.gas, x, z) && Math.abs(me.speed) < 1.5 && me.alt < 2) {
     if (city.fuelT >= 0) {
       if (city.fuelT === 0) showMsg('⛽ Tanken …', 1.6);
       city.fuelT += dt;
@@ -758,7 +767,7 @@ function stepPlaces(dt) {
     }
   } else if (!inZone(P.gas, x, z, 3)) city.fuelT = 0;
   // Waschanlage: langsam durchfahren, Bürsten drehen schneller, Schaum; hinten raus = blitzblank
-  const inWash = inZone(P.wash, x, z);
+  const inWash = inZone(P.wash, x, z) && me.alt < 2;
   for (const b of P.wash.brushes) b.rotation.y += dt * (inWash ? 14 : 1.5);
   if (inWash) {
     if (!city.washT) showMsg('🫧 Schaum und Bürsten …', 1.6);
@@ -787,6 +796,7 @@ function stepTag(dt) {
   if (!city.net) return;
   const tag = tagState(), me = city.me, ui = S.ui;
   ui.tagbtn.textContent = tag ? '🛑' : '🏃';
+  if (tag && me.fly) me.landing = true; // Fangis spielt man am Boden
   if (!tag) { ui.tagbar.hidden = true; city.netCars.setIt(null); city.lastIt = -1; return; }
   const mine = tag.it === city.net.mySlot, players = city.net.players() || {};
   city.netCars.setIt(mine ? null : tag.it);
@@ -883,7 +893,7 @@ function stepMission(dt) {
   if (M.thief) stepThief(M, dt);
   const d = Math.hypot(M.target.x - x, M.target.z - z), stopped = Math.abs(me.speed) < 3;
   if (M.timer !== undefined && (M.timer -= dt) <= 0) { endMission(false, '⏰ Zu spät! Der Auftrag ist vorbei.'); return; }
-  if (M.type !== 'thief' && d < 7 && stopped) {
+  if (M.type !== 'thief' && d < 7 && stopped && me.alt < 2) {
     if (M.step === 'pick') {
       M.step = 'drop';
       M.target = M.type === 'taxi' ? roadPoint(220, 420, M.target) : roadPoint(180, 380, M.target);
@@ -1011,7 +1021,7 @@ function stepPolice(dt) {
   if (!P) return;
   const me = city.me;
   P.t += dt;
-  const dx = me.pos.x - P.pos.x, dz = me.pos.z - P.pos.z, dist = Math.hypot(dx, dz);
+  const dx = me.pos.x - P.pos.x, dz = me.pos.z - P.pos.z, dist = Math.hypot(dx, dz) + (me.alt > 4 ? 200 : 0); // in der Luft kommt sie nicht hin
   let tx, tz, want = P.maxV;
   if (P.state === 'leave') { // fährt davon und verschwindet
     tx = P.pos.x + Math.cos(P.heading) * 50; tz = P.pos.z + Math.sin(P.heading) * 50;
@@ -1167,7 +1177,7 @@ const CSS = `
   border-radius: 14px; padding: 6px 18px; font-weight: 900; font-size: 28px; box-shadow: 0 4px 16px rgba(0,0,0,.4); }
 #city .drift[hidden] { display: none; }
 #city .ctl.hand { width: 84px; height: 84px; font-size: 16px; border-color: #fb923c; }
-#city .chase { position: absolute; top: 76px; left: 12px; background: #b91c1c; border-radius: 12px; padding: 6px 12px;
+${flyCss('city')}#city .chase { position: absolute; top: 76px; left: 12px; background: #b91c1c; border-radius: 12px; padding: 6px 12px;
   font-weight: 900; font-size: 18px; animation: cityblink 0.6s infinite alternate; }
 @keyframes cityblink { from { background: #b91c1c; } to { background: #1d4ed8; } }
 #city .ticket { position: absolute; inset: 0; background: rgba(0,0,0,.55); display: flex; align-items: center; justify-content: center; }
@@ -1219,10 +1229,12 @@ function buildDom() {
     <button class="ctl" data-k="right" style="left:124px">▶</button>
     <button class="ctl brake" data-k="brake" style="right:124px">BREMSE</button>
     <button class="ctl gas" data-k="gas" style="right:16px">GAS</button>
-    <button class="ctl hand" data-k="drift" style="right:70px; bottom:120px">DRIFT</button>`;
+    <button class="ctl hand" data-k="drift" style="right:70px; bottom:120px">DRIFT</button>
+    ${FLY_HTML}`;
   document.body.appendChild(root);
   const $ = s => root.querySelector(s);
   const ui = { root, kmh: $('.kmh'), ps: $('.ps'), msg: $('.msg'), hint: $('.hint'), minimap: $('.minimap'), ctls: [...root.querySelectorAll('.ctl')],
+    flybtn: $('.flybtn'), flyctl: $('.flyctl'),
     chase: $('.chase'), ticket: $('.ticket'), drift: $('.drift'), clock: $('.clock'),
     tagbtn: $('.tagbtn'), tagbar: $('.tagbar'),
     jobs: $('.jobs'), jobpanel: $('.jobpanel'), goal: $('.goal'), arrow: $('.goal .arrow'), gtext: $('.goal .gtext') };
@@ -1248,8 +1260,18 @@ function buildDom() {
   $('.quit').addEventListener('pointerdown', e => { e.preventDefault(); if (city) endCity(); });
   $('.cam').addEventListener('pointerdown', e => { e.preventDefault(); nextCam(); });
   $('.horn').addEventListener('pointerdown', e => { e.preventDefault(); honk(); });
+  $('.flybtn').addEventListener('pointerdown', e => { e.preventDefault(); toggleFly(); });
   root.addEventListener('contextmenu', e => e.preventDefault());
   return ui;
+}
+
+function toggleFly() {
+  if (!city || !city.canFly) return;
+  const me = city.me;
+  if (!me.fly && (city.pulled > 0 || city.ticket || (city.police && city.police.state === 'stop'))) return;
+  if (!me.fly && tagState()) { showMsg('🏃 Fangis spielt man am Boden', 1.6); return; }
+  flyToggle(me, me.alt);
+  if (!me.landing) showMsg(flyHelp(), 2);
 }
 
 function honk() {
@@ -1263,12 +1285,13 @@ function honk() {
 }
 
 const KEYS = { ArrowLeft: 'left', KeyA: 'left', ArrowRight: 'right', KeyD: 'right', ArrowUp: 'gas', KeyW: 'gas', ArrowDown: 'brake', KeyS: 'brake',
-  Space: 'drift', ShiftLeft: 'drift', ShiftRight: 'drift' };
+  Space: 'drift', ShiftLeft: 'drift', ShiftRight: 'drift', ...FLY_KEYS };
 function onKey(e) {
   if (!city || (e.target && e.target.tagName === 'INPUT')) return; // im Chat wird geschrieben, nicht gefahren
   if (e.code === 'KeyH' && e.type === 'keydown') { honk(); e.preventDefault(); return; }
   if (e.code === 'KeyJ' && e.type === 'keydown') { toggleJobs(); e.preventDefault(); return; }
   if (e.code === 'KeyV' && e.type === 'keydown') { nextCam(); e.preventDefault(); return; }
+  if (e.code === 'KeyF' && e.type === 'keydown' && !e.repeat) { toggleFly(); e.preventDefault(); return; }
   const k = KEYS[e.code];
   if (!k) return;
   city.input[k] = e.type === 'keydown';
@@ -1357,13 +1380,14 @@ export function startCity({ player, kinds, topSpeed, onExit, pay = () => 0, earn
     window.addEventListener('resize', () => S && !S.ui.root.hidden && layout());
   }
   const mesh = buildCar(player, kinds);
+  mesh.rotation.order = 'YZX';
   // Start: auf der rechten Spur einer Strasse am Stadtrand, Richtung Zentrum
   // online starten alle auf einer anderen Strasse am Stadtrand
   const me = { v: player, mesh, pos: new THREE.Vector3(node(1 + (net ? net.mySlot : 0)) + 20, 0, node(0) + LANE), heading: 0, speed: 0, vl: 0, steer: 0,
     maxV: Math.min(55, topSpeed(player.ps)), acc: 4 + player.ps * 0.06, radius: Math.max(1.3, mesh.userData.radius * 0.8),
-    len: mesh.userData.length, slip: 0, surface: 'asphalt' };
+    len: mesh.userData.length, slip: 0, surface: 'asphalt', alt: 0, fly: false, landing: false };
   city = { me, cars: spawnTraffic(kinds), input: {}, t: Math.random() * CYCLE, msgT: 0, crashT: 0, hornT: 0, inCross: false, tod: 0.02, turbo: 0, fuelT: 0, washT: 0, mission: null,
-    gears: gearbox(player.kind), onExit, last: performance.now(), kinds, pay, gripBoost: (kinds[player.kind] && kinds[player.kind].grip) || 1, fines: 0, police: null, pulled: 0, ticket: false,
+    gears: gearbox(player.kind), onExit, last: performance.now(), kinds, pay, gripBoost: (kinds[player.kind] && kinds[player.kind].grip) || 1, canFly: !!(kinds[player.kind] && kinds[player.kind].fly), fines: 0, police: null, pulled: 0, ticket: false,
     earn, net, netCars: net ? makeNetCars({ scene: S.scene, kinds, net }) : null, drift: 0, driftT: 0, driftBest: (() => { try { return +localStorage.getItem('autoRetterDriftBest') || 0; } catch (e) { return 0; } })() };
   S.fx.clear();
   S.scene.add(mesh);
@@ -1372,6 +1396,7 @@ export function startCity({ player, kinds, topSpeed, onExit, pay = () => 0, earn
   warmUp(S.renderer, S.scene, S.camera);
   if (!S.quality) S.quality = makeQuality(S.renderer, layout);
   S.ui.tagbtn.hidden = !net; S.ui.tagbar.hidden = true;
+  S.ui.flybtn.hidden = !city.canFly;
   if (net) city.chat = makeChat({ parent: S.ui.root, net, mode: 'city', onSay: (slot, text) => city.netCars.say(slot, text) });
   S.ui.root.hidden = false;
   S.ui.ps.textContent = '⚡ ' + player.ps + ' PS';
@@ -1405,12 +1430,12 @@ function loop(now) {
   stepMission(dt);
   stepTraffic(dt);
   if (city.netCars) { // Mitspieler: zeigen, eigene Position senden, nicht durcheinander durchfahren
-    const me = city.me, o = { x: me.pos.x, y: 0, z: me.pos.z };
+    const me = city.me, o = { x: me.pos.x, y: me.alt, z: me.pos.z };
     if (city.netCars.bump(o, me.radius)) {
       me.pos.x = o.x; me.pos.z = o.z; me.speed *= 0.95;
       if (Math.abs(me.speed) > 5 && city.crashT <= 0) { crash(0.25, 'car'); city.crashT = 0.5; }
     }
-    city.netCars.update(dt, city.t, { x: me.pos.x, y: 0, z: me.pos.z, h: me.heading, v: me.speed });
+    city.netCars.update(dt, city.t, { x: me.pos.x, y: me.alt, z: me.pos.z, h: me.heading, v: me.speed, a: me.fly ? me.flyPitch : 0, b: me.fly ? me.flyRoll : 0 });
     city.chat.update(dt);
     stepTag(dt);
   }
@@ -1456,6 +1481,8 @@ function stepDayNight(dt) {
 function updateHud(dt) {
   const me = city.me;
   S.ui.kmh.textContent = Math.round(Math.abs(me.speed) * 3.6);
+  S.ui.flybtn.textContent = me.fly && !me.landing ? '🛬' : '✈️';
+  S.ui.flyctl.hidden = !me.fly || me.landing;
   drawMinimap();
   if (!S.snd) return;
   let near = null, nd = Infinity;
@@ -1477,9 +1504,9 @@ function render(dt) {
   const me = city.me, cam = S.camera;
   const fx = Math.cos(me.heading), fz = Math.sin(me.heading);
   const back = 8.5 + Math.abs(me.speed) * 0.03;
-  if (!camView(camMode, me.pos.x, 0, me.pos.z, me.heading, camWant, camAhead)) {
-    camWant.set(me.pos.x - fx * back, 3.3 + Math.abs(me.speed) * 0.01, me.pos.z - fz * back);
-    camAhead.set(me.pos.x + fx * 6, 1.2, me.pos.z + fz * 6);
+  if (!camView(camMode, me.pos.x, me.alt, me.pos.z, me.heading, camWant, camAhead)) {
+    camWant.set(me.pos.x - fx * back, me.alt + 3.3 + Math.abs(me.speed) * 0.01, me.pos.z - fz * back);
+    camAhead.set(me.pos.x + fx * 6, me.alt + 1.2, me.pos.z + fz * 6);
   }
   cam.position.lerp(camWant, 1 - Math.exp(-dt * 6));
   camLook.lerp(camAhead, 1 - Math.exp(-dt * 10));

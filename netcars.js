@@ -104,7 +104,7 @@ export function makeNetCars({ scene, kinds, net }) {
         c.mesh.position.set(c.x, c.y, c.z);
         c.mesh.rotation.set(c.b, -c.h, c.a);
         for (const w of c.mesh.userData.wheels) w.rotation.z -= c.v * dt / 0.35;
-        animateCar(c.mesh, t, p.special || null, false);
+        animateCar(c.mesh, t, p.special || null, c.y > 2); // hoch oben: Düsen an
         c.tag.position.set(c.x, c.y + 4, c.z);
         if (itSign && slot === itSlot) itSign.position.set(c.x, c.y + (c.bubble ? 6.8 : 5.5), c.z);
         if (c.bubble) {

@@ -1957,6 +1957,10 @@ Object.assign(BUILD, {
     under.rotation.x = -PI / 2; under.position.y = 0.07; under.renderOrder = 1;
     under.userData.pulse = true;
     C.group.add(under);
+    // Düsen zum Fliegen: zwei nach hinten, vier nach unten (nur in der Luft sichtbar, siehe animateCar)
+    const jet = new THREE.MeshBasicMaterial({ color: 0xffa020 }), lift = new THREE.MeshBasicMaterial({ color: 0x7dd3fc });
+    for (const z of [-0.25, 0.25]) C.cyl(0, 0.15, 1.1, jet, -L / 2 - 0.6, 0.28 * H, z, [0, 0, PI / 2]).userData.flame = true;
+    for (const [x, sz] of [[X(0.2), -1], [X(0.2), 1], [X(0.82), -1], [X(0.82), 1]]) C.cyl(0.17, 0, 0.9, lift, x, -0.3, sz * (W / 2 - 0.35)).userData.flame = true;
     // links und rechts je ein galoppierender Stier, darüber schwebt „ADMIN“
     for (const sz of [-1, 1]) C.body.add(bull(X(0.55), 0.7 * H, sz * (W / 2 + 0.55), sz)); // schweben neben dem Fenster
     C.body.add(floatingLabel('ADMIN', 0.94 * H + 1.3));
