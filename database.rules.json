@@ -106,6 +106,27 @@
             "$other": { ".validate": false }
           }
         },
+        "bases": {
+          "$slot": {
+            ".write": "auth != null && root.child('rooms').child($code).child('players').child($slot).child('uid').val() === auth.uid",
+            "$i": {
+              ".validate": "$i.matches(/^[0-9]$/) && newData.hasChildren(['kind', 'color'])",
+              "kind": { ".validate": "newData.isString() && newData.val().length <= 20" },
+              "color": { ".validate": "newData.isString() && newData.val().length <= 10" },
+              "special": { ".validate": "newData.isString() && newData.val().length <= 10" },
+              "tune": {
+                "wheels": { ".validate": "newData.isBoolean()" },
+                "spoiler": { ".validate": "newData.isBoolean()" },
+                "neon": { ".validate": "newData.isString() && newData.val().length <= 9" },
+                "sticker": { ".validate": "newData.isString() && newData.val().length <= 10" },
+                "plate": { ".validate": "newData.isString() && newData.val().length <= 8" },
+                "finish": { ".validate": "newData.isString() && newData.val().length <= 7" },
+                "$other": { ".validate": false }
+              },
+              "$other": { ".validate": false }
+            }
+          }
+        },
         "tag": {
           ".write": "auth != null && newData.exists() && root.child('rooms').child($code).child('players').child('' + newData.child('by').val()).child('uid').val() === auth.uid",
           ".validate": "newData.hasChildren(['it', 'by', 't']) && newData.child('t').val() === now && (!data.exists() || now - data.child('t').val() >= 500)",

@@ -3817,6 +3817,12 @@ function cupTrophies(cup) { return trophies[cup.id] || { gold: 0, silver: 0, bro
 function cupUnlocked(i) { return i === 0 || cupTrophies(CUPS[i - 1]).gold > 0; }
 function fleetByPS() { return [...fleet].sort((a, b) => b.ps - a.ps); }
 function raceVehicle() { return fleet.find(v => v.id === raceVehicleId) || fleetByPS()[0]; }
+// Base in der Stadt: bis zu 10 ausgesuchte Fahrzeuge; am Anfang die stärksten
+const baseGarage = {
+  all: fleetByPS,
+  ids() { return (loadJSON('autoRetterBase', null) || fleetByPS().slice(0, 10).map(v => v.id)).filter(id => fleet.some(v => v.id === id)); },
+  save(ids) { storeJSON('autoRetterBase', ids); },
+};
 
 function drawRaceMenu() {
   drawMenuBackdrop('🏁 RENNSTRECKE', true);
@@ -3935,7 +3941,7 @@ function startCityMode() {
   import('./city.js')
     .then(m => {
       state = 'city';
-      m.startCity({ player: { ...v, name: 'Du' }, kinds: KINDS, topSpeed: raceTopSpeed, onExit: () => openMenu('title'),
+      m.startCity({ player: { ...v, name: 'Du' }, kinds: KINDS, topSpeed: raceTopSpeed, garage: baseGarage, onExit: () => openMenu('title'),
         pay: n => { const paid = Math.min(wallet, n); wallet -= paid; storeJSON('autoRetterCoins', wallet); return paid; },
         earn: n => { wallet += n; storeJSON('autoRetterCoins', wallet); } });
     })
@@ -3968,7 +3974,7 @@ function startStuntMode() {
 function openOnline() {
   state = 'online';
   import('./online.js')
-    .then(m => m.openLobby({ kinds: KINDS, fleet: fleetByPS, topSpeed: raceTopSpeed, paintLabel: specialLabel, tracks: RACE_TRACKS, onClose: () => openMenu('title') }))
+    .then(m => m.openLobby({ kinds: KINDS, fleet: fleetByPS, garage: baseGarage, topSpeed: raceTopSpeed, paintLabel: specialLabel, tracks: RACE_TRACKS, onClose: () => openMenu('title') }))
     .catch(err => {
       console.error(err);
       openMenu('title');

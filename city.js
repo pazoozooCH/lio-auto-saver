@@ -23,6 +23,9 @@ const TRAFFIC = 46;             // so viele Autos fahren herum
 const SEE = 140;                // weiter weg werden Autos nicht gezeichnet
 const DIRS = [[1, 0], [0, 1], [-1, 0], [0, -1]]; // +x, +z, −x, −z
 const SPECIAL = { '2,5': 'gas', '5,2': 'wash', '5,5': 'pizza' }; // Blöcke mit Tankstelle, Waschanlage, Pizzeria
+// Basen: sechs Blöcke nebeneinander am oberen Stadtrand, Platz s im Block (s + 1, 0); Einfahrt von der Strasse, an der man startet
+const BASES = 6, BASE_CARS = 10, BASE_COLORS = ['#ef4444', '#3b82f6', '#22c55e', '#f59e0b', '#a855f7', '#ec4899'];
+const baseOf = key => { const [i, j] = key.split(',').map(Number); return j === 0 && i >= 1 && i <= BASES ? i - 1 : -1; };
 const POOL = ('car mini kombi kompakt taxi police van delivery pickup hatch coupe smart ecar minivan jeep postauto ' +
   'schoolbus ambulance garbage beetle cabrio sports muscle offroad parcel bakery icecream oldtimer limo firetruck').split(' ');
 const COLORS = ['#c0392b', '#2563eb', '#f4f4f4', '#22232b', '#9aa0aa', '#16a34a', '#f59e0b', '#7c3aed', '#0e7490', '#b45309'];
@@ -222,8 +225,8 @@ function buildWorld() {
   const roofMat = mat({ color: 0x4b4f57, roughness: 0.9 }), metal = mat({ color: 0x9aa0aa, metalness: 0.6, roughness: 0.4 });
   const plaza = (N >> 1) + ',' + (N >> 1);
   const parks = new Set(); // sieben Parks, über die Stadt verteilt
-  while (parks.size < 7) { const k = Math.floor(r() * N) + ',' + Math.floor(r() * N); if (k !== plaza && !SPECIAL[k]) parks.add(k); }
-  const places = {}; // Tankstelle, Waschanlage, Pizzeria: Mitte des Blocks
+  while (parks.size < 7) { const k = Math.floor(r() * N) + ',' + Math.floor(r() * N); if (k !== plaza && !SPECIAL[k] && baseOf(k) < 0) parks.add(k); }
+  const places = { bases: [] }; // Tankstelle, Waschanlage, Pizzeria: Mitte des Blocks; Basen
   // Schild mit Schrift (beidseitig lesbar)
   const sign = (text, bg, fg, w = 8, h = 1.6) => {
     const c = document.createElement('canvas'); c.width = 512; c.height = Math.round(512 * h / w);
@@ -278,6 +281,49 @@ function buildWorld() {
     const s1 = sign('🍕 PIZZERIA', '#b91c1c', '#ffffff', 10, 1.8); s1.position.set(cx, 5.2, cz - 2.06); decor.add(s1);
     places.pizza = { x: cx, z: cz - 2, front: { x: cx, z: cz - 32 + LANE } }; // rechte Spur der Strasse davor
   }
+  // Base: ummauerter Parkplatz mit Einfahrt und Torbogen, je fünf Parkfelder links und rechts der Fahrgasse.
+  // Die Autos und das Schild kommen erst beim Spielen dazu (stepBases); bay.solid ist weit weg, solange das Feld leer ist
+  function buildBase(cx, cz, s) {
+    const col = new THREE.Color(BASE_COLORS[s]), wallM = mat({ color: 0x2b2f3a }), neon = mat({ color: col, emissive: col, emissiveIntensity: 1.3 });
+    const floor = quads(1 / 8), marks = quads();
+    floor.add(cx - 24, cz - 24, cx + 24, cz + 24, 0.17);
+    for (const sx of [-1, 1]) for (let k = 0; k <= 5; k++) marks.rect(cx + sx * 15, cz - 20 + k * 8, 18, 0.2, 0.18);
+    decor.add(floor.mesh(asphaltMat), marks.mesh(lineMat));
+    for (const sx of [-1, 1]) {
+      box(1, 2.6, 49, wallM, cx + sx * 24.5, 1.46, cz, true);
+      box(1.05, 0.14, 49, neon, cx + sx * 24.5, 2.8, cz);
+      box(17, 2.6, 1, wallM, cx + sx * 15.5, 1.46, cz - 24.5, true);
+      box(17, 0.14, 1.05, neon, cx + sx * 15.5, 2.8, cz - 24.5);
+      box(1.2, 6.8, 1.2, wallM, cx + sx * 7.6, 3.56, cz - 24.5, true);
+    }
+    box(48, 2.6, 1, wallM, cx, 1.46, cz + 24.5, true);
+    box(48, 0.14, 1.05, neon, cx, 2.8, cz + 24.5);
+    box(16.4, 2, 1, wallM, cx, 6.4, cz - 24.5);
+    // Schild am Torbogen (von der Strasse und von innen lesbar), Text wechselt im Spiel
+    const c = document.createElement('canvas'); c.width = 512; c.height = 64;
+    const tex = new THREE.CanvasTexture(c); tex.colorSpace = THREE.SRGBColorSpace;
+    const sm = new THREE.MeshStandardMaterial({ map: tex, emissive: 0xffffff, emissiveMap: tex, emissiveIntensity: 0.5 });
+    for (const [z, ry] of [[-25.06, Math.PI], [-23.94, 0]]) {
+      const p = new THREE.Mesh(new THREE.PlaneGeometry(15.6, 1.95), sm);
+      p.position.set(cx, 6.4, cz + z); p.rotation.y = ry; scene.add(p);
+    }
+    const setSign = text => {
+      const g = c.getContext('2d');
+      g.fillStyle = BASE_COLORS[s]; g.fillRect(0, 0, 512, 64);
+      g.fillStyle = '#fff'; g.font = 'bold 40px system-ui, sans-serif'; g.textAlign = 'center'; g.textBaseline = 'middle';
+      g.fillText(text, 256, 34, 490);
+      tex.needsUpdate = true;
+    };
+    const bays = [];
+    for (const sx of [-1, 1]) for (let k = 0; k < 5; k++) {
+      const b = { x: cx + sx * 15, z: cz - 16 + k * 8, ry: sx < 0 ? 0 : Math.PI, key: '', mesh: null, solid: { x0: 1e9, x1: 1e9, z0: 1e9, z1: 1e9, h: 2.5 } };
+      solid.push(b.solid);
+      bays.push(b);
+    }
+    const group = new THREE.Group();
+    scene.add(group);
+    places.bases[s] = { x: cx, z: cz, w: 49, d: 49, bays, group, setSign, sign: '' };
+  }
   const roofTiles = [mat({ color: 0x9b3b2b, roughness: 0.85 }), mat({ color: 0x5a4e4a, roughness: 0.85 }), mat({ color: 0xb4532a, roughness: 0.85 })];
   const homeWalls = [['#f3eadb', '#7a6a55'], ['#e8d9b8', '#5b4a35'], ['#dfe7ea', '#4a5560'], ['#f0d9d0', '#7a4a3a']]
     .map(([wall, frame]) => { const f = facade(wall, frame, r); return mat({ map: f, emissive: 0xffffff, emissiveMap: f.glow, emissiveIntensity: 0, roughness: 0.8 }); });
@@ -290,6 +336,7 @@ function buildWorld() {
     decor.add(slab);
     const key = bi + ',' + bj;
     if (key === plaza) { buildPlaza(decor, cx, cz, round); continue; }
+    if (baseOf(key) >= 0) { buildBase(cx, cz, baseOf(key)); continue; }
     if (SPECIAL[key]) { ({ gas: buildGas, wash: buildWash, pizza: buildPizza })[SPECIAL[key]](cx, cz); continue; }
     if (parks.has(key)) { // Park: Wiese mit Wegkreuz und Bäumen
       const g = quads(1 / 4), h = inner / 2, p = 1.6;
@@ -780,6 +827,148 @@ function stepPlaces(dt) {
   } else city.washT = 0;
 }
 
+// ---------- Basen ----------
+// Eigene Base: bis zu 10 ausgesuchte Fahrzeuge (garage von game.js). Dort kann man das Auto wechseln, ohne die Stadt zu verlassen.
+// Online stehen die Basen aller Mitspieler nebeneinander (net.bases(): Platz → Fahrzeugliste, Regeln: rooms/<CODE>/bases).
+function loadBase() {
+  const G = city.garage;
+  const all = G ? G.all() : [], ids = G ? G.ids() : [];
+  city.base = ids.map(id => all.find(v => v.id === id)).filter(Boolean);
+  if (city.net) city.net.setBase(city.base);
+}
+const baseOwner = s => { // Name, wem die Base gehört (leer = frei)
+  if (s === city.baseSlot) return city.net ? ((city.net.players() || {})[s] || {}).name || 'Du' : 'Du';
+  return city.net ? ((city.net.players() || {})[s] || {}).name || '' : '';
+};
+function baseCars(s) {
+  if (s === city.baseSlot) return city.base;
+  const l = city.net && baseOwner(s) ? (city.net.bases() || {})[s] : null;
+  return l ? Object.values(l).slice(0, BASE_CARS) : [];
+}
+function clearBay(B, b) {
+  if (b.mesh) B.group.remove(b.mesh);
+  b.mesh = null; b.key = '';
+  Object.assign(b.solid, { x0: 1e9, x1: 1e9, z0: 1e9, z1: 1e9 });
+}
+function parkCar(B, b, v) {
+  const m = b.mesh = buildCar({ ...v, kind: city.kinds[v.kind] ? v.kind : 'car' }, city.kinds);
+  m.position.set(b.x, 0.17, b.z); m.rotation.y = b.ry;
+  m.traverse(o => { o.castShadow = false; }); // spart Rechenzeit, es stehen viele Autos da
+  b.anim = v.special === 'rainbow' || !!(city.kinds[v.kind] || {}).secret; // bewegt sich auch im Stehen
+  B.group.add(m);
+}
+function stepBases(dt) {
+  const me = city.me, x = me.pos.x, z = me.pos.z, players = city.net ? city.net.players() || {} : {};
+  let at = -1;
+  S.places.bases.forEach((B, s) => {
+    if (inZone(B, x, z)) at = s;
+    B.group.visible = Math.hypot(B.x - x, B.z - z) < 130;
+    if (B.group.visible) for (const b of B.bays) if (b.anim && b.mesh && b.mesh.visible) animateCar(b.mesh, city.t, null);
+  });
+  if (at !== city.atBase) {
+    city.atBase = at;
+    if (at >= 0) showMsg(at === city.baseSlot ? '🏠 Deine Base' : baseOwner(at) ? '🏠 Base von ' + baseOwner(at) : '🏠 Diese Base ist frei', 1.6);
+  }
+  const mine = at === city.baseSlot && me.alt < 2;
+  S.ui.basebtn.hidden = !mine;
+  if (!mine) S.ui.basepanel.hidden = true;
+  if ((city.baseT -= dt) > 0) return;
+  city.baseT = 0.1;
+  let built = false; // höchstens ein Auto pro Durchgang aufbauen, sonst ruckelt es
+  S.places.bases.forEach((B, s) => {
+    const owner = baseOwner(s), text = owner === 'Du' ? '🏠 MEINE BASE' : owner ? '🏠 BASE VON ' + owner.toUpperCase() : '🏠 FREI';
+    if (text !== B.sign) { B.sign = text; B.setSign(text); }
+    if (!B.group.visible) return;
+    const list = baseCars(s);
+    let driven = s === city.baseSlot ? me.v : players[s]; // wer gerade damit herumfährt: das Parkfeld ist leer
+    B.bays.forEach((b, i) => {
+      const v = list[i], key = v ? [v.kind, v.color, v.special || '', JSON.stringify(v.tune || {})].join('|') : '';
+      if (b.key !== key && !built) {
+        clearBay(B, b);
+        if (v) { parkCar(B, b, v); built = true; }
+        b.key = key;
+      }
+      if (!b.mesh || !v) return;
+      const gone = !!driven && v.kind === driven.kind && v.color === driven.color && (v.special || null) === (driven.special || null);
+      if (gone) driven = null;
+      b.mesh.visible = !gone;
+      const hl = b.mesh.userData.length / 2;
+      Object.assign(b.solid, gone ? { x0: 1e9, x1: 1e9, z0: 1e9, z1: 1e9 } : { x0: b.x - hl, x1: b.x + hl, z0: b.z - 1.4, z1: b.z + 1.4 });
+    });
+  });
+}
+function toggleBase() {
+  if (!city || S.ui.basebtn.hidden) return;
+  const p = S.ui.basepanel;
+  if (p.hidden) { city.baseEdit = false; drawBase(); }
+  p.hidden = !p.hidden;
+}
+// Liste in der Base: Auto antippen = einsteigen; „Autos wählen“: ganzer Fahrzeugpark, bis zu 10 ankreuzen
+function drawBase() {
+  const p = S.ui.basepanel, edit = city.baseEdit, K = city.kinds;
+  const list = edit ? city.garage.all() : city.base, chosen = new Set(city.base.map(v => v.id));
+  p.textContent = '';
+  const h = document.createElement('h3');
+  h.textContent = edit ? '✏️ Autos für die Base: ' + chosen.size + ' / ' + BASE_CARS : '🏠 Meine Base: wähl dein Auto';
+  const grid = document.createElement('div'); grid.className = 'cars';
+  for (const v of list) {
+    const b = document.createElement('button'), dot = document.createElement('i'), name = document.createElement('span'), ps = document.createElement('small');
+    b.dataset.id = v.id;
+    b.classList.toggle('sel', edit ? chosen.has(v.id) : v.id === city.me.v.id);
+    dot.style.background = v.color || '#888';
+    name.textContent = (K[v.kind] || {}).name || v.kind;
+    ps.textContent = '⚡ ' + v.ps;
+    b.append(dot, name, ps);
+    grid.append(b);
+  }
+  const row = document.createElement('div'); row.className = 'row';
+  for (const [act, text] of edit ? [['done', '✅ Fertig']] : [['edit', '✏️ Autos wählen'], ['close', '✕ Schliessen']]) {
+    const b = document.createElement('button'); b.dataset.act = act; b.textContent = text; row.append(b);
+  }
+  p.append(h, grid, row);
+}
+let baseDragged = false; // geschoben, nicht angetippt
+function onBaseClick(e) {
+  const b = e.target.closest('button');
+  if (!b || !city || baseDragged) return;
+  const act = b.dataset.act;
+  if (act === 'close') { S.ui.basepanel.hidden = true; return; }
+  if (act === 'edit' || act === 'done') { city.baseEdit = act === 'edit'; drawBase(); return; }
+  const v = city.garage.all().find(f => f.id === b.dataset.id);
+  if (!v) return;
+  if (city.baseEdit) {
+    const ids = city.base.map(f => f.id), i = ids.indexOf(v.id);
+    if (i >= 0) ids.splice(i, 1);
+    else if (ids.length < BASE_CARS) ids.push(v.id);
+    else { showMsg('Die Base hat nur ' + BASE_CARS + ' Plätze', 1.4); return; }
+    city.garage.save(ids);
+    loadBase();
+    drawBase();
+    return;
+  }
+  S.ui.basepanel.hidden = true;
+  switchCar(v);
+}
+// Anderes Auto nehmen: gleiche Stelle, neue Werte, online sehen es alle
+function switchCar(v) {
+  const me = city.me;
+  if (v.id === me.v.id) return;
+  const mesh = buildCar(v, city.kinds), M = city.mission;
+  mesh.rotation.order = 'YZX';
+  if (M && M.pizzaBox) { me.mesh.remove(M.pizzaBox); mesh.add(M.pizzaBox); }
+  S.scene.remove(me.mesh);
+  S.scene.add(mesh);
+  Object.assign(me, carStats(v, mesh, city.kinds, city.topSpeed), { v: { ...v, name: me.v.name }, mesh, speed: 0, vl: 0, steer: 0, fly: false, landing: false, alt: 0 });
+  city.gears = gearbox(v.kind);
+  city.gripBoost = (city.kinds[v.kind] && city.kinds[v.kind].grip) || 1;
+  city.canFly = !!(city.kinds[v.kind] && city.kinds[v.kind].fly);
+  S.ui.flybtn.hidden = !city.canFly;
+  S.ui.ps.textContent = '⚡ ' + v.ps + ' PS';
+  if (S.snd) { S.snd.stop(); S.snd = createCarSound({ kind: v.kind }); }
+  if (city.net) city.net.setCar(v);
+  showMsg('🔑 ' + ((city.kinds[v.kind] || {}).name || v.kind), 1.6);
+}
+
 // ---------- Fangis (nur online) ----------
 // Im Raum steht tag = { it: Platz, der dran ist (−1 = kein Spiel), by: wer zuletzt gefangen hat, t }.
 // Wer dran ist, prüft selbst, ob er jemanden berührt, und gibt „dran“ weiter (zurückfangen erst nach 3 s).
@@ -1177,7 +1366,22 @@ const CSS = `
   border-radius: 14px; padding: 6px 18px; font-weight: 900; font-size: 28px; box-shadow: 0 4px 16px rgba(0,0,0,.4); }
 #city .drift[hidden] { display: none; }
 #city .ctl.hand { width: 84px; height: 84px; font-size: 16px; border-color: #fb923c; }
-${flyCss('city')}#city .chase { position: absolute; top: 76px; left: 12px; background: #b91c1c; border-radius: 12px; padding: 6px 12px;
+${flyCss('city')}#city .basebtn { position: absolute; top: 76px; left: 12px; width: 58px; height: 58px; border-radius: 50%; border: 3px solid #facc15;
+  background: rgba(0,0,0,.4); font-size: 28px; }
+#city .basepanel { position: absolute; top: 12px; left: 50%; transform: translateX(-50%); width: min(560px, 88%); max-height: calc(100% - 24px); box-sizing: border-box;
+  overflow-y: auto; touch-action: none; background: rgba(15,18,28,.94); border-radius: 14px; padding: 12px; z-index: 6; }
+#city .basebtn[hidden], #city .basepanel[hidden] { display: none; }
+#city .basepanel h3 { margin: 0 0 8px; font-size: 20px; }
+#city .basepanel .cars { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+#city .basepanel button { border: 2px solid transparent; border-radius: 10px; background: #334155; color: #fff; font: 700 15px system-ui, sans-serif; padding: 8px 10px;
+  text-align: left; display: flex; align-items: center; gap: 8px; min-width: 0; }
+#city .basepanel button i { flex: none; width: 16px; height: 16px; border-radius: 50%; border: 1px solid rgba(255,255,255,.5); }
+#city .basepanel button span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#city .basepanel button small { margin-left: auto; flex: none; opacity: .8; }
+#city .basepanel button.sel { border-color: #facc15; background: #475569; }
+#city .basepanel .row { display: flex; gap: 6px; margin-top: 8px; }
+#city .basepanel .row button { flex: 1; justify-content: center; background: #1e293b; }
+#city .chase { position: absolute; top: 76px; left: 12px; background: #b91c1c; border-radius: 12px; padding: 6px 12px;
   font-weight: 900; font-size: 18px; animation: cityblink 0.6s infinite alternate; }
 @keyframes cityblink { from { background: #b91c1c; } to { background: #1d4ed8; } }
 #city .ticket { position: absolute; inset: 0; background: rgba(0,0,0,.55); display: flex; align-items: center; justify-content: center; }
@@ -1206,6 +1410,8 @@ function buildDom() {
     <button class="horn" title="Hupen (H)">📯</button>
     <button class="jobs" title="Aufträge (J)">📋</button>
     <button class="tagbtn" title="Fangis (online)" hidden>🏃</button>
+    <button class="basebtn" title="Base (B)" hidden>🏠</button>
+    <div class="basepanel" hidden></div>
     <div class="tagbar" hidden></div>
     <div class="jobpanel" hidden><b>📋 Aufträge</b>
       <button data-job="taxi">🚕 Taxi: Fahrgast abholen und hinbringen</button>
@@ -1234,7 +1440,7 @@ function buildDom() {
   document.body.appendChild(root);
   const $ = s => root.querySelector(s);
   const ui = { root, kmh: $('.kmh'), ps: $('.ps'), msg: $('.msg'), hint: $('.hint'), minimap: $('.minimap'), ctls: [...root.querySelectorAll('.ctl')],
-    flybtn: $('.flybtn'), flyctl: $('.flyctl'),
+    flybtn: $('.flybtn'), flyctl: $('.flyctl'), basebtn: $('.basebtn'), basepanel: $('.basepanel'),
     chase: $('.chase'), ticket: $('.ticket'), drift: $('.drift'), clock: $('.clock'),
     tagbtn: $('.tagbtn'), tagbar: $('.tagbar'),
     jobs: $('.jobs'), jobpanel: $('.jobpanel'), goal: $('.goal'), arrow: $('.goal .arrow'), gtext: $('.goal .gtext') };
@@ -1261,6 +1467,18 @@ function buildDom() {
   $('.cam').addEventListener('pointerdown', e => { e.preventDefault(); nextCam(); });
   $('.horn').addEventListener('pointerdown', e => { e.preventDefault(); honk(); });
   $('.flybtn').addEventListener('pointerdown', e => { e.preventDefault(); toggleFly(); });
+  $('.basebtn').addEventListener('pointerdown', e => { e.preventDefault(); toggleBase(); });
+  ui.basepanel.addEventListener('click', onBaseClick);
+  // Liste mit dem Finger schieben (von Hand: im Hochformat ist alles um 90° gedreht)
+  let drag = null;
+  ui.basepanel.addEventListener('pointerdown', e => { drag = { x: e.clientX, y: e.clientY, top: ui.basepanel.scrollTop }; baseDragged = false; });
+  ui.basepanel.addEventListener('pointermove', e => {
+    if (!drag) return;
+    const d = window.innerHeight > window.innerWidth ? drag.x - e.clientX : e.clientY - drag.y;
+    if (Math.abs(d) > 8) baseDragged = true;
+    if (baseDragged) ui.basepanel.scrollTop = drag.top - d;
+  });
+  for (const ev of ['pointerup', 'pointercancel']) ui.basepanel.addEventListener(ev, () => { drag = null; });
   root.addEventListener('contextmenu', e => e.preventDefault());
   return ui;
 }
@@ -1292,6 +1510,7 @@ function onKey(e) {
   if (e.code === 'KeyJ' && e.type === 'keydown') { toggleJobs(); e.preventDefault(); return; }
   if (e.code === 'KeyV' && e.type === 'keydown') { nextCam(); e.preventDefault(); return; }
   if (e.code === 'KeyF' && e.type === 'keydown' && !e.repeat) { toggleFly(); e.preventDefault(); return; }
+  if (e.code === 'KeyB' && e.type === 'keydown' && !e.repeat) { toggleBase(); e.preventDefault(); return; }
   const k = KEYS[e.code];
   if (!k) return;
   city.input[k] = e.type === 'keydown';
@@ -1344,6 +1563,11 @@ function drawMinimap() {
   g.drawImage(S.mapBase, 0, 0);
   g.fillStyle = '#ffffff';
   for (const c of city.cars) g.fillRect(mx(c.x) - 1.5, mx(c.z) - 1.5, 3, 3);
+  S.places.bases.forEach((B, s) => { // eigene Base und die der Mitspieler
+    if (s === city.baseSlot) { g.font = '13px system-ui, sans-serif'; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText('🏠', mx(B.x), mx(B.z)); }
+    else if (baseOwner(s)) { g.fillStyle = BASE_COLORS[s]; g.fillRect(mx(B.x) - 3, mx(B.z) - 3, 6, 6); }
+  });
+  g.fillStyle = '#ffffff';
   if (city.police) {
     g.fillStyle = Math.floor(city.t * 6) % 2 ? '#3b82f6' : '#ef4444';
     g.beginPath(); g.arc(mx(city.police.pos.x), mx(city.police.pos.z), 4.5, 0, Math.PI * 2); g.fill();
@@ -1370,7 +1594,12 @@ function drawMinimap() {
 
 // ---------- Start, Schleife, Ende ----------
 // net (nur online): Mitspieler fahren mit (netcars.js); Verkehr und Polizei rechnet jedes Gerät für sich
-export function startCity({ player, kinds, topSpeed, onExit, pay = () => 0, earn = () => {}, net = null }) {
+// Werte, die vom Fahrzeug abhängen (beim Start und beim Wechseln in der Base)
+function carStats(v, mesh, kinds, topSpeed) {
+  return { maxV: Math.min(55, topSpeed(v.ps)), acc: 4 + v.ps * 0.06, radius: Math.max(1.3, mesh.userData.radius * 0.8), len: mesh.userData.length };
+}
+
+export function startCity({ player, kinds, topSpeed, onExit, pay = () => 0, earn = () => {}, net = null, garage = null }) {
   if (!S) {
     S = buildWorld();
     S.ui = buildDom();
@@ -1384,11 +1613,10 @@ export function startCity({ player, kinds, topSpeed, onExit, pay = () => 0, earn
   // Start: auf der rechten Spur einer Strasse am Stadtrand, Richtung Zentrum
   // online starten alle auf einer anderen Strasse am Stadtrand
   const me = { v: player, mesh, pos: new THREE.Vector3(node(1 + (net ? net.mySlot : 0)) + 20, 0, node(0) + LANE), heading: 0, speed: 0, vl: 0, steer: 0,
-    maxV: Math.min(55, topSpeed(player.ps)), acc: 4 + player.ps * 0.06, radius: Math.max(1.3, mesh.userData.radius * 0.8),
-    len: mesh.userData.length, slip: 0, surface: 'asphalt', alt: 0, fly: false, landing: false };
+    ...carStats(player, mesh, kinds, topSpeed), slip: 0, surface: 'asphalt', alt: 0, fly: false, landing: false };
   city = { me, cars: spawnTraffic(kinds), input: {}, t: Math.random() * CYCLE, msgT: 0, crashT: 0, hornT: 0, inCross: false, tod: 0.02, turbo: 0, fuelT: 0, washT: 0, mission: null,
     gears: gearbox(player.kind), onExit, last: performance.now(), kinds, pay, gripBoost: (kinds[player.kind] && kinds[player.kind].grip) || 1, canFly: !!(kinds[player.kind] && kinds[player.kind].fly), fines: 0, police: null, pulled: 0, ticket: false,
-    earn, net, netCars: net ? makeNetCars({ scene: S.scene, kinds, net }) : null, drift: 0, driftT: 0, driftBest: (() => { try { return +localStorage.getItem('autoRetterDriftBest') || 0; } catch (e) { return 0; } })() };
+    earn, net, topSpeed, garage, baseSlot: net ? net.mySlot : 0, baseT: 0, atBase: -1, baseEdit: false, netCars: net ? makeNetCars({ scene: S.scene, kinds, net }) : null, drift: 0, driftT: 0, driftBest: (() => { try { return +localStorage.getItem('autoRetterDriftBest') || 0; } catch (e) { return 0; } })() };
   S.fx.clear();
   S.scene.add(mesh);
   mesh.traverse(o => { const m = o.material; if (m && m.emissive && m.emissiveIntensity === 1.2 && m.color.getHex() === 0xffffff) city.headMat = m; }); // Scheinwerfer (gemeinsam für alle Autos)
@@ -1397,6 +1625,8 @@ export function startCity({ player, kinds, topSpeed, onExit, pay = () => 0, earn
   if (!S.quality) S.quality = makeQuality(S.renderer, layout);
   S.ui.tagbtn.hidden = !net; S.ui.tagbar.hidden = true;
   S.ui.flybtn.hidden = !city.canFly;
+  S.ui.basepanel.hidden = S.ui.basebtn.hidden = true;
+  loadBase();
   if (net) city.chat = makeChat({ parent: S.ui.root, net, mode: 'city', onSay: (slot, text) => city.netCars.say(slot, text) });
   S.ui.root.hidden = false;
   S.ui.ps.textContent = '⚡ ' + player.ps + ' PS';
@@ -1427,6 +1657,7 @@ function loop(now) {
   stepDrift(dt);
   stepPolice(dt);
   stepPlaces(dt);
+  stepBases(dt);
   stepMission(dt);
   stepTraffic(dt);
   if (city.netCars) { // Mitspieler: zeigen, eigene Position senden, nicht durcheinander durchfahren
@@ -1525,6 +1756,7 @@ function endCity() {
   endMission(false);
   S.ui.jobpanel.hidden = true;
   S.ui.ticket.hidden = true;
+  for (const B of S.places.bases) for (const b of B.bays) clearBay(B, b);
   const c = city;
   city = null;
   if (S.snd) { S.snd.stop(); S.snd = null; }

@@ -20,7 +20,7 @@ const trackDef = round => (api.tracks || [])[trackOf(round)] || { id: 'gp', name
 const MODE_LABEL = { race: '🏁 Rennen', drag: '🔥 Dragster', city: '🏙️ Stadt', stunt: '🤸 Stuntpark' };
 const LS = { name: 'autoRetterOnlineName', key: 'autoRetterFriendKey', car: 'autoRetterOnlineCar', pub: 'autoRetterOnlinePublic' };
 
-let api = null;   // vom Spiel: kinds, fleet(), topSpeed, paintLabel(v), onClose()
+let api = null;   // vom Spiel: kinds, fleet(), garage (Base), topSpeed, paintLabel(v), onClose()
 let fb = null;    // Firebase: db-Funktionen, uid, Zeitversatz zur Serveruhr
 let ui = null;    // Bedienoberfläche
 let room = null;  // aktueller Raum: { code, mode, slot, data, unsub, lastRound, racing, results }
@@ -375,6 +375,7 @@ async function leaveRoom(byUser, msg = '') {
       await fb.remove(roomRef(r.code));
     } else {
       await fb.remove(roomRef(r.code, 'chat/' + r.slot)).catch(() => {});
+      await fb.remove(roomRef(r.code, 'bases/' + r.slot)).catch(() => {});
       await fb.remove(roomRef(r.code, 'live/' + r.slot)); await fb.remove(roomRef(r.code, 'players/' + r.slot));
     }
     for (const p of ['live/' + r.slot, 'players/' + r.slot, '']) await fb.onDisconnect(roomRef(r.code, p)).cancel();
@@ -398,6 +399,13 @@ function cleanTune(t) {
   return Object.keys(o).length ? o : null;
 }
 // Platz im Raum schreiben; lehnt die Datenbank ab (ältere Regeln ohne Tuning), nochmals ohne Tuning
+function baseCar(v) { // was die Mitspieler von einem Fahrzeug sehen
+  const c = { kind: v.kind, color: String(v.color || '#888888').slice(0, 10) }, t = cleanTune(v.tune);
+  if (v.special) c.special = v.special;
+  if (t) c.tune = t;
+  return c;
+}
+
 async function setPlayer(ref, data) {
   try { await fb.set(ref, data); }
   catch (e) {
@@ -493,6 +501,15 @@ async function launchFree(data) {
     chat(m) { fb.set(roomRef(code, 'chat/' + mySlot), { m, t: fb.serverTimestamp() }).catch(() => {}); }, // Nummer eines Spruchs (chat.js)
     canType: !isPublic,
     tag: () => room && room.data && room.data.tag, // Fangis (nur Stadt)
+    bases: () => (room && room.data && room.data.bases) || {}, // Basen der Mitspieler (nur Stadt)
+    setBase(list) { // eigene Base zeigen; ohne die neuen Regeln geht das nicht, dann sieht man sie einfach nicht
+      fb.set(roomRef(code, 'bases/' + mySlot), list.slice(0, 10).map(baseCar)).catch(() => {});
+    },
+    setCar(v) { // in der Base umgestiegen: die Mitspieler sehen das neue Auto
+      const p = (room && room.data && room.data.players && room.data.players[mySlot]) || {};
+      const rec = { ...baseCar(v), uid: fb.uid, name: p.name || 'Du', ps: Math.min(1000, Math.max(0, Math.round(v.ps))) };
+      setPlayer(roomRef(code, 'players/' + mySlot), rec).catch(() => {});
+    },
     setTag(it) { fb.set(roomRef(code, 'tag'), { it, by: mySlot, t: fb.serverTimestamp() }).catch(() => {}); },
     chatText(x) { fb.set(roomRef(code, 'chat/' + mySlot), { x: String(x).slice(0, 80), t: fb.serverTimestamp() }).catch(() => {}); },
     send(s) { fb.set(roomRef(code, 'live/' + mySlot), { ...s, r: 0, t: fb.serverTimestamp() }).catch(() => {}); },
@@ -512,7 +529,7 @@ async function launchFree(data) {
     showRoom();
   };
   try {
-    if (data.mode === 'city') (await import('./city.js')).startCity({ player: myV, kinds: api.kinds, topSpeed: api.topSpeed, onExit: done, net });
+    if (data.mode === 'city') (await import('./city.js')).startCity({ player: myV, kinds: api.kinds, topSpeed: api.topSpeed, onExit: done, net, garage: api.garage });
     else (await import('./stunt.js')).startStunt({ player: myV, kinds: api.kinds, topSpeed: api.topSpeed, onExit: done, net });
   } catch (err) {
     console.error(err);
