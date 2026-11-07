@@ -236,9 +236,9 @@ function buildWorld() {
     const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace;
     return new THREE.Mesh(new THREE.PlaneGeometry(w, h), new THREE.MeshStandardMaterial({ map: t, emissive: 0xffffff, emissiveMap: t, emissiveIntensity: 0.35, side: THREE.DoubleSide }));
   };
-  const box = (w, h, d, m, x, y, z, solidToo) => {
+  const box = (w, h, d, m, x, y, z, solidToo, parent = decor) => {
     const b = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), m);
-    b.position.set(x, y, z); b.castShadow = b.receiveShadow = true; decor.add(b);
+    b.position.set(x, y, z); b.castShadow = b.receiveShadow = true; parent.add(b);
     if (solidToo) solid.push({ x0: x - w / 2, x1: x + w / 2, z0: z - d / 2, z1: z + d / 2, h: y + h / 2 });
     return b;
   };
@@ -282,30 +282,37 @@ function buildWorld() {
     places.pizza = { x: cx, z: cz - 2, front: { x: cx, z: cz - 32 + LANE } }; // rechte Spur der Strasse davor
   }
   // Base: ummauerter Parkplatz mit Einfahrt und Torbogen, je fünf Parkfelder links und rechts der Fahrgasse.
-  // Die Autos und das Schild kommen erst beim Spielen dazu (stepBases); bay.solid ist weit weg, solange das Feld leer ist
+  // Die Autos und das Schild kommen erst beim Spielen dazu (stepBases); bay.solid ist weit weg, solange das Feld leer ist.
+  // Eine Base steht nur, wenn sie jemandem gehört (setBaseOn), sonst ist hier eine Wiese
   function buildBase(cx, cz, s) {
     const col = new THREE.Color(BASE_COLORS[s]), wallM = mat({ color: 0x2b2f3a }), neon = mat({ color: col, emissive: col, emissiveIntensity: 1.3 });
-    const floor = quads(1 / 8), marks = quads();
+    const floor = quads(1 / 8), marks = quads(), grass = quads(1 / 4), shell = new THREE.Group(), root = new THREE.Group(), first = solid.length;
+    grass.add(cx - 22, cz - 22, cx + 22, cz + 22, 0.17);
+    const lawn = grass.mesh(grassMat);
+    scene.add(lawn, root);
     floor.add(cx - 24, cz - 24, cx + 24, cz + 24, 0.17);
     for (const sx of [-1, 1]) for (let k = 0; k <= 5; k++) marks.rect(cx + sx * 15, cz - 20 + k * 8, 18, 0.2, 0.18);
-    decor.add(floor.mesh(asphaltMat), marks.mesh(lineMat));
+    shell.add(floor.mesh(asphaltMat), marks.mesh(lineMat));
     for (const sx of [-1, 1]) {
-      box(1, 2.6, 49, wallM, cx + sx * 24.5, 1.46, cz, true);
-      box(1.05, 0.14, 49, neon, cx + sx * 24.5, 2.8, cz);
-      box(17, 2.6, 1, wallM, cx + sx * 15.5, 1.46, cz - 24.5, true);
-      box(17, 0.14, 1.05, neon, cx + sx * 15.5, 2.8, cz - 24.5);
-      box(1.2, 6.8, 1.2, wallM, cx + sx * 7.6, 3.56, cz - 24.5, true);
+      box(1, 2.6, 49, wallM, cx + sx * 24.5, 1.46, cz, true, shell);
+      box(1.05, 0.14, 49, neon, cx + sx * 24.5, 2.8, cz, false, shell);
+      box(17, 2.6, 1, wallM, cx + sx * 15.5, 1.46, cz - 24.5, true, shell);
+      box(17, 0.14, 1.05, neon, cx + sx * 15.5, 2.8, cz - 24.5, false, shell);
+      box(1.2, 6.8, 1.2, wallM, cx + sx * 7.6, 3.56, cz - 24.5, true, shell);
     }
-    box(48, 2.6, 1, wallM, cx, 1.46, cz + 24.5, true);
-    box(48, 0.14, 1.05, neon, cx, 2.8, cz + 24.5);
-    box(16.4, 2, 1, wallM, cx, 6.4, cz - 24.5);
+    box(48, 2.6, 1, wallM, cx, 1.46, cz + 24.5, true, shell);
+    box(48, 0.14, 1.05, neon, cx, 2.8, cz + 24.5, false, shell);
+    box(16.4, 2, 1, wallM, cx, 6.4, cz - 24.5, false, shell);
+    root.add(shell);
+    mergeStatic(shell);
+    const walls = solid.slice(first).map(w => ({ w, box: { ...w } }));
     // Schild am Torbogen (von der Strasse und von innen lesbar), Text wechselt im Spiel
     const c = document.createElement('canvas'); c.width = 512; c.height = 64;
     const tex = new THREE.CanvasTexture(c); tex.colorSpace = THREE.SRGBColorSpace;
     const sm = new THREE.MeshStandardMaterial({ map: tex, emissive: 0xffffff, emissiveMap: tex, emissiveIntensity: 0.5 });
     for (const [z, ry] of [[-25.06, Math.PI], [-23.94, 0]]) {
       const p = new THREE.Mesh(new THREE.PlaneGeometry(15.6, 1.95), sm);
-      p.position.set(cx, 6.4, cz + z); p.rotation.y = ry; scene.add(p);
+      p.position.set(cx, 6.4, cz + z); p.rotation.y = ry; root.add(p);
     }
     const setSign = text => {
       const g = c.getContext('2d');
@@ -321,8 +328,9 @@ function buildWorld() {
       bays.push(b);
     }
     const group = new THREE.Group();
-    scene.add(group);
-    places.bases[s] = { x: cx, z: cz, w: 49, d: 49, bays, group, setSign, sign: '' };
+    root.add(group);
+    places.bases[s] = { x: cx, z: cz, w: 49, d: 49, bays, group, setSign, sign: '', root, lawn, walls, on: true };
+    setBaseOn(places.bases[s], false);
   }
   const roofTiles = [mat({ color: 0x9b3b2b, roughness: 0.85 }), mat({ color: 0x5a4e4a, roughness: 0.85 }), mat({ color: 0xb4532a, roughness: 0.85 })];
   const homeWalls = [['#f3eadb', '#7a6a55'], ['#e8d9b8', '#5b4a35'], ['#dfe7ea', '#4a5560'], ['#f0d9d0', '#7a4a3a']]
@@ -845,6 +853,13 @@ function baseCars(s) {
   const l = city.net && baseOwner(s) ? (city.net.bases() || {})[s] : null;
   return l ? Object.values(l).slice(0, BASE_CARS) : [];
 }
+// Base aufstellen oder wegräumen (mit den Mauern, an denen man sonst hängen bliebe)
+function setBaseOn(B, on) {
+  if (B.on === on) return;
+  B.on = B.root.visible = on;
+  B.lawn.visible = !on;
+  for (const { w, box } of B.walls) Object.assign(w, on ? box : { x0: 1e9, x1: 1e9, z0: 1e9, z1: 1e9 });
+}
 function clearBay(B, b) {
   if (b.mesh) B.group.remove(b.mesh);
   b.mesh = null; b.key = '';
@@ -861,13 +876,13 @@ function stepBases(dt) {
   const me = city.me, x = me.pos.x, z = me.pos.z, players = city.net ? city.net.players() || {} : {};
   let at = -1;
   S.places.bases.forEach((B, s) => {
-    if (inZone(B, x, z)) at = s;
+    if (B.on && inZone(B, x, z)) at = s;
     B.group.visible = Math.hypot(B.x - x, B.z - z) < 130;
     if (B.group.visible) for (const b of B.bays) if (b.anim && b.mesh && b.mesh.visible) animateCar(b.mesh, city.t, null);
   });
   if (at !== city.atBase) {
     city.atBase = at;
-    if (at >= 0) showMsg(at === city.baseSlot ? '🏠 Deine Base' : baseOwner(at) ? '🏠 Base von ' + baseOwner(at) : '🏠 Diese Base ist frei', 1.6);
+    if (at >= 0) showMsg(at === city.baseSlot ? '🏠 Deine Base' : '🏠 Base von ' + baseOwner(at), 1.6);
   }
   const mine = at === city.baseSlot && me.alt < 2;
   S.ui.basebtn.hidden = !mine;
@@ -876,7 +891,9 @@ function stepBases(dt) {
   city.baseT = 0.1;
   let built = false; // höchstens ein Auto pro Durchgang aufbauen, sonst ruckelt es
   S.places.bases.forEach((B, s) => {
-    const owner = baseOwner(s), text = owner === 'Du' ? '🏠 MEINE BASE' : owner ? '🏠 BASE VON ' + owner.toUpperCase() : '🏠 FREI';
+    const owner = baseOwner(s), text = owner === 'Du' ? '🏠 MEINE BASE' : '🏠 BASE VON ' + owner.toUpperCase();
+    setBaseOn(B, !!owner);
+    if (!owner) return;
     if (text !== B.sign) { B.sign = text; B.setSign(text); }
     if (!B.group.visible) return;
     const list = baseCars(s);
@@ -1309,10 +1326,11 @@ function surfaceAt(x, z) {
   const bi = Math.floor(x / BLOCK + N / 2), bj = Math.floor(z / BLOCK + N / 2);
   const nx = node(Math.round(x / BLOCK + N / 2)), nz = node(Math.round(z / BLOCK + N / 2));
   if (Math.abs(x - nx) < ROAD / 2 || Math.abs(z - nz) < ROAD / 2) return 'asphalt';
+  const cx = (node(bi) + node(bi + 1)) / 2, cz = (node(bj) + node(bj + 1)) / 2, bs = baseOf(bi + ',' + bj);
   if (S.parks.has(bi + ',' + bj)) {
-    const cx = (node(bi) + node(bi + 1)) / 2, cz = (node(bj) + node(bj + 1)) / 2;
     if (Math.abs(x - cx) < 22 && Math.abs(z - cz) < 22 && Math.abs(x - cx) > 1.6 && Math.abs(z - cz) > 1.6) return 'grass';
   }
+  if (bs >= 0 && !S.places.bases[bs].on && Math.abs(x - cx) < 22 && Math.abs(z - cz) < 22) return 'grass'; // Wiese, wo keine Base steht
   return 'asphalt';
 }
 
