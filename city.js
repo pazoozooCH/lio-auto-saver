@@ -989,6 +989,7 @@ function switchCar(v) {
 // ---------- Fangis (nur online) ----------
 // Im Raum steht tag = { it: Platz, der dran ist (−1 = kein Spiel), by: wer zuletzt gefangen hat, t }.
 // Wer dran ist, prüft selbst, ob er jemanden berührt, und gibt „dran“ weiter (zurückfangen erst nach 3 s).
+// Die Höhe zählt nicht: wer fliegt, kann gefangen werden, wenn jemand genau darunter fährt (sonst wäre er unfangbar).
 function tagState() {
   const tag = city.net && city.net.tag();
   return tag && tag.it >= 0 && (city.net.players() || {})[tag.it] ? tag : null;
@@ -1002,7 +1003,6 @@ function stepTag(dt) {
   if (!city.net) return;
   const tag = tagState(), me = city.me, ui = S.ui;
   ui.tagbtn.textContent = tag ? '🛑' : '🏃';
-  if (tag && me.fly) me.landing = true; // Fangis spielt man am Boden
   if (!tag) { ui.tagbar.hidden = true; city.netCars.setIt(null); city.lastIt = -1; return; }
   const mine = tag.it === city.net.mySlot, players = city.net.players() || {};
   city.netCars.setIt(mine ? null : tag.it);
@@ -1505,7 +1505,6 @@ function toggleFly() {
   if (!city || !city.canFly) return;
   const me = city.me;
   if (!me.fly && (city.pulled > 0 || city.ticket || (city.police && city.police.state === 'stop'))) return;
-  if (!me.fly && tagState()) { showMsg('🏃 Fangis spielt man am Boden', 1.6); return; }
   flyToggle(me, me.alt);
   if (!me.landing) showMsg(flyHelp(), 2);
 }
