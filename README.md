@@ -77,7 +77,7 @@ Online spielen läuft ohne eigenen Server: Das Spiel verbindet sich direkt mit e
 - **Fangis** (Stadt online): 🏃 startet, wer startet ist dran; berühren gibt „dran“ weiter (zurückfangen erst nach 3 s).
   Im Raum steht `tag = { it, by, t }`; wer dran ist, prüft die Berührung selbst.
 - **Besucherzähler:** Beim Start lädt das Spiel im Hintergrund Firebase und zählt das Gerät einmal insgesamt und einmal
-  pro Tag (Merker im `localStorage`, keine persönlichen Daten). Die Zahl steht klein auf der Startseite.
+  pro Tag (Merker im `localStorage`, keine persönlichen Daten). Die Zahl steht im versteckten Admin-Menü (5× schnell auf die Versionsnummer tippen).
   Der Test-Server (Port 8124) zählt nicht mit. Abfragen: `curl -H "Authorization: Bearer $TOKEN" "$DB/stats.json"`
 - **Stunt-Rangliste** (Online-Startseite): bester Stuntpark-Rekord je Gerät mit Spitzname unter `scores/<uid>`, die 10 besten.
 - **Chat** (nur Stadt und Stuntpark online): Schnell-Nachrichten (feste Sprüche, Liste `QUICK` in `chat.js`) in allen Räumen,

@@ -2773,10 +2773,6 @@ function drawVersion() {
   ctx.textAlign = 'right';
   ctx.textBaseline = 'bottom';
   ctx.fillText(versionText(), W - 12, H - 8);
-  if (visitors) { // wie viele Geräte schon gespielt haben
-    ctx.textAlign = 'left';
-    ctx.fillText('👀 ' + visitors + (visitors === 1 ? ' Gerät hat' : ' Geräte haben') + ' schon gespielt', 12, H - 8);
-  }
   if (appUpdate.info) { // neue Version gefunden: Knopf oben rechts
     const pulse = 1 + 0.04 * Math.sin(time * 5);
     ctx.save();
@@ -4359,7 +4355,9 @@ function drawAdmin() {
   ctx.font = '18px system-ui, sans-serif';
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
-  ctx.fillText('Fahrzeugpark: ' + fleet.length + ' Fahrzeuge   ·   Rekord: ' + best, W / 2, 352);
+  // visitors: wie viele Geräte schon gespielt haben
+  ctx.fillText('Fahrzeugpark: ' + fleet.length + ' Fahrzeuge   ·   Rekord: ' + best
+    + (visitors ? '   ·   👀 ' + visitors + (visitors === 1 ? ' Gerät hat' : ' Geräte haben') + ' schon gespielt' : ''), W / 2, 352);
   drawButton(ADMIN_RESET_BTN, adminConfirm ? '⚠️ Wirklich alles löschen? Nochmal tippen!' : '🗑️ Spielstand zurücksetzen',
     adminConfirm ? '#b91c1c' : '#7f1d1d', 20);
   drawMenuMsg('Zurücksetzen löscht Münzen, Rekord und Fahrzeugpark (danach wieder die 4 Startautos).', 470);
