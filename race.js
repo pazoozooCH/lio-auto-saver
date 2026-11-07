@@ -1,7 +1,7 @@
 // Rennstrecke in 3D (three.js). Wird von game.js erst geladen, wenn ein Rennen startet.
 import * as THREE from 'three';
 import { Sky } from 'three/addons/objects/Sky.js';
-import { makeEffects, camView, CAM_NAMES } from './fx.js';
+import { makeEffects, camView, CAM_NAMES, FLY_HTML, FLY_KEYS, flyCss, flyHelp, flyToggle, flyStep } from './fx.js';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { buildCar, animateCar, warmUp, makeQuality, mergeStatic } from './cars3d.js';
@@ -13,6 +13,7 @@ const TRACK_W = 14;          // Fahrbahnbreite in Metern
 const GRIP = 13;             // so viel Querbeschleunigung (m/s²) halten die Reifen in Kurven
 const BRAKE = 22;            // Bremsverzögerung in m/s²
 const WALL = TRACK_W / 2 + 16; // Abstand der Reifenstapel von der Mitte
+const FLY_MAX = 22;          // Fliegen: so hoch über der Fahrbahn (in Tunneln und unter Brücken weniger, siehe clear)
 
 let R = null;      // Renderer und Bedienoberfläche; R.worlds: je Strecke Szene und Strecke (einmal gebaut)
 let race = null;   // das laufende Rennen
@@ -89,12 +90,23 @@ function makeTrack(def) {
     }
   }
   // Liegt ein anderer Streckenteil darüber oder darunter (Brücken-Kreuzung)? Dort keine Pfeiler und Seitenwände
-  const over = new Uint8Array(n);
+  const over = new Uint8Array(n), roof = new Float32Array(n).fill(FLY_MAX);
+  for (let i = 0; i < n; i++) if (inTunnel[i]) roof[i] = 2.5;
   for (let i = 0; i < n; i += 3) for (let j = 0; j < n; j += 3) {
     const dsn = Math.min(Math.abs(dist[i] - dist[j]), length - Math.abs(dist[i] - dist[j]));
-    if (dsn > 80 && (pts[i].x - pts[j].x) ** 2 + (pts[i].z - pts[j].z) ** 2 < 28 * 28) { for (let k = -3; k <= 3; k++) over[(i + k + n) % n] = 1; }
+    if (dsn > 80 && (pts[i].x - pts[j].x) ** 2 + (pts[i].z - pts[j].z) ** 2 < 28 * 28) {
+      for (let k = -3; k <= 3; k++) over[(i + k + n) % n] = 1;
+      if (h[j] > h[i] + 2) for (let k = -3; k <= 3; k++) roof[(i + k + n) % n] = Math.min(roof[(i + k + n) % n], Math.max(1, h[j] - h[i] - 4));
+    }
   }
-  return { pts, tan, nor, dist, curv, safe, wallOff, n, length, ds, h, slope, grade, gripEff, over, tunnels, inTunnel, laps: def.laps || 3 };
+  // Erlaubte Flughöhe: schon 140 m vorher tiefer, sonst kommt man nicht rechtzeitig herunter
+  const clear = new Float32Array(n), ahead = Math.round(140 / ds);
+  for (let i = 0; i < n; i++) {
+    let m = FLY_MAX;
+    for (let k = -ahead; k <= ahead; k++) m = Math.min(m, roof[(i + k + n) % n]);
+    clear[i] = m;
+  }
+  return { pts, tan, nor, dist, curv, safe, wallOff, n, length, ds, h, slope, grade, gripEff, over, clear, tunnels, inTunnel, laps: def.laps || 3 };
 }
 
 // Höhe der Fahrbahn bei Index i und o Metern rechts der Mitte (Steilkurven heben die Aussenseite an)
@@ -696,7 +708,7 @@ const CSS = `
   background: rgba(0,0,0,.35); color: #fff; font-size: 30px; font-weight: 900; touch-action: none; }
 #race .ctl.on { background: rgba(255,255,255,.4); }
 #race .ctl.hand { width: 84px; height: 84px; font-size: 16px; border-color: #fb923c; }
-#race .ctl.gas { border-color: #4ade80; } #race .ctl.brake { border-color: #f87171; font-size: 18px; }
+${flyCss('race')}#race .ctl.gas { border-color: #4ade80; } #race .ctl.brake { border-color: #f87171; font-size: 18px; }
 #race .hint { position: absolute; bottom: 86px; left: 50%; transform: translateX(-50%); font-size: 15px; opacity: .85;
   background: rgba(0,0,0,.45); padding: 4px 12px; border-radius: 10px; white-space: nowrap; }
 `;
@@ -722,13 +734,14 @@ function buildDom() {
     <button class="ctl right" data-k="right" style="left:124px">▶</button>
     <button class="ctl brake" data-k="brake" style="right:124px">BREMSE</button>
     <button class="ctl gas" data-k="gas" style="right:16px">GAS</button>
-    <button class="ctl hand" data-k="drift" style="right:70px; bottom:120px">DRIFT</button>`;
+    <button class="ctl hand" data-k="drift" style="right:70px; bottom:120px">DRIFT</button>
+    ${FLY_HTML}`;
   document.body.appendChild(root);
   const $ = sel => root.querySelector(sel);
   const ui = {
     root, pos: $('.pos'), lap: $('.lap'), kmh: $('.kmh'), ps: $('.ps'), msg: $('.msg'), hint: $('.hint'),
     lights: [...root.querySelectorAll('.lights span')], lightBox: $('.lights'), minimap: $('.minimap'), quit: $('.quit'), mirror: $('.mirror'),
-    ctls: [...root.querySelectorAll('.ctl')],
+    ctls: [...root.querySelectorAll('.ctl')], flybtn: $('.flybtn'), flyctl: $('.flyctl'),
   };
   const touch = matchMedia('(pointer: coarse)').matches || 'ontouchstart' in window;
   for (const b of ui.ctls) {
@@ -744,12 +757,13 @@ function buildDom() {
   if (touch) ui.hint.style.display = 'none';
   ui.quit.addEventListener('pointerdown', e => { e.preventDefault(); if (race) endRace(true); });
   root.querySelector('.cam').addEventListener('pointerdown', e => { e.preventDefault(); nextCam(); });
+  ui.flybtn.addEventListener('pointerdown', e => { e.preventDefault(); toggleFly(); });
   root.addEventListener('contextmenu', e => e.preventDefault());
   return ui;
 }
 
 const KEYS = { ArrowLeft: 'left', KeyA: 'left', ArrowRight: 'right', KeyD: 'right', ArrowUp: 'gas', KeyW: 'gas', ArrowDown: 'brake', KeyS: 'brake',
-  Space: 'drift', ShiftLeft: 'drift', ShiftRight: 'drift' };
+  Space: 'drift', ShiftLeft: 'drift', ShiftRight: 'drift', ...FLY_KEYS };
 // Kamera wechseln (bleibt für das nächste Rennen eingestellt)
 let camMode = 0;
 function nextCam() {
@@ -757,8 +771,17 @@ function nextCam() {
   camMode = (camMode + 1) % CAM_NAMES.length;
   showMsg(CAM_NAMES[camMode], 1);
 }
+// Fliegen: man bleibt über der Strecke (die Wände gelten auch in der Luft, keine Abkürzungen) und wird nicht schneller
+function toggleFly() {
+  if (!race || !race.canFly || race.phase !== 'race' || race.me.finished) return;
+  const me = race.me, up = !me.fly;
+  flyToggle(me, me.alt);
+  if (up) me.flyPref = me.flyWant;
+  if (!me.landing) showMsg(flyHelp(), 2);
+}
 function onKey(e) {
   if (e.code === 'KeyV' && e.type === 'keydown' && race) { nextCam(); e.preventDefault(); return; }
+  if (e.code === 'KeyF' && e.type === 'keydown' && !e.repeat && race) { toggleFly(); e.preventDefault(); return; }
   const k = KEYS[e.code];
   if (!k || !race) return;
   race.input[k] = e.type === 'keydown';
@@ -827,7 +850,7 @@ export function startRace({ player, opponents, kinds, topSpeed, onFinish, net = 
   const pg = gridSlot(T, net ? net.mySlot : grid.length);
   const me = { v: player, name: player.name, ai: false, pos: pg.pos.clone(), heading: Math.atan2(pg.fwd.z, pg.fwd.x), vl: 0, driftMode: false,
     speed: 0, steer: 0, idx: nearestIndex(T, pg.pos, 0), prog: pg.s, maxV: topSpeed(player.ps), acc: accelFor(player.ps),
-    mesh: buildCar(player, kinds), finished: null, wrongT: 0 };
+    mesh: buildCar(player, kinds), finished: null, wrongT: 0, alt: 0, fly: false, landing: false };
   cars.push(me);
   for (const c of cars) R.scene.add(c.mesh);
   warmUp(R.renderer, R.scene, R.camera);
@@ -837,7 +860,10 @@ export function startRace({ player, opponents, kinds, topSpeed, onFinish, net = 
   window.__raceR = () => R;
   race = { cars, me, T, t: 0, phase: 'lights', lightsOut: net ? 4 : 3.4 + Math.random() * 0.8, clock: 0, input: {}, onFinish,
     lastLights: 0, msgT: 0, endT: 0, lastLap: 1, last: performance.now(), net, sendT: 0, bumpT: 0, waitT: 0, crashT: 0, gears: gearbox(player.kind), laps: T.laps, rnd, botT: 0,
-    gripBoost: (kinds[player.kind] && kinds[player.kind].grip) || 1 }; // Sonderfahrzeuge lenken besser
+    gripBoost: (kinds[player.kind] && kinds[player.kind].grip) || 1, // Sonderfahrzeuge lenken besser
+    canFly: !!(kinds[player.kind] && kinds[player.kind].fly) };
+  R.ui.flybtn.hidden = !race.canFly;
+  R.ui.flyctl.hidden = true;
   R.ui.root.hidden = false;
   R.ui.lightBox.style.display = '';
   R.ui.lights.forEach(l => l.classList.remove('on'));
@@ -901,11 +927,11 @@ function step(dt) {
 
   // --- Spieler: lenken, Gas, Bremse ---
   const driving = !me.finished;
-  const gas = driving && input.gas, brake = driving && input.brake, hand = driving && !!input.drift; // Handbremse zum Driften
+  const gas = driving && input.gas, brake = driving && input.brake, hand = driving && !!input.drift && !me.fly; // Handbremse zum Driften
   const steerTarget = driving ? (input.left ? -1 : 0) + (input.right ? 1 : 0) : 0;
   me.steer += (steerTarget - me.steer) * Math.min(1, dt * 7);
   const lat = (me.pos.x - T.pts[me.idx].x) * T.nor[me.idx].x + (me.pos.z - T.pts[me.idx].z) * T.nor[me.idx].z;
-  const offTrack = Math.abs(lat) > TRACK_W / 2 + 1.4;
+  const offTrack = !me.fly && Math.abs(lat) > TRACK_W / 2 + 1.4;
   const maxV = offTrack ? me.maxV * 0.42 : me.maxV;
   if (gas) {
     if (me.speed < 0) me.speed = Math.min(0, me.speed + BRAKE * dt);
@@ -943,10 +969,11 @@ function step(dt) {
   me.vl *= Math.exp(-(hand ? 0.8 : me.driftMode ? (gas ? 1.3 : 2.4) : offTrack ? 4 : 9) * dt); // Reifen greifen wieder
   me.drifting = Math.abs(me.vl) > 2.5 && Math.abs(me.speed) > 5;
   if (me.drifting) me.slip = Math.max(me.slip, Math.min(1, Math.abs(me.vl) / 7));
+  if (me.fly) { me.slip = 0; me.kerb = false; me.surface = 'asphalt'; }
   const hx = Math.cos(me.heading), hz = Math.sin(me.heading);
   me.pos.x += (hx * me.speed - hz * me.vl) * dt;
   me.pos.z += (hz * me.speed + hx * me.vl) * dt;
-  me.speed -= 9.81 * 0.6 * tilt(me).grade * dt; // bergauf langsamer, bergab schneller
+  if (!me.fly) me.speed -= 9.81 * 0.6 * tilt(me).grade * dt; // bergauf langsamer, bergab schneller
 
   const before = me.idx;
   me.idx = nearestIndex(T, me.pos, me.idx);
@@ -980,6 +1007,15 @@ function step(dt) {
     }
     me.atWall = true;
   } else me.atWall = false;
+
+  if (me.fly) { // Höhe über der Fahrbahn; nach dem Tunnel geht es von selbst wieder auf die gewählte Höhe
+    if (!driving) me.landing = true;
+    const cap = T.clear[me.idx];
+    me.flyWant = me.flyPref;
+    me.alt = flyStep(me, input, dt, me.alt, 0, cap);
+    if ((input.up || input.down) && cap >= FLY_MAX) me.flyPref = me.flyWant;
+    if (me.landing && me.alt <= 0.03) { me.fly = me.landing = false; me.alt = 0; if (driving) showMsg('🛬 Gelandet', 1.2); }
+  }
 
   // Falsche Richtung?
   const fwdDot = Math.cos(me.heading) * T.tan[me.idx].x + Math.sin(me.heading) * T.tan[me.idx].z;
@@ -1049,7 +1085,7 @@ function netTick(dt) {
   const n = race.net, me = race.me;
   if ((race.sendT -= dt) <= 0) {
     race.sendT = 0.1;
-    n.send({ x: +me.pos.x.toFixed(2), z: +me.pos.z.toFixed(2), h: +me.heading.toFixed(3), v: +me.speed.toFixed(2),
+    n.send({ x: +me.pos.x.toFixed(2), y: +me.alt.toFixed(2), z: +me.pos.z.toFixed(2), h: +me.heading.toFixed(3), v: +me.speed.toFixed(2),
       p: +me.prog.toFixed(1), fin: me.finished ? +me.finished.toFixed(3) : 0 });
   }
   const now = n.serverNow(), k = 1 - Math.exp(-dt * 12);
@@ -1069,6 +1105,8 @@ function netTick(dt) {
     const dh = Math.atan2(Math.sin(s.h - c.heading), Math.cos(s.h - c.heading));
     c.heading += dh * k;
     c.speed = s.v;
+    c.alt = (c.alt || 0) + ((s.y || 0) - (c.alt || 0)) * k; // Höhe über der Fahrbahn (LIONEL X fliegt)
+    c.fly = c.alt > 0.5;
     c.prog = s.p + s.v * age;
     c.idx = nearestIndex(race.T, c.pos, c.idx);
     if (s.fin) c.finished = s.fin;
@@ -1146,12 +1184,17 @@ function placeCars() {
       x = c.pos.x; z = c.pos.z; heading = c.heading; idx = c.idx;
       ({ j, f } = between(race.T, c.pos, idx));
       const T = race.T, o = latOf(c);
-      y = c.y = mix(T.h, idx, j, f) + o * mix(T.slope, idx, j, f);
+      y = c.y = mix(T.h, idx, j, f) + o * mix(T.slope, idx, j, f) + (c.alt || 0);
     }
     const tl = tilt(c, idx, heading, j, f);
     m.position.set(x, y, z);
     m.rotation.order = 'YZX';
     m.rotation.set(-Math.atan(tl.right), -heading, Math.atan(tl.grade));
+    if (c === race.me && c.fly) { // in der Luft: von der Neigung der Strecke in die Fluglage
+      const k = Math.min(1, c.alt / 3);
+      m.rotation.x += (c.flyRoll - m.rotation.x) * k;
+      m.rotation.z += (c.flyPitch - m.rotation.z) * k;
+    }
     const spin = (c.speed || 0) * 0.016 / 0.35;
     for (const w of m.userData.wheels) w.rotation.z -= spin;
     if (c === race.me) { // Vorderräder lenken mit
@@ -1174,6 +1217,8 @@ function updateHud() {
   R.ui.pos.textContent = 'P' + (order.indexOf(race.me) + 1) + '/' + order.length;
   R.ui.lap.textContent = 'Runde ' + Math.min(race.laps, Math.max(1, Math.floor(race.me.prog / race.T.length) + 1)) + '/' + race.laps;
   R.ui.kmh.textContent = Math.round(Math.abs(race.me.speed) * 3.6);
+  R.ui.flybtn.textContent = race.me.fly && !race.me.landing ? '🛬' : '✈️';
+  R.ui.flyctl.hidden = !race.me.fly || race.me.landing;
   engineSound();
   drawMinimapCars();
 }
@@ -1192,7 +1237,7 @@ function snapCamera() {
 // Bremsspuren hinter den Hinterrädern, Rauch beim Driften
 function driftFx(dt) {
   const { me, input } = race, fx = Math.cos(me.heading), fz = Math.sin(me.heading);
-  const skid = me.drifting || (input.drift && Math.abs(me.speed) > 6) || (input.brake && me.speed > 25);
+  const skid = !me.fly && (me.drifting || (input.drift && Math.abs(me.speed) > 6) || (input.brake && me.speed > 25));
   const back = me.mesh.userData.length * 0.32, y = (me.y || 0) + 0.04;
   for (const k of [0, 1]) {
     const sx = k ? 1 : -1, wx = me.pos.x - fx * back - fz * 0.8 * sx, wz = me.pos.z - fz * back + fx * 0.8 * sx;

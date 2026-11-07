@@ -386,7 +386,7 @@ const KINDS = {
   // --- Geheimes Sonderfahrzeug (secret: nicht im Shop, nicht bei Gegnern; grip: lenkt besser, hält immer) ---
   lionelx:   { name: 'LIONEL X', tier: 'admin', secret: true, w: [104, 112], h: [32, 36], wheel: 12, speed: 1.8, grip: 1.8, color: '#e10600',
                ability: 'turbo', armor: 2, points: 10, coins: 3, look: 'sports', badge: '⚡', fly: true,
-               info: '⚡ LIONEL X: das geheime Sonderfahrzeug! Turbo, lenkt super, hält ZWEI Schläge aus und fliegt in Stadt und Stuntpark.' },
+               info: '⚡ LIONEL X: das geheime Sonderfahrzeug! Turbo, lenkt super, hält ZWEI Schläge aus und fliegt auf Knopfdruck.' },
 };
 
 // Münzen und Fahrzeugpark bleiben gespeichert
