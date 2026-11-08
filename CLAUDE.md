@@ -17,7 +17,8 @@ Browser-Spiel ohne Build: `index.html` + `game.js` (Spiellogik, Menüs und 2D-Ze
   Testen: `startCityMode()`, dann `window.__city()` (`me`, `cars`, `input`). 🚪/X: aussteigen und zu Fuss gehen (`city.walk`),
   einsteigen ins eigene Auto oder in eines der eigenen Base.
   Polizei nur nach einem Blitzer: Rotlicht-Kamera an jeder zehnten Ampel (`S.redCams`) oder Radarkasten (`S.speedCams`,
-  mehr als 5 km/h über dem Limit); Tempolimit je Strasse in `streetLimit` (Ring 80, Mitte 30, sonst 50). Oben am Stadtrand ist Platz für sechs Basen nebeneinander (nur für echte Spieler, sonst Wiese): bis zu 10 ausgesuchte
+  mehr als 5 km/h über dem Limit); Tempolimit je Strasse in `streetLimit` (Ring 80, Mitte 30, sonst 50).
+  Über 140 km/h geblitzt: 3 Minuten Gefängnis (Block 2,2), freikaufen 100 Münzen; Endzeit im Spielstand `autoRetterJail`. Oben am Stadtrand ist Platz für sechs Basen nebeneinander (nur für echte Spieler, sonst Wiese): bis zu 10 ausgesuchte
   Autos (`baseGarage` in `game.js`, Spielstand `autoRetterBase`), dort Auto wechseln; online je Spieler eine (`rooms/<CODE>/bases`).
 - `stunt.js`: 3D-Stuntpark mit eigener Physik in der Höhe (Rampen als Formen in `SHAPES`, Looping, Feuerringe, Salto/Schraube).
   Testen: `startStuntMode()`, dann `window.__stunt()` (`me`, `input`, `score`).

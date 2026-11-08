@@ -22,7 +22,7 @@ const CYCLE = 22;               // Ampelzyklus in Sekunden
 const TRAFFIC = 46;             // so viele Autos fahren herum
 const SEE = 140;                // weiter weg werden Autos nicht gezeichnet
 const DIRS = [[1, 0], [0, 1], [-1, 0], [0, -1]]; // +x, +z, −x, −z
-const SPECIAL = { '2,5': 'gas', '5,2': 'wash', '5,5': 'pizza' }; // Blöcke mit Tankstelle, Waschanlage, Pizzeria
+const SPECIAL = { '2,5': 'gas', '5,2': 'wash', '5,5': 'pizza', '2,2': 'jail' }; // Blöcke mit Tankstelle, Waschanlage, Pizzeria, Gefängnis
 // Basen: sechs Blöcke nebeneinander am oberen Stadtrand, Platz s im Block (s + 1, 0); Einfahrt von der Strasse, an der man startet
 const BASES = 6, BASE_CARS = 10, BASE_COLORS = ['#ef4444', '#3b82f6', '#22c55e', '#f59e0b', '#a855f7', '#ec4899'];
 const baseOf = key => { const [i, j] = key.split(',').map(Number); return j === 0 && i >= 1 && i <= BASES ? i - 1 : -1; };
@@ -283,6 +283,35 @@ function buildWorld() {
     const s1 = sign('🍕 PIZZERIA', '#b91c1c', '#ffffff', 10, 1.8); s1.position.set(cx, 5.2, cz - 2.06); decor.add(s1);
     places.pizza = { x: cx, z: cz - 2, front: { x: cx, z: cz - 32 + LANE } }; // rechte Spur der Strasse davor
   }
+  function buildJail(cx, cz) { // Gefängnis: Hof mit hohen Mauern, vorne Gitter, Stacheldraht, Wachturm, Zellenhaus dahinter
+    box(46, 0.04, 46, tarmac, cx, 0.18, cz);
+    const wallM = mat({ color: 0x9ca3af, roughness: 0.9 }), barM = mat({ color: 0x3f444c, metalness: 0.7, roughness: 0.35 });
+    const yx = cx, yz = cz - 4, h = 11; // Hof: 22 × 22 m, vorne (−z) zur Strasse
+    for (const s of [-1, 1]) box(0.8, 4.4, 2 * h + 0.8, wallM, yx + s * h, 2.38, yz, true); // Seitenmauern
+    box(2 * h + 0.8, 4.4, 0.8, wallM, yx, 2.38, yz + h, true); // hinten
+    for (let x = -h; x <= h + 0.01; x += 0.55) { // vorne: Gitterstäbe
+      const b = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.05, 4.4, 6), barM);
+      b.position.set(yx + x, 2.38, yz - h); decor.add(b);
+    }
+    for (const y of [0.6, 2.4, 4.4]) box(2 * h, 0.12, 0.12, barM, yx, y, yz - h);
+    solid.push({ x0: yx - h, x1: yx + h, z0: yz - h - 0.3, z1: yz - h + 0.3, h: 4.6 });
+    for (const [x0, z0, x1, z1] of [[-h, -h, -h, h], [h, -h, h, h], [-h, h, h, h], [-h, -h, h, -h]]) { // Stacheldraht oben
+      const len = Math.hypot(x1 - x0, z1 - z0), wire = new THREE.Mesh(new THREE.CylinderGeometry(0.18, 0.18, len, 8, 1, true), mat({ color: 0x6b7280, metalness: 0.8, roughness: 0.4, wireframe: true }));
+      wire.rotation.set(z1 !== z0 ? Math.PI / 2 : 0, 0, x1 !== x0 ? Math.PI / 2 : 0);
+      wire.position.set(yx + (x0 + x1) / 2, 4.8, yz + (z0 + z1) / 2); decor.add(wire);
+    }
+    const house = wallBox(30, 7, 8, walls[2], 8); house.position.set(cx, 3.66, cz + 15); decor.add(house); // Zellenhaus
+    solid.push({ x0: cx - 15, x1: cx + 15, z0: cz + 11, z1: cz + 19, h: 7.5 });
+    box(1.2, 9, 1.2, wallM, yx - h - 2.5, 4.68, yz - h - 1, true); // Wachturm mit Hütte und Scheinwerfer
+    box(3.4, 2.2, 3.4, mat({ color: 0x4b5563 }), yx - h - 2.5, 10.2, yz - h - 1);
+    box(3.8, 0.3, 3.8, mat({ color: 0x1f2937 }), yx - h - 2.5, 11.45, yz - h - 1);
+    box(0.6, 0.4, 0.6, mat({ color: 0xffffff, emissive: 0xfff3c0, emissiveIntensity: 1.5 }), yx - h - 1, 9.6, yz - h - 1);
+    for (const side of [0, 1]) { // Schild: von der Strasse und vom Hof aus lesbar
+      const s1 = sign('🔒 GEFÄNGNIS', '#1f2937', '#fb923c', 12, 2);
+      s1.position.set(yx, 6.2, yz - h - 0.2 - side * 0.06); s1.rotation.y = side * Math.PI; decor.add(s1);
+    }
+    places.jail = { x: yx, z: yz, half: h - 2.5, gate: { x: yx, z: cz - BLOCK / 2 + LANE, h: 0 } }; // raus: rechte Spur der Strasse davor
+  }
   // Base: ummauerter Parkplatz mit Einfahrt und Torbogen, je fünf Parkfelder links und rechts der Fahrgasse.
   // Die Autos und das Schild kommen erst beim Spielen dazu (stepBases); bay.solid ist weit weg, solange das Feld leer ist.
   // Eine Base steht nur, wenn sie jemandem gehört (setBaseOn), sonst ist hier eine Wiese
@@ -347,7 +376,7 @@ function buildWorld() {
     const key = bi + ',' + bj;
     if (key === plaza) { buildPlaza(decor, cx, cz, round); continue; }
     if (baseOf(key) >= 0) { buildBase(cx, cz, baseOf(key)); continue; }
-    if (SPECIAL[key]) { ({ gas: buildGas, wash: buildWash, pizza: buildPizza })[SPECIAL[key]](cx, cz); continue; }
+    if (SPECIAL[key]) { ({ gas: buildGas, wash: buildWash, pizza: buildPizza, jail: buildJail })[SPECIAL[key]](cx, cz); continue; }
     if (parks.has(key)) { // Park: Wiese mit Wegkreuz und Bäumen
       const g = quads(1 / 4), h = inner / 2, p = 1.6;
       g.add(cx - h, cz - h, cx - p, cz - p, 0.17); g.add(cx + p, cz - h, cx + h, cz - p, 0.17);
@@ -1368,8 +1397,59 @@ function blitz(cam, kind, msg, reason, kmh = 0) {
   window.beep && window.beep(2200, 0.06, 'square', 0.05);
   showMsg(msg, 2);
   if (city.police || city.ticket) return;
-  city.reason = { kind, text: reason, kmh };
+  city.reason = { kind, text: reason, kmh, jail: kind === 'speed' && kmh > JAIL_KMH };
   startChase();
+}
+
+// ---------- Gefängnis ----------
+// Über 140 km/h geblitzt: nach dem Strafzettel 3 Minuten in den Gefängnishof (hohe Mauern, Fliegen geht nicht).
+// Freikaufen kostet BAIL Münzen. Die Zeit läuft weiter, auch wenn man die Stadt verlässt (Spielstand autoRetterJail).
+const JAIL_KMH = 140, JAIL_MS = 3 * 60 * 1000, BAIL = 100;
+const jailKey = 'autoRetterJail';
+function jailUntil() { try { return Number(localStorage.getItem(jailKey)) || 0; } catch (err) { return 0; } }
+function setJailUntil(t) { try { if (t) localStorage.setItem(jailKey, String(t)); else localStorage.removeItem(jailKey); } catch (err) { /* ohne Speicher */ } }
+function goToJail(until = Date.now() + JAIL_MS) {
+  const J = S.places.jail, me = city.me;
+  removePolice();
+  setJailUntil(until);
+  city.jail = { until };
+  Object.assign(me.pos, { x: J.x, z: J.z });
+  Object.assign(me, { heading: -Math.PI / 2, speed: 0, vl: 0, steer: 0, fly: false, landing: false, alt: 0 });
+  S.ui.jail.hidden = false;
+  S.ui.bail.textContent = '💰 Freikaufen (' + BAIL + ' 🪙)';
+  showMsg('🔒 Ab ins Gefängnis!', 2.2);
+}
+function leaveJail(text) {
+  const J = S.places.jail, me = city.me;
+  city.jail = null;
+  setJailUntil(0);
+  S.ui.jail.hidden = true;
+  if (city.walk) { S.scene.remove(city.walk.mesh); city.walk = null; S.ui.walkbtn.textContent = '🚪'; S.ui.walkbtn.classList.remove('ready'); S.ui.hint.textContent = HINT; }
+  if (me.mesh.userData.driver) me.mesh.userData.driver.visible = true;
+  Object.assign(me.pos, { x: J.gate.x, z: J.gate.z });
+  Object.assign(me, { heading: J.gate.h, speed: 0, vl: 0 });
+  showMsg(text, 2.4);
+}
+function bail() {
+  if (!city || !city.jail) return;
+  const paid = city.pay(BAIL);
+  if (paid < BAIL) { if (paid) city.earn(paid); showMsg('Zu wenig Münzen – du brauchst ' + BAIL + ' 🪙', 1.8); return; }
+  leaveJail('💰 Freigekauft! Fahr vorsichtig 😉');
+}
+function stepJail() {
+  const J = city.jail;
+  if (!J) return;
+  const left = J.until - Date.now();
+  if (left <= 0) { leaveJail('🔓 Frei! Fahr vorsichtig 😉'); return; }
+  const sec = Math.ceil(left / 1000);
+  S.ui.jailtime.textContent = '🔒 Gefängnis ' + Math.floor(sec / 60) + ':' + String(sec % 60).padStart(2, '0');
+  const P = S.places.jail, keep = o => { // im Hof bleiben (auch zu Fuss)
+    o.x = Math.max(P.x - P.half, Math.min(P.x + P.half, o.x));
+    o.z = Math.max(P.z - P.half, Math.min(P.z + P.half, o.z));
+  };
+  keep(city.me.pos);
+  if (city.walk) keep(city.walk);
+  city.me.fly = false; city.me.alt = 0;
 }
 
 // ---------- Polizei ----------
@@ -1504,6 +1584,7 @@ function giveTicket() {
   const T = S.ui.ticket;
   T.querySelector('.amount').textContent = paid ? paid + ' 🪙' : 'Verwarnung';
   T.querySelector('.reason').textContent = (city.reason || {}).text || 'Über Rot gefahren 🚦';
+  T.querySelector('.jailnote').hidden = !R.jail;
   T.querySelector('.note').textContent = paid === amount ? 'Die Münzen wurden abgezogen.'
     : paid ? 'Du hattest nur noch ' + paid + ' Münzen – Glück gehabt!' : 'Keine Münzen dabei – diesmal nur eine Verwarnung!';
   T.querySelector('.count').textContent = city.fines > 1 ? 'Schon ' + city.fines + '× erwischt!' : '';
@@ -1517,6 +1598,7 @@ function closeTicket() {
   S.ui.chase.hidden = true;
   const P = city.police;
   if (P) { P.state = 'leave'; P.t = 0; P.siren.set(0); }
+  if ((city.reason || {}).jail) { city.reason = null; goToJail(); return; }
   showMsg((city.reason || {}).kind === 'speed' ? 'Gute Fahrt! Und nicht zu schnell 😉' : 'Gute Fahrt! Und bei Rot anhalten 😉', 2);
 }
 function removePolice() {
@@ -1559,7 +1641,11 @@ const CSS = `
 #city .speed.over { background: rgba(185,28,28,.85); }
 #city .limit { position: absolute; bottom: 18px; left: calc(50% - 128px); width: 46px; height: 46px; border-radius: 50%; background: #fff;
   border: 7px solid #d61f1f; color: #111; font: 900 20px system-ui, sans-serif; display: flex; align-items: center; justify-content: center; }
-#city .limit[hidden] { display: none; }
+#city .limit[hidden], #city .jailbar[hidden] { display: none; }
+#city .jailbar { position: absolute; top: 64px; left: 50%; transform: translateX(-50%); background: rgba(31,41,55,.92); border: 3px solid #fb923c;
+  border-radius: 14px; padding: 6px 10px 6px 16px; display: flex; align-items: center; gap: 12px; font-weight: 900; font-size: 22px; white-space: nowrap; z-index: 4; }
+#city .jailbar .bail { border: none; border-radius: 10px; background: #16a34a; color: #fff; font: 800 16px system-ui, sans-serif; padding: 8px 12px; }
+#city .ticket .jailnote { color: #fff; background: #b91c1c; border-radius: 8px; padding: 6px 10px; font-weight: 900; }
 #city .flash { position: absolute; inset: 0; background: #fff; opacity: 0; pointer-events: none; }
 #city .flash.on { animation: cityflash .45s ease-out; }
 @keyframes cityflash { from { opacity: .85; } to { opacity: 0; } }
@@ -1665,9 +1751,11 @@ function buildDom() {
       <p>Grund: <b class="reason"></b></p>
       <p>Busse: <b class="amount"></b></p>
       <p class="note"></p><p class="count"></p>
+      <p class="jailnote" hidden>🔒 Über 140 km/h: 3 Minuten Gefängnis!</p>
       <button class="pay">Okay 👍</button></div></div>
     <div class="speed"><span class="kmh">0</span> km/h<small class="ps"></small></div>
     <div class="limit" hidden></div>
+    <div class="jailbar" hidden><span class="jt"></span><button class="bail"></button></div>
     <div class="flash"></div>
     <div class="hint">${HINT}</div>
     <button class="ctl" data-k="left" style="left:16px">◀</button>
@@ -1679,7 +1767,7 @@ function buildDom() {
   document.body.appendChild(root);
   const $ = s => root.querySelector(s);
   const ui = { root, kmh: $('.kmh'), ps: $('.ps'), msg: $('.msg'), hint: $('.hint'), minimap: $('.minimap'), ctls: [...root.querySelectorAll('.ctl')],
-    speed: $('.speed'), limit: $('.limit'), flash: $('.flash'), flybtn: $('.flybtn'), flyctl: $('.flyctl'), basebtn: $('.basebtn'), walkbtn: $('.walkbtn'), basepanel: $('.basepanel'),
+    speed: $('.speed'), limit: $('.limit'), jail: $('.jailbar'), jailtime: $('.jailbar .jt'), bail: $('.bail'), flash: $('.flash'), flybtn: $('.flybtn'), flyctl: $('.flyctl'), basebtn: $('.basebtn'), walkbtn: $('.walkbtn'), basepanel: $('.basepanel'),
     chase: $('.chase'), ticket: $('.ticket'), drift: $('.drift'), clock: $('.clock'),
     tagbtn: $('.tagbtn'), tagbar: $('.tagbar'),
     jobs: $('.jobs'), jobpanel: $('.jobpanel'), goal: $('.goal'), arrow: $('.goal .arrow'), gtext: $('.goal .gtext') };
@@ -1706,6 +1794,7 @@ function buildDom() {
   $('.cam').addEventListener('pointerdown', e => { e.preventDefault(); nextCam(); });
   $('.horn').addEventListener('pointerdown', e => { e.preventDefault(); honk(); });
   $('.walkbtn').addEventListener('pointerdown', e => { e.preventDefault(); toggleWalk(); });
+  $('.bail').addEventListener('pointerdown', e => { e.preventDefault(); bail(); });
   $('.flybtn').addEventListener('pointerdown', e => { e.preventDefault(); toggleFly(); });
   $('.basebtn').addEventListener('pointerdown', e => { e.preventDefault(); toggleBase(); });
   ui.basepanel.addEventListener('click', onBaseClick);
@@ -1724,7 +1813,7 @@ function buildDom() {
 }
 
 function toggleFly() {
-  if (!city || !city.canFly || city.walk) return;
+  if (!city || !city.canFly || city.walk || city.jail) return;
   const me = city.me;
   if (!me.fly && (city.pulled > 0 || city.ticket || (city.police && city.police.state === 'stop'))) return;
   flyToggle(me, me.alt);
@@ -1789,7 +1878,7 @@ function drawMinimapBase() {
   g.fillStyle = '#4aa3ff';
   g.beginPath(); g.arc(mx(0), mx(0), 3, 0, Math.PI * 2); g.fill();
   g.font = '13px system-ui, sans-serif'; g.textAlign = 'center'; g.textBaseline = 'middle';
-  for (const [k, icon] of [['gas', '⛽'], ['wash', '🫧'], ['pizza', '🍕']]) { const p = S.places[k]; if (p) g.fillText(icon, mx(p.x), mx(p.z)); }
+  for (const [k, icon] of [['gas', '⛽'], ['wash', '🫧'], ['pizza', '🍕'], ['jail', '🔒']]) { const p = S.places[k]; if (p) g.fillText(icon, mx(p.x), mx(p.z)); }
   g.strokeStyle = 'rgba(220,225,235,0.85)'; g.lineWidth = Math.max(2, ROAD * mapScale);
   for (let i = 0; i <= N; i++) {
     g.beginPath(); g.moveTo(mx(node(i)), mx(-HALF)); g.lineTo(mx(node(i)), mx(HALF)); g.stroke();
@@ -1872,6 +1961,8 @@ export function startCity({ player, kinds, topSpeed, onExit, pay = () => 0, earn
   S.ui.ps.textContent = '⚡ ' + player.ps + ' PS';
   layout();
   showMsg(net ? '🏙️ Stadt online – such deine Freunde!' : '🏙️ Fahr, wohin du willst!', 2.5);
+  S.ui.jail.hidden = true;
+  if (jailUntil() > Date.now()) { goToJail(jailUntil()); showMsg('🔒 Du sitzt noch im Gefängnis!', 2.4); } // Zeit läuft weiter
   window.addEventListener('keydown', onKey);
   window.addEventListener('keyup', onKey);
   S.snd = createCarSound({ kind: player.kind });
@@ -1894,6 +1985,7 @@ function loop(now) {
   stepDayNight(dt);
   if (city.pulled > 0) city.pulled -= dt;
   if (city.walk) stepWalk(dt); else stepMe(dt);
+  stepJail();
   stepRules(dt);
   stepDrift(dt);
   stepPolice(dt);
