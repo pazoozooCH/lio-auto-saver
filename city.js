@@ -22,7 +22,7 @@ const CYCLE = 22;               // Ampelzyklus in Sekunden
 const TRAFFIC = 46;             // so viele Autos fahren herum
 const SEE = 140;                // weiter weg werden Autos nicht gezeichnet
 const DIRS = [[1, 0], [0, 1], [-1, 0], [0, -1]]; // +x, +z, −x, −z
-const SPECIAL = { '2,5': 'gas', '5,2': 'wash', '5,5': 'pizza', '2,2': 'jail' }; // Blöcke mit Tankstelle, Waschanlage, Pizzeria, Gefängnis
+const SPECIAL = { '2,5': 'gas', '5,2': 'wash', '5,5': 'pizza', '2,2': 'jail', '6,3': 'workshop' }; // Blöcke mit Tankstelle, Waschanlage, Pizzeria, Gefängnis, Werkstatt
 // Basen: sechs Blöcke nebeneinander am oberen Stadtrand, Platz s im Block (s + 1, 0); Einfahrt von der Strasse, an der man startet
 const BASES = 6, BASE_CARS = 10, BASE_COLORS = ['#ef4444', '#3b82f6', '#22c55e', '#f59e0b', '#a855f7', '#ec4899'];
 const baseOf = key => { const [i, j] = key.split(',').map(Number); return j === 0 && i >= 1 && i <= BASES ? i - 1 : -1; };
@@ -318,6 +318,27 @@ function buildWorld() {
     }
     places.jail = { x: yx, z: yz, half: h - 2.5, gate: { x: yx, z: cz - BLOCK / 2 + LANE, h: 0 } }; // raus: rechte Spur der Strasse davor
   }
+  function buildWorkshop(cx, cz) { // Werkstatt (offene Halle mit Hebebühne) und davor ein Parkplatz zum Einparken
+    box(46, 0.04, 46, tarmac, cx, 0.18, cz);
+    const wallM = mat({ color: 0xe5e7eb, roughness: 0.8 }), blue = mat({ color: 0x1d4ed8 }), hz = cz + 11; // Halle: offen nach −z
+    for (const s of [-1, 1]) box(0.6, 6, 14, wallM, cx + s * 8, 3.18, hz, true);
+    box(16.6, 0.6, 14, blue, cx, 6.4, hz);
+    box(16, 6, 0.6, wallM, cx, 3.18, hz + 7, true);
+    box(4, 0.25, 6, mat({ color: 0xfacc15, metalness: 0.4 }), cx, 0.32, hz - 1); // Hebebühne
+    for (const s of [-1, 1]) box(0.3, 2.4, 0.3, mat({ color: 0x9ca3af, metalness: 0.6 }), cx + s * 2.6, 1.38, hz - 1, true);
+    box(1.6, 1.1, 0.6, mat({ color: 0xdc2626 }), cx - 6.5, 0.73, hz + 5.6, true); // Werkzeugwagen
+    for (const side of [0, 1]) {
+      const s1 = sign('🔧 WERKSTATT', '#1d4ed8', '#ffffff', 12, 2); s1.position.set(cx, 7.8, hz - 7 - side * 0.05); s1.rotation.y = side * Math.PI; decor.add(s1);
+    }
+    places.repair = { x: cx, z: hz - 1, w: 10, d: 10 };
+    // Parkplatz: acht Felder quer, Einfahrt von der Strasse (−z)
+    const marks = quads(), bays = [], bz = cz - 12;
+    for (let k = 0; k <= 8; k++) marks.rect(cx - 13.2 + k * 3.3, bz, 0.15, 5.6, 0.2);
+    marks.rect(cx, bz + 2.8, 26.4, 0.15, 0.2);
+    decor.add(marks.mesh(lineMat));
+    for (let k = 0; k < 8; k++) bays.push({ x: cx - 13.2 + 1.65 + k * 3.3, z: bz, h: Math.PI / 2 }); // vorwärts hinein: Schnauze nach +z
+    places.lot = { bays };
+  }
   // Base: ummauerter Parkplatz mit Einfahrt und Torbogen, je fünf Parkfelder links und rechts der Fahrgasse.
   // Die Autos und das Schild kommen erst beim Spielen dazu (stepBases); bay.solid ist weit weg, solange das Feld leer ist.
   // Eine Base steht nur, wenn sie jemandem gehört (setBaseOn), sonst ist hier eine Wiese
@@ -382,7 +403,7 @@ function buildWorld() {
     const key = bi + ',' + bj;
     if (key === plaza) { buildPlaza(decor, cx, cz, round); continue; }
     if (baseOf(key) >= 0) { buildBase(cx, cz, baseOf(key)); continue; }
-    if (SPECIAL[key]) { ({ gas: buildGas, wash: buildWash, pizza: buildPizza, jail: buildJail })[SPECIAL[key]](cx, cz); continue; }
+    if (SPECIAL[key]) { ({ gas: buildGas, wash: buildWash, pizza: buildPizza, jail: buildJail, workshop: buildWorkshop })[SPECIAL[key]](cx, cz); continue; }
     if (parks.has(key)) { // Park: Wiese mit Wegkreuz und Bäumen
       const g = quads(1 / 4), h = inner / 2, p = 1.6;
       g.add(cx - h, cz - h, cx - p, cz - p, 0.17); g.add(cx + p, cz - h, cx + h, cz - p, 0.17);
@@ -843,6 +864,7 @@ function stepMe(dt) {
   me.surface = me.fly ? 'asphalt' : surfaceAt(me.pos.x, me.pos.z);
   const boost = city.turbo > 0 ? 1.3 : 1; // Turbo-Benzin von der Tankstelle
   let maxV = (me.fly ? me.maxV * FLY_SPEED : me.surface === 'grass' ? me.maxV * 0.55 : me.maxV) * boost;
+  if (city.damage > 0.5) maxV *= 1 - 0.8 * (city.damage - 0.5); // kaputter Motor: bis 40 % langsamer
   if (needsFuel(me.v.kind)) { // Tank: reicht für etwa 7 km; leer = nur noch Schritttempo bis zur Tankstelle
     city.fuel = Math.max(0, city.fuel - Math.abs(me.speed) * dt / 7000 * (gas ? 1 : 0.4));
     if (city.fuel <= 0) { maxV = Math.min(maxV, 4.5); if (!city.emptyMsg) { city.emptyMsg = true; showMsg(isElectric(me.v.kind) ? '🔋 Akku leer! Fahr langsam zur Ladesäule' : '⛽ Tank leer! Fahr langsam zur Tankstelle', 2.6); } }
@@ -891,13 +913,13 @@ function stepMe(dt) {
       if (me.alt > b.h - 0.4) { floor = Math.max(floor, b.h + 0.5); continue; }
       if (dd > 0.001) { me.pos.x += dx / dd * (R - dd); me.pos.z += dz / dd * (R - dd); }
       else { me.pos.x -= Math.cos(me.heading) * R; me.pos.z -= Math.sin(me.heading) * R; }
-      hit = Math.max(hit, Math.abs(me.speed));
+      hit = Math.max(hit, Math.abs(me.speed)); city.hitAt = [qx, qz];
     }
   }
   for (const o of S.round) {
     const dx = me.pos.x - o.x, dz = me.pos.z - o.z, dd = Math.hypot(dx, dz), min = R * 0.7 + o.r;
     if (dd < min && me.alt > (o.h || 6) - 0.4) { floor = Math.max(floor, (o.h || 6) + 0.5); continue; }
-    if (dd < min && dd > 0.001) { me.pos.x += dx / dd * (min - dd); me.pos.z += dz / dd * (min - dd); hit = Math.max(hit, Math.abs(me.speed)); }
+    if (dd < min && dd > 0.001) { me.pos.x += dx / dd * (min - dd); me.pos.z += dz / dd * (min - dd); hit = Math.max(hit, Math.abs(me.speed)); city.hitAt = [o.x, o.z]; }
   }
   // Mit Autos zusammenstossen: du wirst weggeschoben, das andere Auto bleibt kurz stehen
   for (const c of city.cars) {
@@ -905,12 +927,12 @@ function stepMe(dt) {
     if (dd < min && dd > 0.001 && me.alt < 2.5) {
       me.pos.x += dx / dd * (min - dd); me.pos.z += dz / dd * (min - dd);
       const rel = Math.abs(me.speed - c.speed);
-      if (rel > 2 && city.crashT <= 0) { crash(0.15 + rel / 18, 'car'); city.crashT = 0.5; c.blocked = 2; c.honkT = 0.4; c.waitMe = 2; }
+      if (rel > 2 && city.crashT <= 0) { crash(0.15 + rel / 18, 'car'); hurt(rel / 18, c.x, c.z); city.crashT = 0.5; c.blocked = 2; c.honkT = 0.4; c.waitMe = 2; }
       me.speed *= 0.6; me.vl *= 0.5;
     }
   }
   if (hit > 3) {
-    if (city.crashT <= 0) { crash(hit / 25, 'car'); city.crashT = 0.5; }
+    if (city.crashT <= 0) { crash(hit / 25, 'car'); hurt(hit / 25, ...(city.hitAt || [])); city.crashT = 0.5; }
     me.speed *= -0.15; // abprallen
     me.vl *= 0.2;
     if (city.drift > 0) bankDrift(true);
@@ -1021,6 +1043,82 @@ function stepPlaces(dt) {
     window.beep && window.beep(1047, 0.12, 'triangle', 0.06); window.beep && window.beep(1319, 0.2, 'triangle', 0.06, 0.12);
     city.washT = 0;
   } else city.washT = 0;
+}
+
+// ---------- Schaden und Werkstatt ----------
+// Jeder Zusammenstoss gibt Schaden und einen Kratzer mit Delle an der getroffenen Stelle (Aufkleber auf der Karosserie).
+// Ab 50 % qualmt der Motor und das Auto wird langsamer. In der Werkstatt wird alles repariert (1 Münze pro 5 %).
+let scratchMat = null;
+const ray = new THREE.Raycaster();
+function scratchTexture() {
+  const c = document.createElement('canvas'); c.width = 128; c.height = 64;
+  const g = c.getContext('2d');
+  const r = g.createRadialGradient(64, 32, 4, 64, 32, 30); // Delle: dunkler Schatten in der Mitte
+  r.addColorStop(0, 'rgba(0,0,0,0.6)'); r.addColorStop(0.6, 'rgba(0,0,0,0.25)'); r.addColorStop(1, 'rgba(0,0,0,0)');
+  g.fillStyle = r; g.fillRect(0, 0, 128, 64);
+  for (let k = 0; k < 9; k++) { // Kratzer: helle Striche (blankes Blech)
+    const y = 10 + Math.random() * 44, x = 6 + Math.random() * 30;
+    g.strokeStyle = k % 3 ? 'rgba(235,238,242,1)' : 'rgba(70,70,75,0.9)'; g.lineWidth = 1.5 + Math.random() * 2.5;
+    g.beginPath(); g.moveTo(x, y); g.lineTo(x + 60 + Math.random() * 30, y + (Math.random() - 0.5) * 10); g.stroke();
+  }
+  const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace;
+  return t;
+}
+function hurt(intensity, fromX, fromZ) {
+  city.damage = Math.min(1, city.damage + Math.min(0.3, intensity * 0.28));
+  if (city.mission && city.mission.type === 'school') failSchool('💥 Unfall gebaut');
+  if (city.mission && city.mission.type === 'park') endMission(false, '💥 Angefahren! Einparken nicht bestanden.');
+  const m = city.me.mesh;
+  if (city.scratches.length >= 12 || fromX === undefined) return;
+  if (!scratchMat) scratchMat = new THREE.MeshStandardMaterial({ map: scratchTexture(), transparent: true, depthWrite: false, roughness: 0.6,
+    polygonOffset: true, polygonOffsetFactor: -4 });
+  m.updateMatrixWorld(true);
+  const p = m.worldToLocal(new THREE.Vector3(fromX, 0.7, fromZ)), L = m.userData.length;
+  const side = Math.abs(p.z) * 1.6 > Math.abs(p.x) - L * 0.35, s = Math.sign(side ? p.z : p.x) || 1, y = 0.45 + Math.random() * 0.4;
+  // seitlich: an den Türen (nicht in den Radkästen), sonst vorne oder hinten
+  const o = side ? new THREE.Vector3(Math.max(-L * 0.18, Math.min(L * 0.18, p.x)), y, s * 4) : new THREE.Vector3(s * (L / 2 + 3), y, (Math.random() - 0.5) * 1.2);
+  const d = side ? new THREE.Vector3(0, 0, -s) : new THREE.Vector3(-s, 0, 0);
+  ray.set(o.applyMatrix4(m.matrixWorld), d.transformDirection(m.matrixWorld));
+  const hit = ray.intersectObject(m, true).find(h => h.face && h.object.visible && !h.object.material.transparent && !h.object.material.side
+    && h.object.name !== 'caliper' && !(h.object.parent && h.object.parent.name === 'wheel'));
+  if (!hit) return;
+  const n = hit.face.normal.clone().transformDirection(hit.object.matrixWorld);
+  const sc = new THREE.Mesh(new THREE.PlaneGeometry(0.6 + Math.random() * 0.4, 0.36), scratchMat);
+  sc.position.copy(hit.point).addScaledVector(n, 0.03); // über den Türlinien-Aufklebern
+  sc.lookAt(hit.point.clone().add(n));
+  sc.rotation.z += (Math.random() - 0.5) * 0.5;
+  S.scene.add(sc);
+  m.attach(sc); // fährt mit
+  city.scratches.push(sc);
+}
+function repairAll() {
+  for (const sc of city.scratches) sc.parent && sc.parent.remove(sc);
+  city.scratches = [];
+  city.damage = 0;
+}
+function stepDamage(dt) {
+  const me = city.me;
+  if (city.damage > 0.5 && !city.walk && Math.random() < dt * city.damage * 10) { // Motor qualmt
+    const fx = Math.cos(me.heading), fz = Math.sin(me.heading), f = me.len * 0.38;
+    S.fx.puff(me.pos.x + fx * f, me.alt + 1.1, me.pos.z + fz * f, fx * me.speed * 0.5, fz * me.speed * 0.5);
+  }
+  // Werkstatt: in der Halle anhalten
+  const P = S.places.repair;
+  if (inZone(P, me.pos.x, me.pos.z) && Math.abs(me.speed) < 1.5 && me.alt < 2 && !city.walk) {
+    if (city.repairT >= 0) {
+      if (city.damage < 0.02) { if (city.repairT === 0) showMsg('🔧 Dein Auto ist ganz – nichts zu reparieren', 1.6); city.repairT = -1; return; }
+      if (city.repairT === 0) showMsg('🔧 Reparieren …', 1.8);
+      city.repairT += dt;
+      if (Math.random() < dt * 12) S.fx.puff(me.pos.x + (Math.random() - 0.5) * 2, 0.6 + Math.random(), me.pos.z + (Math.random() - 0.5) * 2, 0, 0);
+      if (city.repairT > 2.5) {
+        const paid = city.pay(Math.ceil(city.damage * 20));
+        repairAll();
+        city.repairT = -1;
+        showMsg('🔧 Wie neu!' + (paid ? '  (−' + paid + ' 🪙)' : ''), 2.4);
+        window.beep && window.beep(880, 0.1, 'triangle', 0.06); window.beep && window.beep(1175, 0.18, 'triangle', 0.06, 0.1);
+      }
+    }
+  } else if (!inZone(P, me.pos.x, me.pos.z, 3)) city.repairT = 0;
 }
 
 // ---------- Basen ----------
@@ -1164,7 +1262,8 @@ function switchCar(v) {
   S.scene.remove(me.mesh);
   S.scene.add(mesh);
   Object.assign(me, carStats(v, mesh, city.kinds, city.topSpeed), { v: { ...v, name: me.v.name }, mesh, speed: 0, vl: 0, steer: 0, fly: false, landing: false, alt: 0 });
-  city.fuel = 1; // aus der Base kommt es vollgetankt
+  city.fuel = 1; // aus der Base kommt es vollgetankt und ganz
+  city.damage = 0; city.scratches = [];
   city.gears = gearbox(v.kind);
   city.gripBoost = (city.kinds[v.kind] && city.kinds[v.kind].grip) || 1;
   city.canFly = !!(city.kinds[v.kind] && city.kinds[v.kind].fly);
@@ -1652,7 +1751,7 @@ function stepPolice(dt) {
     const ex = P.pos.x - o.x, ez = P.pos.z - o.z, d = Math.hypot(ex, ez), min = (P.radius + o.r) * 0.8;
     if (d < min && d > 0.001) {
       P.pos.x += ex / d * (min - d); P.pos.z += ez / d * (min - d);
-      if (o.me && Math.abs(P.speed - me.speed) > 4 && city.crashT <= 0) { crash(0.3, 'car'); city.crashT = 0.5; }
+      if (o.me && Math.abs(P.speed - me.speed) > 4 && city.crashT <= 0) { crash(0.3, 'car'); hurt(0.3, P.pos.x, P.pos.z); city.crashT = 0.5; }
     }
   }
   // Erwischt? Dicht dran bleiben = rausziehen; freiwillig anhalten geht auch
@@ -1752,6 +1851,7 @@ const CSS = `
   border-radius: 10px; padding: 5px 8px; font-size: 18px; }
 #city .fuel span { display: block; width: 64px; height: 12px; border-radius: 6px; background: rgba(255,255,255,.2); overflow: hidden; }
 #city .fuel i { display: block; height: 100%; background: #22c55e; }
+#city .fuel.dmg { bottom: 56px; } #city .fuel.dmg i { background: #f97316; }
 #city .fuel.low i { background: #ef4444; } #city .fuel.low { animation: cityblink 0.6s infinite alternate; }
 #city .jailbar { position: absolute; top: 64px; left: 50%; transform: translateX(-50%); background: rgba(31,41,55,.92); border: 3px solid #fb923c;
   border-radius: 14px; padding: 6px 10px 6px 16px; display: flex; align-items: center; gap: 12px; font-weight: 900; font-size: 22px; white-space: nowrap; z-index: 4; }
@@ -1867,6 +1967,7 @@ function buildDom() {
     <div class="speed"><span class="kmh">0</span> km/h<small class="ps"></small></div>
     <div class="limit" hidden></div>
     <div class="fuel" hidden><b></b><span><i></i></span></div>
+    <div class="fuel dmg" hidden><b>🔧</b><span><i></i></span></div>
     <div class="jailbar" hidden><span class="jt"></span><button class="bail"></button></div>
     <div class="flash"></div>
     <div class="hint">${HINT}</div>
@@ -1879,7 +1980,7 @@ function buildDom() {
   document.body.appendChild(root);
   const $ = s => root.querySelector(s);
   const ui = { root, kmh: $('.kmh'), ps: $('.ps'), msg: $('.msg'), hint: $('.hint'), minimap: $('.minimap'), ctls: [...root.querySelectorAll('.ctl')],
-    speed: $('.speed'), limit: $('.limit'), fuel: $('.fuel'), fuelIcon: $('.fuel b'), fuelBar: $('.fuel i'), jail: $('.jailbar'), jailtime: $('.jailbar .jt'), bail: $('.bail'), flash: $('.flash'), flybtn: $('.flybtn'), flyctl: $('.flyctl'), basebtn: $('.basebtn'), walkbtn: $('.walkbtn'), basepanel: $('.basepanel'),
+    speed: $('.speed'), limit: $('.limit'), fuel: $('.fuel'), fuelIcon: $('.fuel b'), fuelBar: $('.fuel i'), dmg: $('.dmg'), dmgBar: $('.dmg i'), jail: $('.jailbar'), jailtime: $('.jailbar .jt'), bail: $('.bail'), flash: $('.flash'), flybtn: $('.flybtn'), flyctl: $('.flyctl'), basebtn: $('.basebtn'), walkbtn: $('.walkbtn'), basepanel: $('.basepanel'),
     chase: $('.chase'), ticket: $('.ticket'), drift: $('.drift'), clock: $('.clock'),
     tagbtn: $('.tagbtn'), tagbar: $('.tagbar'),
     jobs: $('.jobs'), jobpanel: $('.jobpanel'), goal: $('.goal'), arrow: $('.goal .arrow'), gtext: $('.goal .gtext') };
@@ -1990,7 +2091,7 @@ function drawMinimapBase() {
   g.fillStyle = '#4aa3ff';
   g.beginPath(); g.arc(mx(0), mx(0), 3, 0, Math.PI * 2); g.fill();
   g.font = '13px system-ui, sans-serif'; g.textAlign = 'center'; g.textBaseline = 'middle';
-  for (const [k, icon] of [['gas', '⛽'], ['wash', '🫧'], ['pizza', '🍕'], ['jail', '🔒']]) { const p = S.places[k]; if (p) g.fillText(icon, mx(p.x), mx(p.z)); }
+  for (const [k, icon] of [['gas', '⛽'], ['wash', '🫧'], ['pizza', '🍕'], ['jail', '🔒'], ['repair', '🔧']]) { const p = S.places[k]; if (p) g.fillText(icon, mx(p.x), mx(p.z)); }
   g.strokeStyle = 'rgba(220,225,235,0.85)'; g.lineWidth = Math.max(2, ROAD * mapScale);
   for (let i = 0; i <= N; i++) {
     g.beginPath(); g.moveTo(mx(node(i)), mx(-HALF)); g.lineTo(mx(node(i)), mx(HALF)); g.stroke();
@@ -2057,7 +2158,7 @@ export function startCity({ player, kinds, topSpeed, onExit, pay = () => 0, earn
   // online starten alle auf einer anderen Strasse am Stadtrand
   const me = { v: player, mesh, pos: new THREE.Vector3(node(1 + (net ? net.mySlot : 0)) + 20, 0, node(0) + LANE), heading: 0, speed: 0, vl: 0, steer: 0,
     ...carStats(player, mesh, kinds, topSpeed), slip: 0, surface: 'asphalt', alt: 0, fly: false, landing: false };
-  city = { me, cars: spawnTraffic(kinds), input: {}, t: Math.random() * CYCLE, msgT: 0, crashT: 0, hornT: 0, inCross: false, tod: 0.02, turbo: 0, fuelT: 0, washT: 0, mission: null, accT: 25 + Math.random() * 30, fuel: 1,
+  city = { me, cars: spawnTraffic(kinds), input: {}, t: Math.random() * CYCLE, msgT: 0, crashT: 0, hornT: 0, inCross: false, tod: 0.02, turbo: 0, fuelT: 0, washT: 0, mission: null, accT: 25 + Math.random() * 30, fuel: 1, damage: 0, scratches: [], repairT: 0,
     gears: gearbox(player.kind), onExit, last: performance.now(), kinds, pay, gripBoost: (kinds[player.kind] && kinds[player.kind].grip) || 1, canFly: !!(kinds[player.kind] && kinds[player.kind].fly), fines: 0, police: null, pulled: 0, ticket: false,
     earn, net, topSpeed, garage, baseSlot: net ? net.mySlot : 0, baseT: 0, atBase: -1, baseEdit: false, netCars: net ? makeNetCars({ scene: S.scene, kinds, net }) : null, drift: 0, driftT: 0, driftBest: (() => { try { return +localStorage.getItem('autoRetterDriftBest') || 0; } catch (e) { return 0; } })() };
   S.fx.clear();
@@ -2101,6 +2202,7 @@ function loop(now) {
   if (city.walk) stepWalk(dt); else stepMe(dt);
   stepJail();
   stepRules(dt);
+  stepDamage(dt);
   stepDrift(dt);
   stepPolice(dt);
   stepPlaces(dt);
@@ -2112,7 +2214,7 @@ function loop(now) {
     const me = city.me, o = { x: me.pos.x, y: me.alt, z: me.pos.z };
     if (city.netCars.bump(o, me.radius)) {
       me.pos.x = o.x; me.pos.z = o.z; me.speed *= 0.95;
-      if (Math.abs(me.speed) > 5 && city.crashT <= 0) { crash(0.25, 'car'); city.crashT = 0.5; }
+      if (Math.abs(me.speed) > 5 && city.crashT <= 0) { crash(0.25, 'car'); hurt(0.25); city.crashT = 0.5; }
     }
     city.netCars.update(dt, city.t, { x: me.pos.x, y: me.alt, z: me.pos.z, h: me.heading, v: me.speed, a: me.fly ? me.flyPitch : 0, b: me.fly ? me.flyRoll : 0 });
     city.chat.update(dt);
@@ -2165,6 +2267,8 @@ function updateHud(dt) {
     S.ui.fuelBar.style.width = Math.round(city.fuel * 100) + '%';
     F.classList.toggle('low', city.fuel < 0.15);
   }
+  S.ui.dmg.hidden = city.damage < 0.02 || !!city.walk;
+  S.ui.dmgBar.style.width = Math.round(city.damage * 100) + '%';
   S.ui.kmh.textContent = Math.round(Math.abs(me.speed) * 3.6);
   S.ui.flybtn.textContent = me.fly && !me.landing ? '🛬' : '✈️';
   S.ui.flyctl.hidden = !me.fly || me.landing;
