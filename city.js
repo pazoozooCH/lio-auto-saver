@@ -1356,10 +1356,10 @@ function stepRules(dt) {
     const dx = me.pos.x - c.x, dz = me.pos.z - c.z, along = dx * c.fx + dz * c.fz, side = Math.abs(dz * c.fx - dx * c.fz);
     if (Math.abs(along) > 4 || side > 13 || c.cd > city.t || hx * c.fx + hz * c.fz < 0.5) continue;
     c.cd = city.t + 3;
-    if (kmh > c.limit + 5) blitz(c, 'speed', '📸 Geblitzt! ' + kmh + ' statt ' + c.limit + ' km/h', 'Zu schnell: ' + kmh + ' statt ' + c.limit + ' km/h 📸');
+    if (kmh > c.limit + 5) blitz(c, 'speed', '📸 Geblitzt! ' + kmh + ' statt ' + c.limit + ' km/h', 'Zu schnell: ' + kmh + ' statt ' + c.limit + ' km/h 📸', kmh);
   }
 }
-function blitz(cam, kind, msg, reason) {
+function blitz(cam, kind, msg, reason, kmh = 0) {
   const F = S.flash;
   F.position.set(cam.x, cam.y, cam.z);
   F.material.opacity = 1;
@@ -1368,7 +1368,7 @@ function blitz(cam, kind, msg, reason) {
   window.beep && window.beep(2200, 0.06, 'square', 0.05);
   showMsg(msg, 2);
   if (city.police || city.ticket) return;
-  city.reason = { kind, text: reason };
+  city.reason = { kind, text: reason, kmh };
   startChase();
 }
 
@@ -1494,10 +1494,12 @@ function stepPolice(dt) {
   animateCar(m, city.t, null);
 }
 
-// Strafzettel: 10 Münzen, bei jedem weiteren Mal 10 mehr (höchstens 50); ohne Münzen nur eine Verwarnung
+// Strafzettel über Rot: 10 Münzen, bei jedem weiteren Mal 10 mehr (höchstens 50). Zu schnell: je schneller, desto teurer
+// (bis 90 km/h 10, bei 100 km/h 20, bei 110 km/h 30 …). Ohne Münzen nur eine Verwarnung.
+const speedFine = kmh => Math.max(10, (Math.floor(kmh / 10) - 8) * 10);
 function giveTicket() {
   city.fines++;
-  const amount = Math.min(50, 10 * city.fines), paid = city.pay(amount);
+  const R = city.reason || {}, amount = R.kind === 'speed' ? speedFine(R.kmh) : Math.min(50, 10 * city.fines), paid = city.pay(amount);
   city.ticket = true;
   const T = S.ui.ticket;
   T.querySelector('.amount').textContent = paid ? paid + ' 🪙' : 'Verwarnung';
