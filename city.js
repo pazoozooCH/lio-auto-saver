@@ -915,6 +915,7 @@ function stepMe(dt) {
       if (dd > 0.001) { me.pos.x += dx / dd * (R - dd); me.pos.z += dz / dd * (R - dd); }
       else { me.pos.x -= Math.cos(me.heading) * R; me.pos.z -= Math.sin(me.heading) * R; }
       hit = Math.max(hit, Math.abs(me.speed)); city.hitAt = [qx, qz];
+      if (b.lot && Math.abs(me.speed) > 0.8) city.touchLot = true; // beim Einparken ein Auto angefahren
     }
   }
   for (const o of S.round) {
@@ -954,6 +955,7 @@ function stepMe(dt) {
   const inX = inGrid(ni, nj) && Math.abs(me.pos.x - node(ni)) < ROAD / 2 && Math.abs(me.pos.z - node(nj)) < ROAD / 2;
   if (inX && !city.inCross && hasLights(ni, nj) && Math.abs(me.speed) > 5 && me.alt < 2.5) {
     const ax = Math.abs(Math.cos(me.heading)) > Math.abs(Math.sin(me.heading)) ? 'x' : 'z';
+    if (lightState(ax, city.t) === 'red') failSchool('Über Rot gefahren 🚦');
     if (lightState(ax, city.t) === 'red' && !POLICE_KINDS.includes(me.v.kind)) { // Polizei darf (im Einsatz)
       const d = ((Math.round(me.heading / (Math.PI / 2)) % 4) + 4) % 4, cam = S.redCams.get(ni + ',' + nj + ',' + d);
       if (cam) blitz(cam, 'red', '📸 Geblitzt! Über Rot gefahren', 'Über Rot gefahren 🚦');
@@ -1418,6 +1420,68 @@ function stepTag(dt) {
   }
 }
 
+// ---------- Einparken und Fahrschule ----------
+// Parkplatz vor der Werkstatt: ein paar Autos stehen schon da (fest, mit Rand). Einparken: ins gelbe Feld, gerade
+// stehen, anhalten – ohne ein Auto anzufahren. Fahrschule: vier Punkte abfahren, dabei Tempo einhalten, bei Rot
+// halten und keinen Unfall bauen; bestanden = Führerschein (gespeichert) und Münzen.
+const LOT_KINDS = ['car', 'kompakt', 'kombi', 'hatch', 'coupe', 'minivan', 'pickup', 'smart'];
+const LOT_TAKEN = [0, 1, 3, 5, 6];
+function parkLotCars() {
+  if (S.lotCars) return;
+  S.lotCars = [];
+  for (const k of LOT_TAKEN) {
+    const b = S.places.lot.bays[k], kind = LOT_KINDS[Math.floor(Math.random() * LOT_KINDS.length)];
+    const m = buildCar({ kind, color: COLORS[Math.floor(Math.random() * COLORS.length)], special: null }, city.kinds);
+    m.position.set(b.x, 0.17, b.z); m.rotation.y = -b.h;
+    S.scene.add(m);
+    const hl = m.userData.length / 2;
+    S.solid.push({ x0: b.x - 1.05, x1: b.x + 1.05, z0: b.z - hl, z1: b.z + hl, h: 2, lot: true });
+    S.lotCars.push(m);
+  }
+}
+function parkSpot(b) { // gelbes Feld, leuchtet
+  if (!S.parkSpot) {
+    S.parkSpot = new THREE.Mesh(new THREE.PlaneGeometry(2.9, 5.3).rotateX(-Math.PI / 2),
+      new THREE.MeshBasicMaterial({ color: 0xfacc15, transparent: true, opacity: 0.45, depthWrite: false }));
+    S.scene.add(S.parkSpot);
+  }
+  S.parkSpot.position.set(b.x, 0.22, b.z);
+  S.parkSpot.visible = true;
+}
+function stepPark(M, dt) {
+  const me = city.me, b = M.bay, dx = me.pos.x - b.x, dz = me.pos.z - b.z;
+  const ax = Math.cos(b.h), az = Math.sin(b.h), along = dx * ax + dz * az, lat = -dx * az + dz * ax;
+  let dh = Math.abs(((me.heading - b.h) % Math.PI + Math.PI * 1.5) % Math.PI - Math.PI / 2); // vorwärts oder rückwärts drin
+  S.parkSpot.material.opacity = 0.3 + 0.2 * Math.sin(city.t * 6);
+  if (city.touchLot) { city.touchLot = false; endMission(false, '💥 Angefahren! Einparken nicht bestanden.'); return; }
+  const inside = Math.abs(lat) < 0.55 && Math.abs(along) < 0.9 && dh < 0.25;
+  M.hold = inside && Math.abs(me.speed) < 0.3 ? M.hold + dt : 0;
+  M.text = inside ? '🅿️ Gut so – jetzt anhalten!' : '🅿️ Park im gelben Feld';
+  if (M.hold > 1) {
+    const coins = M.timer > 30 ? 15 : 10;
+    endMission(true, '🅿️ Perfekt eingeparkt!', coins);
+  }
+}
+function failSchool(reason) { if (city.mission && city.mission.type === 'school') endMission(false, '🎓 Durchgefallen: ' + reason); }
+function stepSchool(M, dt) {
+  const me = city.me, kmh = Math.abs(me.speed) * 3.6;
+  if (me.fly) { failSchool('Fliegen gilt nicht ✈️'); return; }
+  M.over = city.limit && kmh > city.limit + 3 ? M.over + dt : 0;
+  if (M.over > 1) { failSchool('Zu schnell gefahren 🚨'); return; }
+  if (Math.hypot(M.target.x - me.pos.x, M.target.z - me.pos.z) < 8) {
+    M.step++;
+    if (M.step >= M.points.length) {
+      try { localStorage.setItem('autoRetterLicense', '1'); } catch (err) { /* ohne Speicher */ }
+      endMission(true, '🎓 Bestanden! Du hast den Führerschein!', 15);
+      return;
+    }
+    M.target = M.points[M.step];
+    marker().set(M.target.x, M.target.z, M.color);
+    window.beep && window.beep(988, 0.1, 'triangle', 0.06);
+  }
+  M.text = '🎓 Prüfung: Punkt ' + (M.step + 1) + ' von ' + M.points.length + (city.limit ? ' · max. ' + city.limit : '');
+}
+
 // ---------- Aufträge: Taxi, Pizza, Dieb jagen ----------
 const POLICE_KINDS = ['police', 'policebike', 'policebus'];
 // Tank: Elektroautos laden an der Ladesäule; Zauber-, Tier- und Muskelkraft-Fahrzeuge brauchen gar nichts
@@ -1473,9 +1537,19 @@ function startMission(type) {
     city.mission = { type, step: 'chase', color: '#a855f7', target: p, text: '🚓 Fang den Dieb!', close: 0, far: 0,
       thief: { mesh, pos: new THREE.Vector3(p.x, 0, p.z), heading: 0, speed: 6, path: [], pathT: 0, maxV: Math.max(18, Math.min(34, me.maxV * 0.78)), radius: Math.max(1.3, mesh.userData.radius * 0.8) } };
     showMsg('🚨 Ein Dieb flüchtet! Bleib dicht hinter ihm.', 2.4);
+  } else if (type === 'park') {
+    const free = S.places.lot.bays.filter((b, k) => !LOT_TAKEN.includes(k)), bay = free[Math.floor(Math.random() * free.length)];
+    city.mission = { type, bay, color: '#facc15', target: { x: bay.x, z: bay.z }, text: '🅿️ Park im gelben Feld', timer: 75, hold: 0 };
+    city.touchLot = false;
+    parkSpot(bay);
+  } else if (type === 'school') {
+    const points = [];
+    for (let k = 0, at = from; k < 4; k++) { at = roadPoint(110, 220, at); points.push(at); }
+    city.mission = { type, points, step: 0, color: '#38bdf8', target: points[0], text: '🎓 Prüfung', timer: 200, over: 0 };
+    showMsg('🎓 Prüfung! Halte das Tempo ein, bei Rot anhalten, kein Unfall.', 3);
   }
   const M = city.mission;
-  if (type !== 'thief') showMsg(M.text + '!', 2);
+  if (type !== 'thief' && type !== 'school') showMsg(M.text + '!', 2);
   marker().set(M.target.x, M.target.z, M.color);
   S.ui.goal.hidden = false;
 }
@@ -1484,6 +1558,7 @@ function endMission(ok, text, coins = 0) {
   if (!M) return;
   if (M.thief) S.scene.remove(M.thief.mesh);
   if (M.pizzaBox) city.me.mesh.remove(M.pizzaBox);
+  if (M.type === 'park' && S.parkSpot) S.parkSpot.visible = false;
   city.mission = null;
   marker().hide();
   S.ui.goal.hidden = true;
@@ -1499,7 +1574,10 @@ function stepMission(dt) {
   if (M.thief) stepThief(M, dt);
   const d = Math.hypot(M.target.x - x, M.target.z - z), stopped = Math.abs(me.speed) < 3;
   if (M.timer !== undefined && (M.timer -= dt) <= 0) { endMission(false, '⏰ Zu spät! Der Auftrag ist vorbei.'); return; }
-  if (M.type !== 'thief' && d < 7 && stopped && me.alt < 2) {
+  if (M.type === 'park') stepPark(M, dt);
+  else if (M.type === 'school') stepSchool(M, dt);
+  if (!city.mission) return;
+  if (M.type !== 'thief' && M.type !== 'park' && M.type !== 'school' && d < 7 && stopped && me.alt < 2) {
     if (M.step === 'pick') {
       M.step = 'drop';
       M.target = M.type === 'taxi' ? roadPoint(220, 420, M.target) : roadPoint(180, 380, M.target);
@@ -1952,6 +2030,8 @@ function buildDom() {
       <button data-job="taxi">🚕 Taxi: Fahrgast abholen und hinbringen</button>
       <button data-job="pizza">🍕 Pizza: bei der Pizzeria abholen und ausliefern</button>
       <button data-job="thief">🚓 Dieb jagen (nur mit Polizeiauto)</button>
+      <button data-job="park">🅿️ Einparken (Parkplatz bei der Werkstatt)</button>
+      <button data-job="school">🎓 Fahrschule: Führerschein-Prüfung</button>
       <button data-job="cancel" class="grey">Auftrag abbrechen</button>
       <button data-job="close" class="grey">Schliessen</button></div>
     <div class="goal" hidden><span class="arrow">➤</span> <span class="gtext"></span></div>
@@ -2179,6 +2259,7 @@ export function startCity({ player, kinds, topSpeed, onExit, pay = () => 0, earn
   showMsg(net ? '🏙️ Stadt online – such deine Freunde!' : '🏙️ Fahr, wohin du willst!', 2.5);
   S.ui.jail.hidden = true;
   if (jailUntil() > Date.now()) { goToJail(jailUntil()); showMsg('🔒 Du sitzt noch im Gefängnis!', 2.4); } // Zeit läuft weiter
+  parkLotCars();
   window.addEventListener('keydown', onKey);
   window.addEventListener('keyup', onKey);
   S.snd = createCarSound({ kind: player.kind });
