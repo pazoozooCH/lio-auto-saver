@@ -365,7 +365,9 @@ function buildWorld() {
       round.push({ x: cx + dx, z: cz + 1, r: 2.6, h: 1.5 });
       return t;
     });
-    places.dealer = { x: cx, z: cz - 12, w: 14, d: 10, pods, inside, door: { x: cx, z: cz + 8 } };
+    box(3.2, 1.0, 1.2, mat({ color: 0x78350f, roughness: 0.6 }), cx, 0.7, cz + 18.6, true); // Schreibtisch hinten im Raum
+    box(0.9, 0.55, 0.05, mat({ color: 0x0b1a2e, emissive: 0x3b82f6, emissiveIntensity: 0.8 }), cx, 1.5, cz + 18.6);
+    places.dealer = { x: cx, z: cz - 12, w: 14, d: 10, pods, inside, door: { x: cx, z: cz + 8 }, desk: { x: cx, z: cz + 16.8, w: 6, d: 3 } };
   }
   // Base: ummauerter Parkplatz mit Einfahrt und Torbogen, je fünf Parkfelder links und rechts der Fahrgasse.
   // Die Autos und das Schild kommen erst beim Spielen dazu (stepBases); bay.solid ist weit weg, solange das Feld leer ist.
@@ -1456,22 +1458,28 @@ function stepTag(dt) {
 // ---------- Autohändler ----------
 // Vor dem Ausstellungsraum anhalten: Gebrauchtwagen kaufen (die drei auf den Drehtellern) oder das eigene Auto verkaufen.
 // Gekauft wird mit den Münzen aus dem Spiel (dealer von game.js); das neue Auto fährt man gleich weg.
+const wholeOffer = () => { const o = city.dealer.offers()[0]; return { v: o.v, cost: Math.round(o.price / 2) }; }; // Einkaufspreis = Wert
 function setupDealer() {
   city.offers = city.dealer ? city.dealer.offers().concat(city.dealer.offers()) : []; // sechs Plätze
   city.shop = city.dealer ? loadShop() : { on: false, stock: [], orders: [] };
-  city.whole = city.dealer ? city.dealer.offers().concat(city.dealer.offers()).map(o => ({ v: o.v, cost: Math.round(o.price / 2) })) : [];
+  city.whole = city.dealer ? Array.from({ length: 6 }, wholeOffer) : [];
   city.truckT = 6; // schon Bestelltes kommt bald
   showPods();
 }
 function stepDealer(dt) {
   const D = S.places.dealer, me = city.me;
   for (const p of D.pods) p.rotation.y += dt * 0.4;
-  const here = inZone(D, me.pos.x, me.pos.z) && Math.abs(me.speed) < 1.5 && me.alt < 2 && !city.walk;
-  if (here && !city.dealOpen && city.dealT === 0) {
-    if (!city.dealer) { showMsg('🚗 Online ist der Autohändler geschlossen', 1.8); city.dealT = 1; return; }
-    city.dealOpen = true; city.dealT = 1; drawDealer();
-  }
-  if (!inZone(D, me.pos.x, me.pos.z, 4)) { city.dealT = 0; if (city.dealOpen) closeDealer(); }
+  // vor den Drehtellern anhalten (im Auto oder zu Fuss) oder drinnen zum Schreibtisch gehen
+  const w = city.walk, x = w ? w.x : me.pos.x, z = w ? w.z : me.pos.z;
+  const at = inZone(D, x, z) || (!!w && inZone(D.desk, x, z));
+  const here = at && (w || (Math.abs(me.speed) < 1.5 && me.alt < 2));
+  if (here && !city.dealOpen && city.dealT === 0) openDealer();
+  if (!at && !inZone(D, x, z, 4) && !(w && inZone(D.desk, x, z, 2))) { city.dealT = 0; if (city.dealOpen) closeDealer(); }
+  S.ui.shopbtn.hidden = !at || city.dealOpen || !city.dealer; // nach dem Schliessen wieder öffnen
+}
+function openDealer() {
+  if (!city.dealer) { showMsg('🚗 Online ist der Autohändler geschlossen', 1.8); city.dealT = 1; return; }
+  city.dealOpen = true; city.dealT = 1; drawDealer();
 }
 function closeDealer() { city.dealOpen = false; S.ui.dealpanel.hidden = true; }
 function drawDealer() {
@@ -1599,6 +1607,8 @@ function drawShop() {
   });
   if (!stockCount()) mine.append(el('p', 'note', 'Noch nichts ausgestellt – bestell unten etwas!'));
   p.append(mine, el('h3', '', '📦 Bestellen beim Grosshandel'));
+  if (stockCount() + sh.orders.length >= SHOP_SLOTS) p.append(el('p', 'note', '⚠️ Alle 6 Plätze sind voll (oder schon bestellt) – verkauf zuerst ein Auto oder gib eins zurück (↩).'));
+  else if (city.whole.every(o => coins < o.cost)) p.append(el('p', 'note', '⚠️ Zu wenig Münzen für den Grosshandel.'));
   const buy = el('div', 'cars');
   city.whole.forEach((o, k) => {
     const b = el('button'), dot = el('i');
@@ -1624,8 +1634,8 @@ function onShopClick(b) {
     const o = city.whole[+b.dataset.whole];
     if (!o || o.sold || stockCount() + sh.orders.length >= SHOP_SLOTS || city.dealer.coins() < o.cost) return true;
     city.pay(o.cost);
-    o.sold = true;
     sh.orders.push({ v: o.v, cost: o.cost });
+    city.whole[+b.dataset.whole] = wholeOffer(); // der Grosshandel hat immer Nachschub
     if (!city.truck) city.truckT = TRUCK_DELAY;
     saveShop(); drawShop();
     showMsg('📦 Bestellt! Der Lieferant kommt bald.', 1.8);
@@ -1661,7 +1671,8 @@ function stepDelivery(dt) {
   want = Math.min(want, followLimit(T, me).lim); // nicht auffahren
   T.speed += Math.max(-8 * dt, Math.min(3 * dt, want - T.speed));
   T.x += T.speed * dt;
-  if (T.state === 'come' && T.x > T.stopX - 0.3 && T.speed < 0.5) { // da: abladen
+  T.stuck = T.speed < 0.3 ? (T.stuck || 0) + dt : 0;
+  if (T.state === 'come' && T.speed < 0.5 && (T.x > T.stopX - 0.3 || (T.stuck > 2 && T.x > T.stopX - 40))) { // da (oder kurz davor blockiert): abladen
     T.state = 'unload'; T.t = 3;
     const n = sh.orders.length;
     for (const o of sh.orders) { const k = sh.stock.indexOf(null); if (k >= 0) sh.stock[k] = o; } // auf freie Plätze
@@ -2407,7 +2418,9 @@ ${flyCss('city')}#city .basebtn { position: absolute; top: 76px; left: 12px; wid
 #city .talkpanel { top: auto; bottom: 12px; }
 #city .talkbtn { position: absolute; bottom: 130px; left: 50%; transform: translateX(-50%); width: 84px; height: 84px; border-radius: 50%;
   border: 3px solid #22c55e; background: #16a34a; color: #fff; font-size: 38px; box-shadow: 0 0 0 6px rgba(34,197,94,.35); }
-#city .talkbtn[hidden] { display: none; }
+#city .talkbtn[hidden], #city .shopbtn[hidden] { display: none; }
+#city .shopbtn { position: absolute; top: 76px; left: 12px; width: 58px; height: 58px; border-radius: 50%; border: 3px solid #f59e0b;
+  background: rgba(0,0,0,.4); font-size: 28px; }
 #city .basepanel .row { display: flex; gap: 6px; margin-top: 8px; }
 #city .basepanel .row button { flex: 1; justify-content: center; background: #1e293b; }
 #city .chase { position: absolute; top: 76px; left: 12px; background: #b91c1c; border-radius: 12px; padding: 6px 12px;
@@ -2446,6 +2459,7 @@ function buildDom() {
     <div class="basepanel dealpanel" hidden></div>
     <div class="basepanel talkpanel" hidden></div>
     <button class="talkbtn" title="Beraten (T)" hidden>💬</button>
+    <button class="shopbtn" title="Autohaus öffnen" hidden>🏪</button>
     <div class="tagbar" hidden></div>
     <div class="jobpanel" hidden><b>📋 Aufträge</b>
       <button data-job="taxi">🚕 Taxi: Fahrgast abholen und hinbringen</button>
@@ -2482,7 +2496,7 @@ function buildDom() {
   document.body.appendChild(root);
   const $ = s => root.querySelector(s);
   const ui = { root, kmh: $('.kmh'), ps: $('.ps'), msg: $('.msg'), hint: $('.hint'), minimap: $('.minimap'), ctls: [...root.querySelectorAll('.ctl')],
-    speed: $('.speed'), limit: $('.limit'), fuel: $('.fuel'), fuelIcon: $('.fuel b'), fuelBar: $('.fuel i'), dmg: $('.dmg'), dmgBar: $('.dmg i'), jail: $('.jailbar'), jailtime: $('.jailbar .jt'), bail: $('.bail'), flash: $('.flash'), flybtn: $('.flybtn'), flyctl: $('.flyctl'), basebtn: $('.basebtn'), walkbtn: $('.walkbtn'), basepanel: $('.basepanel'), dealpanel: $('.dealpanel'), talkpanel: $('.talkpanel'), talkbtn: $('.talkbtn'),
+    speed: $('.speed'), limit: $('.limit'), fuel: $('.fuel'), fuelIcon: $('.fuel b'), fuelBar: $('.fuel i'), dmg: $('.dmg'), dmgBar: $('.dmg i'), jail: $('.jailbar'), jailtime: $('.jailbar .jt'), bail: $('.bail'), flash: $('.flash'), flybtn: $('.flybtn'), flyctl: $('.flyctl'), basebtn: $('.basebtn'), walkbtn: $('.walkbtn'), basepanel: $('.basepanel'), dealpanel: $('.dealpanel'), talkpanel: $('.talkpanel'), talkbtn: $('.talkbtn'), shopbtn: $('.shopbtn'),
     chase: $('.chase'), ticket: $('.ticket'), drift: $('.drift'), clock: $('.clock'),
     tagbtn: $('.tagbtn'), tagbar: $('.tagbar'),
     jobs: $('.jobs'), jobpanel: $('.jobpanel'), goal: $('.goal'), arrow: $('.goal .arrow'), gtext: $('.goal .gtext') };
@@ -2516,6 +2530,7 @@ function buildDom() {
   ui.dealpanel.addEventListener('click', onDealerClick);
   ui.talkpanel.addEventListener('click', onTalkClick);
   $('.talkbtn').addEventListener('pointerdown', e => { e.preventDefault(); startTalk(); });
+  $('.shopbtn').addEventListener('pointerdown', e => { e.preventDefault(); openDealer(); });
   // Liste mit dem Finger schieben (von Hand: im Hochformat ist alles um 90° gedreht)
   let drag = null;
   ui.basepanel.addEventListener('pointerdown', e => { drag = { x: e.clientX, y: e.clientY, top: ui.basepanel.scrollTop }; baseDragged = false; });
