@@ -645,9 +645,9 @@ function buildPlaza(g, cx, cz, round) {
 }
 
 // ---------- Verkehr ----------
-function makeCar(kinds, i, j, d, s) {
+function makeCar(kinds, i, j, d, s, given = null) {
   const kind = POOL[Math.floor(Math.random() * POOL.length)];
-  const v = { kind, color: kinds[kind].color || COLORS[Math.floor(Math.random() * COLORS.length)], special: null };
+  const v = given || { kind, color: kinds[kind].color || COLORS[Math.floor(Math.random() * COLORS.length)], special: null };
   const mesh = buildCar(v, kinds);
   return { v, mesh, i, j, d, s, speed: 6 + Math.random() * 4, cruise: 10 + Math.random() * 4, turn: null,
     len: mesh.userData.length, x: 0, z: 0, h: 0, blocked: 0, waitMe: 0, honkT: 0 };
@@ -1297,9 +1297,9 @@ function switchCar(v) {
 // ---------- Aussteigen und zu Fuss gehen ----------
 // 🚪 oder X: anhalten, aussteigen (links, auf der Fahrerseite), herumlaufen (⬆️ gehen, Leertaste/DRIFT rennen) und
 // wieder einsteigen: ins eigene Auto oder in ein Auto der eigenen Base. Online sehen die anderen nur das parkierte Auto.
-function makePerson() {
+function makePerson(shirtColor = 0x2563eb, hairColor = 0x5a3a1e, skinColor = 0xf2c9a0) {
   const g = new THREE.Group(), M = (color, r = 0.8) => new THREE.MeshStandardMaterial({ color, roughness: r });
-  const skin = M(0xf2c9a0), shirt = M(0x2563eb), jeans = M(0x1e3a5f, 0.85), shoe = M(0x1b1b1b, 0.6);
+  const skin = M(skinColor), shirt = M(shirtColor), jeans = M(0x1e3a5f, 0.85), shoe = M(0x1b1b1b, 0.6);
   const add = (geo, m, x, y, z, parent = g) => { const o = new THREE.Mesh(geo, m); o.position.set(x, y, z); o.castShadow = true; parent.add(o); return o; };
   const limb = (r, len, m, x, y, z) => { // Arm oder Bein: dreht sich in der Schulter bzw. Hüfte
     const p = new THREE.Group();
@@ -1313,10 +1313,20 @@ function makePerson() {
   add(new THREE.CapsuleGeometry(0.17, 0.42, 4, 12), shirt, 0, 1.2, 0).scale.set(0.75, 1, 1.2); // Oberkörper
   add(new THREE.CylinderGeometry(0.05, 0.06, 0.1, 10), skin, 0, 1.58, 0); // Hals
   add(new THREE.SphereGeometry(0.12, 18, 14), skin, 0, 1.72, 0).scale.set(1, 1.1, 0.95); // Kopf
-  add(new THREE.SphereGeometry(0.125, 18, 8, 0, Math.PI * 2, 0, Math.PI / 2), M(0x5a3a1e, 0.9), -0.01, 1.75, 0); // Haare
+  add(new THREE.SphereGeometry(0.125, 18, 8, 0, Math.PI * 2, 0, Math.PI / 2), M(hairColor, 0.9), -0.01, 1.75, 0); // Haare
   for (const s of [-1, 1]) add(new THREE.SphereGeometry(0.018, 8, 6), M(0x111111, 0.4), 0.11, 1.74, s * 0.045); // Augen
   g.userData = { legs, arms };
   return g;
+}
+// Gehen: Beine und Arme schwingen (p: x, z, h, speed, phase, mesh)
+function animatePerson(p, dt) {
+  p.phase += Math.abs(p.speed) * dt * 2.4;
+  const amp = Math.min(1, Math.abs(p.speed) / 3) * (p.speed > 4 ? 0.85 : 0.55);
+  const { legs, arms } = p.mesh.userData;
+  legs.forEach((l, i) => { l.rotation.z = Math.sin(p.phase + i * Math.PI) * amp; });
+  arms.forEach((a, i) => { a.rotation.z = -Math.sin(p.phase + i * Math.PI) * amp * 0.8; });
+  p.mesh.position.set(p.x, Math.abs(Math.sin(p.phase)) * 0.04 * amp, p.z);
+  p.mesh.rotation.y = -p.h;
 }
 // Ins Auto oder hinaus
 function toggleWalk() {
@@ -1374,13 +1384,7 @@ function stepWalk(dt) {
   push(me.pos.x, me.pos.z, R + me.radius * 0.6);
   w.x = Math.max(-LIMIT, Math.min(LIMIT, w.x)); w.z = Math.max(-LIMIT, Math.min(LIMIT, w.z));
   // Laufen: Beine und Arme schwingen
-  w.phase += Math.abs(w.speed) * dt * 2.4;
-  const amp = Math.min(1, Math.abs(w.speed) / 3) * (w.speed > 4 ? 0.85 : 0.55);
-  const { legs, arms } = w.mesh.userData;
-  legs.forEach((l, i) => { l.rotation.z = Math.sin(w.phase + i * Math.PI) * amp; });
-  arms.forEach((a, i) => { a.rotation.z = -Math.sin(w.phase + i * Math.PI) * amp * 0.8; });
-  w.mesh.position.set(w.x, Math.abs(Math.sin(w.phase)) * 0.04 * amp, w.z);
-  w.mesh.rotation.y = -w.h;
+  animatePerson(w, dt);
   // Welches Auto ist nah genug zum Einsteigen? Das eigene oder eines in der eigenen Base
   let best = null, bd = Infinity;
   const d0 = Math.hypot(me.pos.x - w.x, me.pos.z - w.z) - me.radius * 0.6;
@@ -1441,13 +1445,10 @@ function stepTag(dt) {
 // Vor dem Ausstellungsraum anhalten: Gebrauchtwagen kaufen (die drei auf den Drehtellern) oder das eigene Auto verkaufen.
 // Gekauft wird mit den Münzen aus dem Spiel (dealer von game.js); das neue Auto fährt man gleich weg.
 function setupDealer() {
-  const D = S.places.dealer;
-  for (const p of D.pods) p.clear();
   city.offers = city.dealer ? city.dealer.offers() : [];
-  city.offers.forEach((o, k) => {
-    const m = buildCar({ ...o.v, kind: city.kinds[o.v.kind] ? o.v.kind : 'car' }, city.kinds);
-    m.position.y = 0.15; D.pods[k].add(m); o.mesh = m;
-  });
+  city.shop = city.dealer ? loadShop() : { on: false, stock: [] };
+  city.whole = city.dealer ? city.dealer.offers().concat(city.dealer.offers()).slice(0, 4).map(o => ({ v: o.v, cost: Math.round(o.price / 2) })) : [];
+  showPods();
 }
 function stepDealer(dt) {
   const D = S.places.dealer, me = city.me;
@@ -1461,6 +1462,7 @@ function stepDealer(dt) {
 }
 function closeDealer() { city.dealOpen = false; S.ui.dealpanel.hidden = true; }
 function drawDealer() {
+  if (city.shop.on) { drawShop(); return; }
   const p = S.ui.dealpanel, K = city.kinds, D = city.dealer, coins = D.coins();
   p.textContent = '';
   const h = document.createElement('h3'); h.textContent = '🚗 Autohändler · du hast ' + coins + ' 🪙';
@@ -1478,14 +1480,18 @@ function drawDealer() {
   sell.dataset.act = 'sell'; sell.disabled = !value;
   sell.textContent = value ? '💰 ' + ((K[city.me.v.kind] || {}).name || '') + ' verkaufen: +' + value + ' 🪙' : '💰 Dieses Auto kann man nicht verkaufen';
   close.dataset.act = 'close'; close.textContent = '✕ Schliessen';
+  const own = document.createElement('button');
+  own.dataset.act = 'shopon'; own.textContent = '🧑‍💼 Selber Autohändler sein';
   row.append(sell, close);
-  p.append(h, grid, row);
+  const row2 = document.createElement('div'); row2.className = 'row'; row2.append(own);
+  p.append(h, grid, row, row2);
   p.hidden = false;
 }
 function onDealerClick(e) {
   const b = e.target.closest('button');
   if (!b || b.disabled || !city || !city.dealer) return;
   if (b.dataset.act === 'close') { closeDealer(); return; }
+  if (onShopClick(b)) return;
   const D = S.places.dealer, out = () => { Object.assign(city.me.pos, { x: D.x, z: D.z - 3 }); city.me.heading = -Math.PI / 2; };
   if (b.dataset.act === 'sell') {
     const old = city.me.v, res = city.dealer.sell(old.id);
@@ -1505,6 +1511,250 @@ function onDealerClick(e) {
   switchCar(o.v); out();
   showMsg('🔑 Gekauft! Dein neuer ' + ((city.kinds[o.v.kind] || {}).name || '') + ' gehört dir.', 2.6);
   window.beep && window.beep(784, 0.12, 'triangle', 0.07); window.beep && window.beep(1175, 0.25, 'triangle', 0.07, 0.12);
+}
+
+// ---------- Eigenes Autohaus ----------
+// Beim Autohändler „Selber Autohändler sein“: beim Grosshandel Autos einkaufen (Einkaufspreis = Wert) und auf die drei
+// Drehteller stellen. Dann kommen Kunden zu Fuss ins Geschäft und wollen eine Beratung: aussteigen, hingehen, 💬.
+// Jeder Kunde hat einen Wunsch; passt das Auto und der Preis, kauft er (und fährt damit weg), sonst geht er wieder.
+// Die ausgestellten Autos bleiben gespeichert (Spielstand autoRetterShop).
+const SHOP_KEY = 'autoRetterShop', SHOP_SLOTS = 3;
+const BIG = ['van', 'minivan', 'kombi', 'camper', 'schoolbus', 'doubledecker', 'jeep', 'safari', 'offroad', 'pickup', 'delivery', 'umzug', 'caravan', 'hippie', 'postauto', 'parcel'];
+const SPORTY = ['sports', 'muscle', 'coupe', 'roadster', 'racer', 'rally', 'hyper', 'nightracer', 'cabrio', 'stockcar', 'gokart', 'dragster', 'lowrider'];
+const WISHES = {
+  fast: { text: 'Ich suche ein richtig schnelles Auto! 🏎️', ok: (v, k) => v.ps >= 60 },
+  cheap: { text: 'Ich habe nicht viel Geld. Was ist günstig? 💸', ok: (v, k, price) => price <= 20 },
+  big: { text: 'Wir sind eine grosse Familie – wir brauchen Platz! 👨‍👩‍👧‍👦', ok: v => BIG.includes(v.kind) },
+  sporty: { text: 'Ich will ein sportliches Auto! 😎', ok: v => SPORTY.includes(v.kind) },
+  color: { text: '', ok: (v, k, p, c) => colorName(v.color) === c.color },
+};
+// Farbe als Wort (für den Wunsch „ein rotes Auto“)
+function colorName(hex) {
+  const c = new THREE.Color(hex), hsl = {};
+  c.getHSL(hsl);
+  if (hsl.l < 0.18) return 'schwarz';
+  if (hsl.l > 0.85) return 'weiss';
+  if (hsl.s < 0.18) return 'grau';
+  const h = hsl.h * 360;
+  return h < 15 || h >= 340 ? 'rot' : h < 45 ? 'orange' : h < 70 ? 'gelb' : h < 165 ? 'grün' : h < 255 ? 'blau' : h < 300 ? 'lila' : 'rosa';
+}
+const COLOR_ADJ = { schwarz: 'schwarzes', weiss: 'weisses', grau: 'graues', rot: 'rotes', orange: 'oranges', gelb: 'gelbes', 'grün': 'grünes', blau: 'blaues', lila: 'lila', rosa: 'rosa' };
+const shopPrice = (o, kind = 'normal') => Math.max(2, Math.round(o.cost * { cheap: 1.6, normal: 2, high: 3 }[kind]));
+function loadShop() { try { return JSON.parse(localStorage.getItem(SHOP_KEY)) || { on: false, stock: [] }; } catch (err) { return { on: false, stock: [] }; } }
+function saveShop() { try { localStorage.setItem(SHOP_KEY, JSON.stringify({ on: city.shop.on, stock: city.shop.stock })); } catch (err) { /* ohne Speicher */ } }
+
+// Drehteller: im eigenen Autohaus die eigenen Autos, sonst die Angebote des Händlers
+function showPods() {
+  const D = S.places.dealer, list = city.shop.on ? city.shop.stock : city.offers;
+  D.pods.forEach((p, k) => {
+    p.clear();
+    const o = list[k];
+    if (!o || o.sold) return;
+    const m = buildCar({ ...o.v, kind: city.kinds[o.v.kind] ? o.v.kind : 'car' }, city.kinds);
+    m.position.y = 0.15; p.add(m); o.mesh = m;
+  });
+}
+function drawShop() {
+  const p = S.ui.dealpanel, K = city.kinds, coins = city.dealer.coins(), sh = city.shop;
+  p.textContent = '';
+  const el = (tag, cls, text) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text) e.textContent = text; return e; };
+  p.append(el('h3', '', '🧑‍💼 Dein Autohaus · ' + coins + ' 🪙'));
+  p.append(el('p', 'note', 'Ausgestellt (' + sh.stock.length + ' / ' + SHOP_SLOTS + ') – Kunden kommen vorbei und wollen beraten werden. Verkaufspreis normal: das Doppelte vom Einkauf.'));
+  const mine = el('div', 'cars');
+  sh.stock.forEach((o, k) => {
+    const b = el('button'), dot = el('i');
+    b.dataset.back = k; dot.style.background = o.v.color;
+    b.append(dot, el('span', '', (K[o.v.kind] || {}).name + ' · ⚡ ' + o.v.ps), el('small', '', '↩ ' + o.cost + ' 🪙'));
+    mine.append(b);
+  });
+  if (!sh.stock.length) mine.append(el('p', 'note', 'Noch nichts ausgestellt – kauf unten etwas ein!'));
+  p.append(mine, el('h3', '', '📦 Einkaufen beim Grosshandel'));
+  const buy = el('div', 'cars');
+  city.whole.forEach((o, k) => {
+    const b = el('button'), dot = el('i');
+    b.dataset.whole = k; b.disabled = o.sold || coins < o.cost || sh.stock.length >= SHOP_SLOTS;
+    dot.style.background = o.v.color;
+    b.append(dot, el('span', '', (K[o.v.kind] || {}).name + ' · ⚡ ' + o.v.ps), el('small', '', o.sold ? 'gekauft' : o.cost + ' 🪙'));
+    buy.append(b);
+  });
+  const row = el('div', 'row'), off = el('button', '', '🚗 Normaler Händler'), close = el('button', '', '✕ Schliessen');
+  off.dataset.act = 'shopoff'; close.dataset.act = 'close';
+  row.append(off, close);
+  p.append(buy, row);
+  p.hidden = false;
+}
+function onShopClick(b) {
+  const sh = city.shop;
+  if (b.dataset.act === 'shopoff') { sh.on = false; saveShop(); clearCustomers(); showPods(); drawDealer(); return true; }
+  if (b.dataset.act === 'shopon') {
+    sh.on = true; saveShop(); showPods();
+    city.whole = city.dealer.offers().concat(city.dealer.offers()).slice(0, 4).map(o => ({ v: o.v, cost: Math.round(o.price / 2) }));
+    drawShop(); return true;
+  }
+  if (b.dataset.whole !== undefined) {
+    const o = city.whole[+b.dataset.whole];
+    if (!o || o.sold || sh.stock.length >= SHOP_SLOTS || city.dealer.coins() < o.cost) return true;
+    city.pay(o.cost);
+    o.sold = true;
+    sh.stock.push({ v: o.v, cost: o.cost });
+    saveShop(); showPods(); drawShop();
+    showMsg('📦 Eingekauft und ausgestellt!', 1.6);
+    return true;
+  }
+  if (b.dataset.back !== undefined) { // zurückgeben: Einkaufspreis zurück
+    const o = sh.stock.splice(+b.dataset.back, 1)[0];
+    if (o) city.earn(o.cost);
+    saveShop(); showPods(); drawShop();
+    return true;
+  }
+  return false;
+}
+
+// Kunden: kommen vom Trottoir, warten vor den Drehtellern auf Beratung, gehen nach einer Weile wieder
+const SHIRTS_C = [0xdc2626, 0x16a34a, 0xf59e0b, 0x7c3aed, 0x0ea5e9, 0xf472b6, 0x334155, 0xffffff];
+const HAIR_C = [0x2b1a10, 0x6b4423, 0xd9b26f, 0x111111, 0x9ca3af, 0x8a3b12];
+const SKIN_C = [0xf2c9a0, 0xe0ac7e, 0xc68642, 0x8d5524, 0xffdbac];
+function bubble(text) {
+  const c = document.createElement('canvas'); c.width = 512; c.height = 112;
+  const g = c.getContext('2d');
+  g.fillStyle = 'rgba(255,255,255,0.95)'; g.beginPath();
+  if (g.roundRect) g.roundRect(4, 4, 504, 92, 30); else g.rect(4, 4, 504, 92);
+  g.fill();
+  g.beginPath(); g.moveTo(236, 94); g.lineTo(256, 112); g.lineTo(276, 94); g.fill();
+  g.fillStyle = '#111'; g.font = 'bold 46px system-ui, sans-serif'; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText(text, 256, 52, 480);
+  const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace;
+  const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: t, depthTest: false }));
+  sp.scale.set(2.6, 0.57, 1); sp.position.y = 2.35; sp.renderOrder = 5;
+  return sp;
+}
+function say(cu, text) {
+  if (cu.bubble) cu.mesh.remove(cu.bubble);
+  cu.bubble = text ? bubble(text) : null;
+  if (cu.bubble) cu.mesh.add(cu.bubble);
+}
+function clearCustomers() {
+  for (const cu of city.customers) S.scene.remove(cu.mesh);
+  city.customers = [];
+  closeTalk();
+}
+function spawnCustomer() {
+  const D = S.places.dealer, sh = city.shop, pick = a => a[Math.floor(Math.random() * a.length)];
+  const spot = [-10, 0, 10].find(dx => !city.customers.some(c => c.dx === dx)); // vor einem freien Drehteller warten
+  if (spot === undefined) return;
+  let wish = pick(Object.keys(WISHES)), color = '';
+  if (wish === 'color') color = colorName(pick(sh.stock).v.color); // meistens gibt es die Farbe
+  const x = D.x + (Math.random() - 0.5) * 24, z = D.z - 12; // kommt vom Trottoir
+  const cu = { x, z, h: Math.PI / 2, speed: 0, phase: 0, dx: spot, tx: D.x + spot, tz: D.z + 8, state: 'come', wish, color, wait: 50,
+    mesh: makePerson(pick(SHIRTS_C), pick(HAIR_C), pick(SKIN_C)) };
+  S.scene.add(cu.mesh);
+  city.customers.push(cu);
+}
+function stepShop(dt) {
+  const sh = city.shop, D = S.places.dealer, me = city.me, near = Math.hypot(me.pos.x - D.x, me.pos.z - D.z) < 160;
+  if (sh.on && sh.stock.length && near && city.customers.length < 2 && (city.custT -= dt) <= 0) {
+    city.custT = 18 + Math.random() * 20;
+    spawnCustomer();
+    if (city.customers.length === 1) showMsg('🛎️ Ein Kunde kommt ins Autohaus!', 2);
+  }
+  for (const cu of [...city.customers]) {
+    if (cu.state === 'come' || cu.state === 'leave') {
+      const dx = cu.tx - cu.x, dz = cu.tz - cu.z, d = Math.hypot(dx, dz);
+      cu.h = Math.atan2(dz, dx); cu.speed = 1.6;
+      if (d < 0.3) {
+        cu.speed = 0;
+        if (cu.state === 'leave') { S.scene.remove(cu.mesh); city.customers.splice(city.customers.indexOf(cu), 1); continue; }
+        cu.state = 'wait'; cu.h = -Math.PI / 2; say(cu, '💬 Beratung bitte!'); // schaut zum Eingang
+      } else { cu.x += dx / d * cu.speed * dt; cu.z += dz / d * cu.speed * dt; }
+    } else if (cu.state === 'wait' && (cu.wait -= dt) <= 0) leaveCustomer(cu, '😤 Zu lange gewartet!');
+    animatePerson(cu, dt);
+  }
+  // Zu Fuss neben einem wartenden Kunden? Dann kann man beraten
+  const w = city.walk;
+  city.talkTo = w ? city.customers.find(cu => cu.state === 'wait' && Math.hypot(cu.x - w.x, cu.z - w.z) < 2.6) : null;
+  S.ui.talkbtn.hidden = !city.talkTo || !S.ui.talkpanel.hidden;
+  if (!w && city.customers.some(cu => cu.state === 'wait') && Math.hypot(me.pos.x - D.x, me.pos.z - D.z) < 30 && city.custMsgT <= 0) {
+    showMsg('🚪 Steig aus und geh zum Kunden, um ihn zu beraten', 2.2); city.custMsgT = 12;
+  }
+  city.custMsgT -= dt;
+}
+function leaveCustomer(cu, text) {
+  cu.state = 'leave'; cu.tx = cu.x + (Math.random() - 0.5) * 10; cu.tz = S.places.dealer.z - 12;
+  say(cu, text);
+}
+// Beratungsgespräch: Wunsch hören, Auto zeigen, Preis sagen
+function startTalk() {
+  const cu = city.talkTo;
+  if (!cu) return;
+  cu.state = 'talk';
+  if (city.walk) cu.h = Math.atan2(city.walk.z - cu.z, city.walk.x - cu.x); // schaut dich an
+  city.talk = { cu, pick: null };
+  say(cu, '🙂');
+  drawTalk();
+}
+function closeTalk() { if (S.ui.talkpanel) S.ui.talkpanel.hidden = true; city.talk = null; }
+function drawTalk() {
+  const T = city.talk, p = S.ui.talkpanel, K = city.kinds, cu = T.cu;
+  const el = (tag, cls, text) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text) e.textContent = text; return e; };
+  p.textContent = '';
+  const wish = cu.wish === 'color' ? 'Ich hätte gern ein ' + COLOR_ADJ[cu.color] + ' Auto! 🎨' : WISHES[cu.wish].text;
+  p.append(el('h3', '', '🧑 Kunde: „' + wish + '“'));
+  const grid = el('div', 'cars');
+  if (!T.pick) {
+    p.append(el('p', 'note', 'Welches Auto zeigst du?'));
+    city.shop.stock.forEach((o, k) => {
+      const b = el('button'), dot = el('i');
+      b.dataset.show = k; dot.style.background = o.v.color;
+      b.append(dot, el('span', '', (K[o.v.kind] || {}).name + ' · ⚡ ' + o.v.ps), el('small', '', colorName(o.v.color)));
+      grid.append(b);
+    });
+  } else {
+    p.append(el('p', 'note', 'Und zu welchem Preis? (Einkauf: ' + T.pick.cost + ' 🪙)'));
+    for (const [kind, label] of [['cheap', '🏷️ Rabatt'], ['normal', '💰 Normal'], ['high', '💎 Teuer']]) {
+      const b = el('button');
+      b.dataset.price = kind;
+      b.append(el('span', '', label), el('small', '', shopPrice(T.pick, kind) + ' 🪙'));
+      grid.append(b);
+    }
+  }
+  const row = el('div', 'row'), bye = el('button', '', '👋 Tschüss');
+  bye.dataset.act = 'bye';
+  row.append(bye);
+  p.append(grid, row);
+  p.hidden = false;
+}
+function onTalkClick(e) {
+  const b = e.target.closest('button'), T = city && city.talk;
+  if (!b || !T) return;
+  const cu = T.cu;
+  if (b.dataset.act === 'bye') { closeTalk(); leaveCustomer(cu, '👋 Tschüss!'); return; }
+  if (b.dataset.show !== undefined) { T.pick = city.shop.stock[+b.dataset.show]; say(cu, '🤔 Hmm …'); drawTalk(); return; }
+  if (!b.dataset.price || !T.pick) return;
+  // Entscheiden: passt das Auto zum Wunsch? Wie ist der Preis?
+  const o = T.pick, kind = b.dataset.price, price = shopPrice(o, kind);
+  const fits = WISHES[cu.wish].ok(o.v, city.kinds[o.v.kind] || {}, shopPrice(o, 'normal'), cu);
+  const chance = Math.max(0.05, Math.min(0.95, 0.2 + (fits ? 0.5 : 0) + { cheap: 0.25, normal: 0, high: -0.3 }[kind]));
+  closeTalk();
+  if (Math.random() < chance) {
+    const i = city.shop.stock.indexOf(o);
+    if (i >= 0) city.shop.stock.splice(i, 1);
+    saveShop(); showPods();
+    city.earn(price);
+    city.sold = (city.sold || 0) + 1;
+    showMsg('🤝 Verkauft! +' + price + ' 🪙  (Gewinn ' + (price - o.cost) + ')', 2.6);
+    window.beep && window.beep(784, 0.12, 'triangle', 0.07); window.beep && window.beep(1175, 0.25, 'triangle', 0.07, 0.12);
+    S.scene.remove(cu.mesh); city.customers.splice(city.customers.indexOf(cu), 1);
+    driveAway(o.v);
+  } else leaveCustomer(cu, !fits ? '😕 Nicht, was ich suche' : kind === 'high' ? '😬 Viel zu teuer!' : '🤔 Ich überleg es mir …');
+}
+// Der Kunde fährt mit dem neuen Auto los: es fährt ab jetzt im Verkehr mit (ein weit entferntes Auto verschwindet dafür)
+function driveAway(v) {
+  const D = S.places.dealer, i = Math.round(D.x / BLOCK + N / 2 - 0.5), j = Math.round((D.z - 20) / BLOCK + N / 2);
+  const c = makeCar(city.kinds, Math.max(0, Math.min(N - 1, i)), Math.max(0, Math.min(N, j)), 0, BLOCK / 2, { kind: v.kind, color: v.color, special: null });
+  placeOnSegment(c);
+  S.scene.add(c.mesh);
+  const far = city.cars.findIndex(o => !(o.wreck > 0) && Math.hypot(o.x - city.me.pos.x, o.z - city.me.pos.z) > 200);
+  if (far >= 0) { S.scene.remove(city.cars[far].mesh); city.cars.splice(far, 1); }
+  city.cars.push(c);
 }
 
 // ---------- Einparken und Fahrschule ----------
@@ -2078,6 +2328,11 @@ ${flyCss('city')}#city .basebtn { position: absolute; top: 76px; left: 12px; wid
 #city .basepanel button small { margin-left: auto; flex: none; opacity: .8; }
 #city .basepanel button.sel { border-color: #facc15; background: #475569; }
 #city .basepanel button:disabled { opacity: .45; }
+#city .basepanel .note { margin: 2px 0 8px; font-size: 14px; opacity: .8; }
+#city .talkpanel { top: auto; bottom: 12px; }
+#city .talkbtn { position: absolute; bottom: 130px; left: 50%; transform: translateX(-50%); width: 84px; height: 84px; border-radius: 50%;
+  border: 3px solid #22c55e; background: #16a34a; color: #fff; font-size: 38px; box-shadow: 0 0 0 6px rgba(34,197,94,.35); }
+#city .talkbtn[hidden] { display: none; }
 #city .basepanel .row { display: flex; gap: 6px; margin-top: 8px; }
 #city .basepanel .row button { flex: 1; justify-content: center; background: #1e293b; }
 #city .chase { position: absolute; top: 76px; left: 12px; background: #b91c1c; border-radius: 12px; padding: 6px 12px;
@@ -2114,6 +2369,8 @@ function buildDom() {
     <button class="basebtn" title="Base (B)" hidden>🏠</button>
     <div class="basepanel" hidden></div>
     <div class="basepanel dealpanel" hidden></div>
+    <div class="basepanel talkpanel" hidden></div>
+    <button class="talkbtn" title="Beraten (T)" hidden>💬</button>
     <div class="tagbar" hidden></div>
     <div class="jobpanel" hidden><b>📋 Aufträge</b>
       <button data-job="taxi">🚕 Taxi: Fahrgast abholen und hinbringen</button>
@@ -2150,7 +2407,7 @@ function buildDom() {
   document.body.appendChild(root);
   const $ = s => root.querySelector(s);
   const ui = { root, kmh: $('.kmh'), ps: $('.ps'), msg: $('.msg'), hint: $('.hint'), minimap: $('.minimap'), ctls: [...root.querySelectorAll('.ctl')],
-    speed: $('.speed'), limit: $('.limit'), fuel: $('.fuel'), fuelIcon: $('.fuel b'), fuelBar: $('.fuel i'), dmg: $('.dmg'), dmgBar: $('.dmg i'), jail: $('.jailbar'), jailtime: $('.jailbar .jt'), bail: $('.bail'), flash: $('.flash'), flybtn: $('.flybtn'), flyctl: $('.flyctl'), basebtn: $('.basebtn'), walkbtn: $('.walkbtn'), basepanel: $('.basepanel'), dealpanel: $('.dealpanel'),
+    speed: $('.speed'), limit: $('.limit'), fuel: $('.fuel'), fuelIcon: $('.fuel b'), fuelBar: $('.fuel i'), dmg: $('.dmg'), dmgBar: $('.dmg i'), jail: $('.jailbar'), jailtime: $('.jailbar .jt'), bail: $('.bail'), flash: $('.flash'), flybtn: $('.flybtn'), flyctl: $('.flyctl'), basebtn: $('.basebtn'), walkbtn: $('.walkbtn'), basepanel: $('.basepanel'), dealpanel: $('.dealpanel'), talkpanel: $('.talkpanel'), talkbtn: $('.talkbtn'),
     chase: $('.chase'), ticket: $('.ticket'), drift: $('.drift'), clock: $('.clock'),
     tagbtn: $('.tagbtn'), tagbar: $('.tagbar'),
     jobs: $('.jobs'), jobpanel: $('.jobpanel'), goal: $('.goal'), arrow: $('.goal .arrow'), gtext: $('.goal .gtext') };
@@ -2182,6 +2439,8 @@ function buildDom() {
   $('.basebtn').addEventListener('pointerdown', e => { e.preventDefault(); toggleBase(); });
   ui.basepanel.addEventListener('click', onBaseClick);
   ui.dealpanel.addEventListener('click', onDealerClick);
+  ui.talkpanel.addEventListener('click', onTalkClick);
+  $('.talkbtn').addEventListener('pointerdown', e => { e.preventDefault(); startTalk(); });
   // Liste mit dem Finger schieben (von Hand: im Hochformat ist alles um 90° gedreht)
   let drag = null;
   ui.basepanel.addEventListener('pointerdown', e => { drag = { x: e.clientX, y: e.clientY, top: ui.basepanel.scrollTop }; baseDragged = false; });
@@ -2224,6 +2483,7 @@ function onKey(e) {
   if (e.code === 'KeyF' && e.type === 'keydown' && !e.repeat) { toggleFly(); e.preventDefault(); return; }
   if (e.code === 'KeyB' && e.type === 'keydown' && !e.repeat) { toggleBase(); e.preventDefault(); return; }
   if (e.code === 'KeyX' && e.type === 'keydown' && !e.repeat) { toggleWalk(); e.preventDefault(); return; }
+  if (e.code === 'KeyT' && e.type === 'keydown' && !e.repeat) { startTalk(); e.preventDefault(); return; }
   const k = KEYS[e.code];
   if (!k) return;
   city.input[k] = e.type === 'keydown';
@@ -2329,7 +2589,7 @@ export function startCity({ player, kinds, topSpeed, onExit, pay = () => 0, earn
   // online starten alle auf einer anderen Strasse am Stadtrand
   const me = { v: player, mesh, pos: new THREE.Vector3(node(1 + (net ? net.mySlot : 0)) + 20, 0, node(0) + LANE), heading: 0, speed: 0, vl: 0, steer: 0,
     ...carStats(player, mesh, kinds, topSpeed), slip: 0, surface: 'asphalt', alt: 0, fly: false, landing: false };
-  city = { me, cars: spawnTraffic(kinds), input: {}, t: Math.random() * CYCLE, msgT: 0, crashT: 0, hornT: 0, inCross: false, tod: 0.02, turbo: 0, fuelT: 0, washT: 0, mission: null, accT: 25 + Math.random() * 30, fuel: 1, damage: 0, scratches: [], repairT: 0, wx: { kind: 'sun', t: 60 + Math.random() * 60, i: 0 }, wGrip: 1, dealT: 0, dealOpen: false, dealer,
+  city = { me, cars: spawnTraffic(kinds), input: {}, t: Math.random() * CYCLE, msgT: 0, crashT: 0, hornT: 0, inCross: false, tod: 0.02, turbo: 0, fuelT: 0, washT: 0, mission: null, accT: 25 + Math.random() * 30, fuel: 1, damage: 0, scratches: [], repairT: 0, wx: { kind: 'sun', t: 60 + Math.random() * 60, i: 0 }, wGrip: 1, dealT: 0, dealOpen: false, dealer, customers: [], custT: 4, custMsgT: 0, talk: null,
     gears: gearbox(player.kind), onExit, last: performance.now(), kinds, pay, gripBoost: (kinds[player.kind] && kinds[player.kind].grip) || 1, canFly: !!(kinds[player.kind] && kinds[player.kind].fly), fines: 0, police: null, pulled: 0, ticket: false,
     earn, net, topSpeed, garage, baseSlot: net ? net.mySlot : 0, baseT: 0, atBase: -1, baseEdit: false, netCars: net ? makeNetCars({ scene: S.scene, kinds, net }) : null, drift: 0, driftT: 0, driftBest: (() => { try { return +localStorage.getItem('autoRetterDriftBest') || 0; } catch (e) { return 0; } })() };
   S.fx.clear();
@@ -2378,6 +2638,7 @@ function loop(now) {
   stepRules(dt);
   stepDamage(dt);
   stepDealer(dt);
+  stepShop(dt);
   stepDrift(dt);
   stepPolice(dt);
   stepPlaces(dt);
@@ -2569,6 +2830,8 @@ function endCity() {
   window.removeEventListener('keyup', onKey);
   S.scene.remove(c.me.mesh);
   if (c.walk) S.scene.remove(c.walk.mesh);
+  for (const cu of c.customers || []) S.scene.remove(cu.mesh);
+  S.ui.talkpanel.hidden = true; S.ui.dealpanel.hidden = true; S.ui.talkbtn.hidden = true;
   S.ui.walkbtn.textContent = '🚪';
   S.ui.walkbtn.classList.remove('ready');
   S.ui.hint.textContent = HINT;

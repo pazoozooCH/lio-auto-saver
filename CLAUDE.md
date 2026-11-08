@@ -21,7 +21,8 @@ Browser-Spiel ohne Build: `index.html` + `game.js` (Spiellogik, Menüs und 2D-Ze
   Über 140 km/h geblitzt: 3 Minuten Gefängnis (Block 2,2), freikaufen 100 Münzen; Endzeit im Spielstand `autoRetterJail`.
   Weiter in der Stadt: Unfälle der Bots mit Stau (`stepAccidents`), Tank/Akku (`city.fuel`, Tankstelle mit Ladesäule),
   Schaden mit Kratzern und Werkstatt (`hurt`, Block 6,3, davor Parkplatz für den Auftrag Einparken), Wetter (`stepWeather`),
-  Fahrschule (Auftrag `school`, Führerschein in `autoRetterLicense`) und Autohändler (Block 1,3, `cityDealer` in `game.js`). Oben am Stadtrand ist Platz für sechs Basen nebeneinander (nur für echte Spieler, sonst Wiese): bis zu 10 ausgesuchte
+  Fahrschule (Auftrag `school`, Führerschein in `autoRetterLicense`) und Autohändler (Block 1,3, `cityDealer` in `game.js`).
+  Dort auch das eigene Autohaus: Grosshandel, drei Drehteller, Kunden mit Wunsch und Beratung (💬/T), Spielstand `autoRetterShop`. Oben am Stadtrand ist Platz für sechs Basen nebeneinander (nur für echte Spieler, sonst Wiese): bis zu 10 ausgesuchte
   Autos (`baseGarage` in `game.js`, Spielstand `autoRetterBase`), dort Auto wechseln; online je Spieler eine (`rooms/<CODE>/bases`).
 - `stunt.js`: 3D-Stuntpark mit eigener Physik in der Höhe (Rampen als Formen in `SHAPES`, Looping, Feuerringe, Salto/Schraube).
   Testen: `startStuntMode()`, dann `window.__stunt()` (`me`, `input`, `score`).
