@@ -255,6 +255,12 @@ function buildWorld() {
     solid.push({ x0: cx - 8, x1: cx + 8, z0: cz + 9, z1: cz + 17, h: 5 });
     const s1 = sign('⛽ TANKSTELLE', '#dc2626', '#ffffff', 12, 2); s1.position.set(cx, 6.6, cz - 13.2); decor.add(s1);
     places.gas = { x: cx, z: cz - 6, w: 18, d: 10 };
+    const green = mat({ color: 0x16a34a }), screen = mat({ color: 0x0b1a10, emissive: 0x22c55e, emissiveIntensity: 0.8 }); // Ladesäulen für Elektroautos
+    for (const dz of [-10, -2]) { box(0.7, 1.7, 0.45, green, cx + 17, 1.03, cz + dz, true); box(0.05, 0.4, 0.3, screen, cx + 16.63, 1.4, cz + dz); }
+    for (const side of [1, -1]) { // von beiden Seiten lesbar
+      const s2 = sign('⚡ LADEN', '#16a34a', '#ffffff', 5, 1.2); s2.position.set(cx + 17 + side * 0.03, 2.6, cz - 6); s2.rotation.y = side * Math.PI / 2; decor.add(s2);
+    }
+    places.charge = { x: cx + 14.5, z: cz - 6, w: 5, d: 14 };
   }
   function buildWash(cx, cz) { // Waschanlage: Tunnel mit drehenden Bürsten, man fährt der Länge nach durch
     box(44, 0.04, 14, tarmac, cx, 0.18, cz);
@@ -836,7 +842,12 @@ function stepMe(dt) {
   me.steer += (steerTarget - me.steer) * Math.min(1, dt * 7);
   me.surface = me.fly ? 'asphalt' : surfaceAt(me.pos.x, me.pos.z);
   const boost = city.turbo > 0 ? 1.3 : 1; // Turbo-Benzin von der Tankstelle
-  const maxV = (me.fly ? me.maxV * FLY_SPEED : me.surface === 'grass' ? me.maxV * 0.55 : me.maxV) * boost;
+  let maxV = (me.fly ? me.maxV * FLY_SPEED : me.surface === 'grass' ? me.maxV * 0.55 : me.maxV) * boost;
+  if (needsFuel(me.v.kind)) { // Tank: reicht für etwa 7 km; leer = nur noch Schritttempo bis zur Tankstelle
+    city.fuel = Math.max(0, city.fuel - Math.abs(me.speed) * dt / 7000 * (gas ? 1 : 0.4));
+    if (city.fuel <= 0) { maxV = Math.min(maxV, 4.5); if (!city.emptyMsg) { city.emptyMsg = true; showMsg(isElectric(me.v.kind) ? '🔋 Akku leer! Fahr langsam zur Ladesäule' : '⛽ Tank leer! Fahr langsam zur Tankstelle', 2.6); } }
+    else city.emptyMsg = false;
+  }
   if (gas) {
     if (me.speed < 0) me.speed = Math.min(0, me.speed + BRAKE * dt);
     else me.speed += me.acc * boost * Math.max(0, 1 - me.speed / maxV) * dt;
@@ -979,19 +990,25 @@ const inZone = (p, x, z, pad = 0) => p && Math.abs(x - p.x) < p.w / 2 + pad && M
 function stepPlaces(dt) {
   const me = city.me, P = S.places, x = me.pos.x, z = me.pos.z;
   if (city.turbo > 0) city.turbo -= dt;
-  // Tankstelle: unter dem Dach anhalten = Turbo-Benzin (30 s schneller), kostet 3 Münzen (ohne Münzen gratis)
-  if (inZone(P.gas, x, z) && Math.abs(me.speed) < 1.5 && me.alt < 2) {
+  // Tankstelle: unter dem Dach anhalten = volltanken (1 Münze pro 10 %) und Turbo-Benzin (30 s schneller);
+  // Elektroautos laden an der grünen Ladesäule daneben. Ohne Münzen gratis.
+  const ev = isElectric(me.v.kind), zone = ev ? P.charge : P.gas, stopped = Math.abs(me.speed) < 1.5 && me.alt < 2 && !city.walk;
+  if (stopped && !ev && inZone(P.charge, x, z) && city.fuelT === 0) { showMsg('⛽ Benziner tanken unter dem roten Dach', 1.6); city.fuelT = -1; }
+  if (stopped && ev && inZone(P.gas, x, z) && city.fuelT === 0) { showMsg('⚡ Elektroauto: lade an der grünen Ladesäule', 1.6); city.fuelT = -1; }
+  if (stopped && inZone(zone, x, z)) {
     if (city.fuelT >= 0) {
-      if (city.fuelT === 0) showMsg('⛽ Tanken …', 1.6);
+      if (city.fuelT === 0) { showMsg(ev ? '⚡ Laden …' : '⛽ Tanken …', 1.6); city.filled = 0; }
       city.fuelT += dt;
-      if (city.fuelT > 1.5) {
-        const paid = city.pay(3);
+      const add = Math.min(1 - city.fuel, dt * 0.4);
+      city.fuel += add; city.filled += add;
+      if (city.fuelT > 1.5 && city.fuel >= 0.999) {
+        const paid = city.pay(Math.ceil(city.filled * 10));
         city.turbo = 30; city.fuelT = -1; // erst nach dem Wegfahren wieder
-        showMsg('⛽ Turbo-Benzin! 30 Sekunden schneller' + (paid ? '  (−' + paid + ' 🪙)' : ''), 2.6);
+        showMsg((ev ? '⚡ Voll geladen!' : '⛽ Vollgetankt!') + ' Turbo 30 s' + (paid ? '  (−' + paid + ' 🪙)' : ''), 2.6);
         window.beep && window.beep(660, 0.1, 'triangle', 0.06); window.beep && window.beep(990, 0.18, 'triangle', 0.06, 0.1);
       }
     }
-  } else if (!inZone(P.gas, x, z, 3)) city.fuelT = 0;
+  } else if (!inZone(P.gas, x, z, 3) && !inZone(P.charge, x, z, 3)) city.fuelT = 0;
   // Waschanlage: langsam durchfahren, Bürsten drehen schneller, Schaum; hinten raus = blitzblank
   const inWash = inZone(P.wash, x, z) && me.alt < 2;
   for (const b of P.wash.brushes) b.rotation.y += dt * (inWash ? 14 : 1.5);
@@ -1147,6 +1164,7 @@ function switchCar(v) {
   S.scene.remove(me.mesh);
   S.scene.add(mesh);
   Object.assign(me, carStats(v, mesh, city.kinds, city.topSpeed), { v: { ...v, name: me.v.name }, mesh, speed: 0, vl: 0, steer: 0, fly: false, landing: false, alt: 0 });
+  city.fuel = 1; // aus der Base kommt es vollgetankt
   city.gears = gearbox(v.kind);
   city.gripBoost = (city.kinds[v.kind] && city.kinds[v.kind].grip) || 1;
   city.canFly = !!(city.kinds[v.kind] && city.kinds[v.kind].fly);
@@ -1302,6 +1320,14 @@ function stepTag(dt) {
 
 // ---------- Aufträge: Taxi, Pizza, Dieb jagen ----------
 const POLICE_KINDS = ['police', 'policebike', 'policebus'];
+// Tank: Elektroautos laden an der Ladesäule; Zauber-, Tier- und Muskelkraft-Fahrzeuge brauchen gar nichts
+const ELECTRIC = ['ecar', 'smart', 'golfcart', 'tram', 'scooter', 'forklift'];
+const NO_FUEL = ['cargobike', 'bobbycar', 'snail', 'ghost', 'ufo'];
+const isElectric = kind => ELECTRIC.includes(kind);
+function needsFuel(kind) {
+  const k = city.kinds[kind] || {};
+  return !NO_FUEL.includes(kind) && !k.secret && !k.fly && k.tier !== 'legendary' && k.tier !== 'admin';
+}
 function toggleJobs() {
   const ui = S.ui;
   if (!ui.jobpanel.hidden) { ui.jobpanel.hidden = true; return; }
@@ -1721,7 +1747,12 @@ const CSS = `
 #city .speed.over { background: rgba(185,28,28,.85); }
 #city .limit { position: absolute; bottom: 18px; left: calc(50% - 128px); width: 46px; height: 46px; border-radius: 50%; background: #fff;
   border: 7px solid #d61f1f; color: #111; font: 900 20px system-ui, sans-serif; display: flex; align-items: center; justify-content: center; }
-#city .limit[hidden], #city .jailbar[hidden] { display: none; }
+#city .limit[hidden], #city .jailbar[hidden], #city .fuel[hidden] { display: none; }
+#city .fuel { position: absolute; bottom: 20px; left: calc(50% + 92px); display: flex; align-items: center; gap: 5px; background: rgba(0,0,0,.55);
+  border-radius: 10px; padding: 5px 8px; font-size: 18px; }
+#city .fuel span { display: block; width: 64px; height: 12px; border-radius: 6px; background: rgba(255,255,255,.2); overflow: hidden; }
+#city .fuel i { display: block; height: 100%; background: #22c55e; }
+#city .fuel.low i { background: #ef4444; } #city .fuel.low { animation: cityblink 0.6s infinite alternate; }
 #city .jailbar { position: absolute; top: 64px; left: 50%; transform: translateX(-50%); background: rgba(31,41,55,.92); border: 3px solid #fb923c;
   border-radius: 14px; padding: 6px 10px 6px 16px; display: flex; align-items: center; gap: 12px; font-weight: 900; font-size: 22px; white-space: nowrap; z-index: 4; }
 #city .jailbar .bail { border: none; border-radius: 10px; background: #16a34a; color: #fff; font: 800 16px system-ui, sans-serif; padding: 8px 12px; }
@@ -1835,6 +1866,7 @@ function buildDom() {
       <button class="pay">Okay 👍</button></div></div>
     <div class="speed"><span class="kmh">0</span> km/h<small class="ps"></small></div>
     <div class="limit" hidden></div>
+    <div class="fuel" hidden><b></b><span><i></i></span></div>
     <div class="jailbar" hidden><span class="jt"></span><button class="bail"></button></div>
     <div class="flash"></div>
     <div class="hint">${HINT}</div>
@@ -1847,7 +1879,7 @@ function buildDom() {
   document.body.appendChild(root);
   const $ = s => root.querySelector(s);
   const ui = { root, kmh: $('.kmh'), ps: $('.ps'), msg: $('.msg'), hint: $('.hint'), minimap: $('.minimap'), ctls: [...root.querySelectorAll('.ctl')],
-    speed: $('.speed'), limit: $('.limit'), jail: $('.jailbar'), jailtime: $('.jailbar .jt'), bail: $('.bail'), flash: $('.flash'), flybtn: $('.flybtn'), flyctl: $('.flyctl'), basebtn: $('.basebtn'), walkbtn: $('.walkbtn'), basepanel: $('.basepanel'),
+    speed: $('.speed'), limit: $('.limit'), fuel: $('.fuel'), fuelIcon: $('.fuel b'), fuelBar: $('.fuel i'), jail: $('.jailbar'), jailtime: $('.jailbar .jt'), bail: $('.bail'), flash: $('.flash'), flybtn: $('.flybtn'), flyctl: $('.flyctl'), basebtn: $('.basebtn'), walkbtn: $('.walkbtn'), basepanel: $('.basepanel'),
     chase: $('.chase'), ticket: $('.ticket'), drift: $('.drift'), clock: $('.clock'),
     tagbtn: $('.tagbtn'), tagbar: $('.tagbar'),
     jobs: $('.jobs'), jobpanel: $('.jobpanel'), goal: $('.goal'), arrow: $('.goal .arrow'), gtext: $('.goal .gtext') };
@@ -2025,7 +2057,7 @@ export function startCity({ player, kinds, topSpeed, onExit, pay = () => 0, earn
   // online starten alle auf einer anderen Strasse am Stadtrand
   const me = { v: player, mesh, pos: new THREE.Vector3(node(1 + (net ? net.mySlot : 0)) + 20, 0, node(0) + LANE), heading: 0, speed: 0, vl: 0, steer: 0,
     ...carStats(player, mesh, kinds, topSpeed), slip: 0, surface: 'asphalt', alt: 0, fly: false, landing: false };
-  city = { me, cars: spawnTraffic(kinds), input: {}, t: Math.random() * CYCLE, msgT: 0, crashT: 0, hornT: 0, inCross: false, tod: 0.02, turbo: 0, fuelT: 0, washT: 0, mission: null, accT: 25 + Math.random() * 30,
+  city = { me, cars: spawnTraffic(kinds), input: {}, t: Math.random() * CYCLE, msgT: 0, crashT: 0, hornT: 0, inCross: false, tod: 0.02, turbo: 0, fuelT: 0, washT: 0, mission: null, accT: 25 + Math.random() * 30, fuel: 1,
     gears: gearbox(player.kind), onExit, last: performance.now(), kinds, pay, gripBoost: (kinds[player.kind] && kinds[player.kind].grip) || 1, canFly: !!(kinds[player.kind] && kinds[player.kind].fly), fines: 0, police: null, pulled: 0, ticket: false,
     earn, net, topSpeed, garage, baseSlot: net ? net.mySlot : 0, baseT: 0, atBase: -1, baseEdit: false, netCars: net ? makeNetCars({ scene: S.scene, kinds, net }) : null, drift: 0, driftT: 0, driftBest: (() => { try { return +localStorage.getItem('autoRetterDriftBest') || 0; } catch (e) { return 0; } })() };
   S.fx.clear();
@@ -2126,7 +2158,13 @@ function stepDayNight(dt) {
 }
 
 function updateHud(dt) {
-  const me = city.me;
+  const me = city.me, F = S.ui.fuel;
+  F.hidden = !needsFuel(me.v.kind) || !!city.walk;
+  if (!F.hidden) {
+    S.ui.fuelIcon.textContent = isElectric(me.v.kind) ? '🔋' : '⛽';
+    S.ui.fuelBar.style.width = Math.round(city.fuel * 100) + '%';
+    F.classList.toggle('low', city.fuel < 0.15);
+  }
   S.ui.kmh.textContent = Math.round(Math.abs(me.speed) * 3.6);
   S.ui.flybtn.textContent = me.fly && !me.landing ? '🛬' : '✈️';
   S.ui.flyctl.hidden = !me.fly || me.landing;
