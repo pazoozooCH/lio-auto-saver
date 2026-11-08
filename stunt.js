@@ -9,7 +9,7 @@ import { makeNoise, rng, smoothstep, surface, terrain, cloudDome } from './world
 import { createCarSound, crash, gearbox } from './sound.js';
 import { makeNetCars } from './netcars.js';
 import { makeChat } from './chat.js';
-import { makeEffects, camView, CAM_NAMES, FLY_HTML, FLY_KEYS, flyCss, flyHelp, flyToggle, flyStep } from './fx.js';
+import { makeEffects, camView, cockpit, COCKPIT, CAM_NAMES, FLY_HTML, FLY_KEYS, flyCss, flyHelp, flyToggle, flyStep } from './fx.js';
 
 const G = 9.81;
 const EDGE = 188;               // so weit geht der Platz (±)
@@ -847,10 +847,12 @@ function render(dt) {
     camWant.set(me.x - fx * back, me.y + 3.6, me.z - fz * back);
     camAt.set(me.x + fx * 5, me.y + 1.2, me.z + fz * 5);
   }
-  cam.position.lerp(camWant, 1 - Math.exp(-dt * (me.loop ? 3 : 5)));
-  cam.position.y = Math.max(cam.position.y, groundAt(cam.position.x, cam.position.z) + 1.2);
-  camLook.lerp(camAt, 1 - Math.exp(-dt * 8));
-  cam.lookAt(camLook);
+  if (!cockpit(m, cam, camMode === COCKPIT && !me.loop)) {
+    cam.position.lerp(camWant, 1 - Math.exp(-dt * (me.loop ? 3 : 5)));
+    cam.position.y = Math.max(cam.position.y, groundAt(cam.position.x, cam.position.z) + 1.2);
+    camLook.lerp(camAt, 1 - Math.exp(-dt * 8));
+    cam.lookAt(camLook);
+  }
   cam.fov += (62 + Math.min(12, Math.abs(me.speed) * 0.12) - cam.fov) * (1 - Math.exp(-dt * 1.5));
   cam.updateProjectionMatrix();
   for (const ring of S.rings) { // Feuerringe flackern, aufleuchten beim Durchfliegen

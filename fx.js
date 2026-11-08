@@ -76,15 +76,33 @@ export function makeEffects(scene) {
 }
 
 // Kamera beim Fahren: 0 = hinter dem Auto, 1 = seitlich, 2 = von vorne, 3 = von oben (Taste 📷 oder V wechselt)
-export const CAM_NAMES = ['📷 Kamera: hinten', '📷 Kamera: Seite', '📷 Kamera: vorne', '📷 Kamera: oben'];
+export const CAM_NAMES = ['📷 Kamera: hinten', '🪑 Kamera: Fahrersitz', '📷 Kamera: Seite', '📷 Kamera: vorne', '📷 Kamera: oben'];
+export const COCKPIT = 1; // Kamera im Kopf des Fahrers (siehe cockpit)
 // Wohin die Kamera soll (want) und wohin sie schaut (look) für ein Auto bei (x, y, z) mit Richtung heading.
 // back: Abstand für die normale Ansicht; gibt null für Modus 0 zurück (dann rechnet der Modus selbst)
 export function camView(mode, x, y, z, heading, want, look) {
   const fx = Math.cos(heading), fz = Math.sin(heading);
-  if (mode === 1) { want.set(x - fz * 7.5, y + 2.2, z + fx * 7.5); look.set(x, y + 0.7, z); return true; }
-  if (mode === 2) { want.set(x + fx * 8.5, y + 2.4, z + fz * 8.5); look.set(x, y + 0.8, z); return true; }
-  if (mode === 3) { want.set(x - fx * 3, y + 26, z - fz * 3); look.set(x + fx * 3, y, z + fz * 3); return true; }
+  if (mode === 2) { want.set(x - fz * 7.5, y + 2.2, z + fx * 7.5); look.set(x, y + 0.7, z); return true; }
+  if (mode === 3) { want.set(x + fx * 8.5, y + 2.4, z + fz * 8.5); look.set(x, y + 0.8, z); return true; }
+  if (mode === 4) { want.set(x - fx * 3, y + 26, z - fz * 3); look.set(x + fx * 3, y, z + fz * 3); return true; }
   return false;
+}
+
+// Fahrersitz: die Kamera sitzt im Kopf des Fahrers (der ist dann unsichtbar) und schaut durch die Frontscheibe.
+// Gibt true zurück, wenn die Kamera gesetzt ist (dann nicht mehr nachführen). eye kommt aus buildCar (cars3d.js).
+const eyeV = new THREE.Vector3(), lookV = new THREE.Vector3();
+export function cockpit(mesh, cam, on) {
+  const u = mesh.userData;
+  if (u.driver) u.driver.visible = !on;
+  if (cam.userData.near === undefined) cam.userData.near = cam.near;
+  const near = on ? 0.12 : cam.userData.near; // Lenkrad und Armaturenbrett sind ganz nah
+  if (cam.near !== near) { cam.near = near; cam.updateProjectionMatrix(); }
+  if (!on || !u.eye) return false;
+  mesh.updateMatrixWorld(true);
+  const [x, y, z] = u.eye;
+  cam.position.copy(eyeV.set(x, y, z).applyMatrix4(mesh.matrixWorld));
+  cam.lookAt(lookV.set(x + 10, y - 1.5, z).applyMatrix4(mesh.matrixWorld));
+  return true;
 }
 
 // Fliegen (Fahrzeuge mit fly in KINDS, z.B. LIONEL X; Stadt und Stuntpark): ✈️ oder F hebt ab und landet, ▲ ▼ oder E Q = höher, tiefer.

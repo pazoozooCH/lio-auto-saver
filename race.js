@@ -1,7 +1,7 @@
 // Rennstrecke in 3D (three.js). Wird von game.js erst geladen, wenn ein Rennen startet.
 import * as THREE from 'three';
 import { Sky } from 'three/addons/objects/Sky.js';
-import { makeEffects, camView, CAM_NAMES, FLY_HTML, FLY_KEYS, flyCss, flyHelp, flyToggle, flyStep } from './fx.js';
+import { makeEffects, camView, cockpit, COCKPIT, CAM_NAMES, FLY_HTML, FLY_KEYS, flyCss, flyHelp, flyToggle, flyStep } from './fx.js';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { buildCar, animateCar, warmUp, makeQuality, mergeStatic } from './cars3d.js';
@@ -1256,9 +1256,11 @@ function render(dt) {
     camWant.set(me.pos.x - fx * back, my + 3.2 + Math.abs(me.speed) * 0.01, me.pos.z - fz * back);
     camAhead.set(me.pos.x + fx * 6, my + 1.2, me.pos.z + fz * 6);
   }
-  R.camera.position.lerp(camWant, 1 - Math.exp(-dt * 6));
-  camLook.lerp(camAhead, 1 - Math.exp(-dt * 10));
-  R.camera.lookAt(camLook);
+  if (!cockpit(me.mesh, R.camera, camMode === COCKPIT)) {
+    R.camera.position.lerp(camWant, 1 - Math.exp(-dt * 6));
+    camLook.lerp(camAhead, 1 - Math.exp(-dt * 10));
+    R.camera.lookAt(camLook);
+  }
   // Weiterer Blickwinkel bei Tempo, aber weich nachgeführt: bei einem plötzlichen Stopp (Wand, Unfall)
   // springt das Bild sonst so, als würde man heranzoomen
   R.camera.fov += (62 + Math.min(14, Math.abs(me.speed) * 0.12) - R.camera.fov) * (1 - Math.exp(-dt * 1.5));

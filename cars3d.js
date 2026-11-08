@@ -85,10 +85,13 @@ function shared() {
     clearcoat: 1, clearcoatRoughness: 0.02, envMapIntensity: 2.4, depthWrite: false });
   MAT.glassTint = new THREE.MeshPhysicalMaterial({ color: 0x0b1016, metalness: 0.4, roughness: 0.04, transparent: true, opacity: 0.86,
     clearcoat: 1, envMapIntensity: 2.2, depthWrite: false });
+  // Innenverkleidung: bekommt drinnen kaum Sonne, darum leuchtet sie etwas von selbst
+  MAT.cabinIn = new THREE.MeshStandardMaterial({ color: 0xa9abb0, emissive: 0x5a5c61, roughness: 0.9, side: THREE.BackSide });
+  MAT.cabinInDark = new THREE.MeshStandardMaterial({ color: 0x2a2b2f, emissive: 0x1c1d20, roughness: 0.7, side: THREE.BackSide });
   MAT.seam = new THREE.MeshStandardMaterial({ color: 0x08090a, roughness: 0.6 });
   MAT.seat = new THREE.MeshStandardMaterial({ color: 0x232428, roughness: 0.7 });
-  MAT.trim = new THREE.MeshStandardMaterial({ color: 0x17181b, roughness: 0.55 });
-  MAT.headliner = new THREE.MeshStandardMaterial({ color: 0x8d8f94, roughness: 0.9 });
+  MAT.trim = new THREE.MeshStandardMaterial({ color: 0x1d1e22, emissive: 0x0d0e10, roughness: 0.55 });
+  MAT.headliner = new THREE.MeshStandardMaterial({ color: 0xa9abb0, emissive: 0x5a5c61, roughness: 0.9 });
   MAT.tyreReal = new THREE.MeshStandardMaterial({ color: 0xffffff, map: tyreTexture(), bumpMap: tyreTexture(), bumpScale: 3, roughness: 0.9, side: THREE.DoubleSide });
   MAT.barrel = new THREE.MeshStandardMaterial({ color: 0x24262b, metalness: 0.5, roughness: 0.55, side: THREE.DoubleSide });
   MAT.disc = new THREE.MeshStandardMaterial({ color: 0x9a9fa6, metalness: 0.9, roughness: 0.38 });
@@ -441,7 +444,7 @@ function loftMeshes(geos, mats) {
 const shapeCache = new Map();
 function memo(key, make) {
   let v = shapeCache.get(key);
-  if (!v) { if (shapeCache.size > 400) shapeCache.clear(); shapeCache.set(key, v = make()); }
+  if (!v && make) { if (shapeCache.size > 400) shapeCache.clear(); shapeCache.set(key, v = make()); }
   return v;
 }
 
@@ -476,21 +479,27 @@ function interior(C, { rb, rt, ft, fb, belt, ghTop, gw, seats2, rear }) {
   seat(xs, zs, 0.46);
   if (rear && !seats2) { const xr = xs - 0.85; if (xr > rb + 0.3) for (const z of [-zs, zs]) seat(xr, z, 0.44); }
   // Lenkrad vor dem Fahrer
-  const wx = xs + 0.55, wy = Math.min(belt(wx) + 0.13, ghTop(wx) - 0.12);
-  const wheel = C.add(new THREE.Mesh(new THREE.TorusGeometry(0.17, 0.022, 8, 24), M.trim), wx, wy, -zs);
+  const wx = xs + 0.68, wy = Math.min(belt(wx) + 0.12, ghTop(wx) - 0.12);
+  const wheel = C.add(new THREE.Mesh(new THREE.TorusGeometry(0.16, 0.02, 8, 24), M.trim), wx, wy, -zs);
   wheel.rotation.set(0, PI / 2, 0.45);
   C.cyl(0.03, 0.03, 0.3, M.trim, wx + 0.12, wy - 0.06, -zs, [0, 0, PI / 2 + 0.45], 8);
   // Fahrer: Kopf mit Haaren, Oberkörper, Arme zum Lenkrad
   const hsh = [...C.v.kind].reduce((a, ch) => a * 31 + ch.charCodeAt(0) >>> 0, 7);
   const shirt = mat(SHIRTS[hsh % SHIRTS.length], { roughness: 0.8 }), hy = top + 0.06;
-  C.sph(0.1, M.skin, xs + 0.12, hy, -zs, [1, 1.12, 0.95]);
-  C.sph(0.105, mat(HAIR[(hsh >> 3) % HAIR.length], { roughness: 0.9 }), xs + 0.1, hy + 0.035, -zs, [1, 0.8, 1], 'top');
-  C.add(new THREE.Mesh(new THREE.CapsuleGeometry(0.13, 0.16, 4, 10), shirt), xs + 0.08, hy - 0.3, -zs).scale.set(0.75, 1, 1.15); // Oberkörper
+  const drv = new THREE.Group(); // eigene Gruppe: wird in der Fahrersitz-Kamera ausgeblendet
+  drv.name = 'driver';
+  drv.userData.driver = true;
+  C.body.add(drv);
+  const part = (geo, m, x, y, z) => { const o = new THREE.Mesh(geo, m); o.position.set(x, y, z); o.castShadow = true; drv.add(o); return o; };
+  part(new THREE.SphereGeometry(0.1, 20, 14), M.skin, xs + 0.12, hy, -zs).scale.set(1, 1.12, 0.95);
+  part(new THREE.SphereGeometry(0.105, 20, 10, 0, PI * 2, 0, PI / 2), mat(HAIR[(hsh >> 3) % HAIR.length], { roughness: 0.9 }), xs + 0.1, hy + 0.035, -zs).scale.set(1, 0.8, 1);
+  part(new THREE.CapsuleGeometry(0.13, 0.16, 4, 10), shirt, xs + 0.08, hy - 0.3, -zs).scale.set(0.75, 1, 1.15); // Oberkörper
   const sx = xs + 0.1, sy = hy - 0.2, len = Math.hypot(wx - 0.06 - sx, wy - sy);
   for (const s of [-1, 1]) { // Arme zum Lenkrad
-    const arm = C.add(new THREE.Mesh(new THREE.CapsuleGeometry(0.035, len - 0.07, 3, 8), shirt), (sx + wx - 0.06) / 2, (sy + wy) / 2, -zs + s * 0.14);
+    const arm = part(new THREE.CapsuleGeometry(0.035, len - 0.07, 3, 8), shirt, (sx + wx - 0.06) / 2, (sy + wy) / 2, -zs + s * 0.14);
     arm.rotation.z = Math.atan2(wy - sy, wx - 0.06 - sx) - PI / 2;
   }
+  C.eye = [xs + 0.14, hy - 0.03, -zs]; // Augen des Fahrers (Fahrersitz-Kamera)
   // Innenspiegel oben an der Frontscheibe
   C.box(0.03, 0.06, 0.22, M.trim, ft - 0.02, ghTop(ft) - 0.1, 0);
 }
@@ -606,6 +615,13 @@ function realBody(C, name, opts = {}) {
       return 1;
     })), [C.paint, glass, M.dark]);
     for (const p of parts) if (p) C.body.add(p);
+    // von innen: Dach und Säulen verkleidet (sonst sähe man vom Fahrersitz durchs Dach in den Himmel)
+    const geos = memo(key + '|cabin');
+    for (const [k, m] of [[0, M.cabinIn], [2, M.cabinInDark]]) if (geos[k]) {
+      const o = new THREE.Mesh(geos[k], m);
+      o.userData.whole = true;
+      C.body.add(o);
+    }
     C.roofY = roofY + 0.03;
     C.roofX = (rt + ft) / 2;
     if (!opts.noMirrors) for (const s of [-1, 1]) { // Aussenspiegel: schwarzer Fuss, Gehäuse in Wagenfarbe, Glas nach hinten, Blinker
@@ -1523,11 +1539,14 @@ export function buildCar(v, kinds, hDiv) {
     sh.position.y = 0.05;
     sh.name = 'shadow';
     C.group.add(sh);
-    t = { group: C.group, paint: C.paint, radius: Math.max(1.2, Math.min(C.L, 4) / 2), length: C.L };
+    // Augen für die Fahrersitz-Kamera; Fahrzeuge ohne Innenraum: knapp über dem Dach
+    const eye = C.eye || [(C.roofX ?? 0) + 0.3, (C.roofY ?? C.H) + 0.3, 0];
+    t = { group: C.group, paint: C.paint, radius: Math.max(1.2, Math.min(C.L, 4) / 2), length: C.L, eye };
     templates.set(key, t);
   }
   const g = t.group.clone();
   g.userData = { wheels: g.getObjectsByProperty('name', 'wheel'), paint: t.paint, body: g.getObjectByName('body'), shadow: g.getObjectByName('shadow'), radius: t.radius, length: t.length,
+    eye: t.eye, driver: g.getObjectByName('driver'),
     finish: tune.finish || null };
   return g;
 }
@@ -2216,6 +2235,7 @@ Object.assign(BUILD, {
     sideDetails(C);
     for (const k of ['side', 'surfZ', 'ghZ', 'caliper', 'wheelOut']) delete C[k]; // der Wohnwagen ist keine echte Karosserie
     for (const w of [...C.wheels.slice(nW), ...C.group.getObjectsByProperty('name', 'caliper')]) w.position.x += off;
+    if (C.eye) C.eye[0] += off;
     C.axles = C.axles.map(([x, r]) => [x + off, r]);
     Object.assign(C, { body, L, X: X0, roofX: C.roofX + off });
     const { M } = C, cl = L * 0.45, cx = -L / 2 + cl / 2, y0 = 0.42, ch = 2.3, white = mat(0xf8fafc, { roughness: 0.5 });

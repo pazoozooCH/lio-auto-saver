@@ -8,7 +8,7 @@ import { makeNoise, rng, smoothstep, surface, terrain, cloudDome } from './world
 import { createCarSound, crash, gearbox, horn, createSiren } from './sound.js';
 import { makeNetCars } from './netcars.js';
 import { makeChat } from './chat.js';
-import { makeEffects, camView, CAM_NAMES, FLY_HTML, FLY_KEYS, flyCss, flyHelp, flyToggle, flyStep } from './fx.js';
+import { makeEffects, camView, cockpit, COCKPIT, CAM_NAMES, FLY_HTML, FLY_KEYS, flyCss, flyHelp, flyToggle, flyStep } from './fx.js';
 
 const N = 8;                    // Blöcke pro Seite
 const BLOCK = 64;               // Abstand der Kreuzungen (Meter)
@@ -884,7 +884,7 @@ function stepBases(dt) {
     city.atBase = at;
     if (at >= 0) showMsg(at === city.baseSlot ? '🏠 Deine Base' : '🏠 Base von ' + baseOwner(at), 1.6);
   }
-  const mine = at === city.baseSlot && me.alt < 2;
+  const mine = at === city.baseSlot && me.alt < 2 && !city.walk;
   S.ui.basebtn.hidden = !mine;
   if (!mine) S.ui.basepanel.hidden = true;
   if ((city.baseT -= dt) > 0) return;
@@ -984,6 +984,109 @@ function switchCar(v) {
   if (S.snd) { S.snd.stop(); S.snd = createCarSound({ kind: v.kind }); }
   if (city.net) city.net.setCar(v);
   showMsg('🔑 ' + ((city.kinds[v.kind] || {}).name || v.kind), 1.6);
+}
+
+// ---------- Aussteigen und zu Fuss gehen ----------
+// 🚪 oder X: anhalten, aussteigen (links, auf der Fahrerseite), herumlaufen (⬆️ gehen, Leertaste/DRIFT rennen) und
+// wieder einsteigen: ins eigene Auto oder in ein Auto der eigenen Base. Online sehen die anderen nur das parkierte Auto.
+function makePerson() {
+  const g = new THREE.Group(), M = (color, r = 0.8) => new THREE.MeshStandardMaterial({ color, roughness: r });
+  const skin = M(0xf2c9a0), shirt = M(0x2563eb), jeans = M(0x1e3a5f, 0.85), shoe = M(0x1b1b1b, 0.6);
+  const add = (geo, m, x, y, z, parent = g) => { const o = new THREE.Mesh(geo, m); o.position.set(x, y, z); o.castShadow = true; parent.add(o); return o; };
+  const limb = (r, len, m, x, y, z) => { // Arm oder Bein: dreht sich in der Schulter bzw. Hüfte
+    const p = new THREE.Group();
+    p.position.set(x, y, z);
+    add(new THREE.CapsuleGeometry(r, len, 4, 10), m, 0, -len / 2 - r * 0.5, 0, p);
+    g.add(p);
+    return p;
+  };
+  const legs = [-1, 1].map(s => { const l = limb(0.075, 0.72, jeans, 0, 0.92, s * 0.11); add(new THREE.BoxGeometry(0.26, 0.09, 0.12), shoe, 0.05, -0.87, 0, l); return l; });
+  const arms = [-1, 1].map(s => { const a = limb(0.055, 0.5, shirt, 0, 1.47, s * 0.26); add(new THREE.SphereGeometry(0.055, 10, 8), skin, 0, -0.62, 0, a); return a; });
+  add(new THREE.CapsuleGeometry(0.17, 0.42, 4, 12), shirt, 0, 1.2, 0).scale.set(0.75, 1, 1.2); // Oberkörper
+  add(new THREE.CylinderGeometry(0.05, 0.06, 0.1, 10), skin, 0, 1.58, 0); // Hals
+  add(new THREE.SphereGeometry(0.12, 18, 14), skin, 0, 1.72, 0).scale.set(1, 1.1, 0.95); // Kopf
+  add(new THREE.SphereGeometry(0.125, 18, 8, 0, Math.PI * 2, 0, Math.PI / 2), M(0x5a3a1e, 0.9), -0.01, 1.75, 0); // Haare
+  for (const s of [-1, 1]) add(new THREE.SphereGeometry(0.018, 8, 6), M(0x111111, 0.4), 0.11, 1.74, s * 0.045); // Augen
+  g.userData = { legs, arms };
+  return g;
+}
+// Ins Auto oder hinaus
+function toggleWalk() {
+  if (!city) return;
+  if (city.walk) { getIn(); return; }
+  const me = city.me;
+  if (city.police || city.ticket || city.pulled > 0) { showMsg('🚔 Nicht jetzt – die Polizei!', 1.4); return; }
+  if (tagState()) { showMsg('🏃 Nicht während Fangis', 1.4); return; }
+  if (Math.abs(me.speed) > 3 || me.alt > 0.5) { showMsg('Zuerst anhalten', 1.2); return; }
+  Object.assign(me, { speed: 0, vl: 0, steer: 0, fly: false, landing: false, alt: 0 });
+  const fx = Math.cos(me.heading), fz = Math.sin(me.heading), side = me.radius * 0.6 + 0.9; // links = Fahrerseite
+  const w = city.walk = { x: me.pos.x + fz * side + fx * 0.3, z: me.pos.z - fx * side + fz * 0.3, h: me.heading - Math.PI / 2, speed: 0, phase: 0, mesh: makePerson(), target: null };
+  w.mesh.position.set(w.x, 0, w.z);
+  S.scene.add(w.mesh);
+  if (me.mesh.userData.driver) me.mesh.userData.driver.visible = false; // der Fahrer ist ja ausgestiegen
+  S.ui.walkbtn.textContent = '🚗';
+  S.ui.flybtn.hidden = true;
+  S.ui.hint.textContent = '⬅️ ➡️ drehen · ⬆️ gehen · Leertaste rennen · X einsteigen';
+  showMsg('🚶 Ausgestiegen!', 1.4);
+}
+function getIn() {
+  const w = city.walk, t = w.target;
+  if (!t) { showMsg('🚗 Geh näher zu einem Auto', 1.4); return; }
+  S.scene.remove(w.mesh);
+  city.walk = null;
+  if (t.v) { // Auto aus der Base: das alte Auto fährt zurück in die Base
+    switchCar(t.v);
+    Object.assign(city.me.pos, { x: t.x, z: t.z });
+    city.me.heading = t.h;
+  }
+  if (city.me.mesh.userData.driver) city.me.mesh.userData.driver.visible = true;
+  S.ui.walkbtn.textContent = '🚪';
+  S.ui.walkbtn.classList.remove('ready');
+  S.ui.flybtn.hidden = !city.canFly;
+  S.ui.hint.textContent = HINT;
+  showMsg('🚗 Eingestiegen', 1.2);
+}
+function stepWalk(dt) {
+  const w = city.walk, input = city.input, me = city.me;
+  w.h += ((input.right ? 1 : 0) - (input.left ? 1 : 0)) * 2.6 * dt;
+  const want = input.gas ? (input.drift ? 7 : 3.6) : input.brake ? -1.8 : 0;
+  w.speed += (want - w.speed) * Math.min(1, dt * 8);
+  const fx = Math.cos(w.h), fz = Math.sin(w.h);
+  w.x += fx * w.speed * dt; w.z += fz * w.speed * dt;
+  const R = 0.35, push = (ox, oz, min) => {
+    const dx = w.x - ox, dz = w.z - oz, dd = Math.hypot(dx, dz);
+    if (dd < min && dd > 0.001) { w.x += dx / dd * (min - dd); w.z += dz / dd * (min - dd); }
+  };
+  for (const b of S.solid) { // Häuser, Bäume, Mauern, parkierte Autos
+    const qx = Math.max(b.x0, Math.min(w.x, b.x1)), qz = Math.max(b.z0, Math.min(w.z, b.z1));
+    push(qx, qz, R);
+  }
+  for (const o of S.round) push(o.x, o.z, R + o.r);
+  for (const c of city.cars) push(c.x, c.z, R + c.mesh.userData.radius * 0.7); // Autos schieben einen weg
+  push(me.pos.x, me.pos.z, R + me.radius * 0.6);
+  w.x = Math.max(-LIMIT, Math.min(LIMIT, w.x)); w.z = Math.max(-LIMIT, Math.min(LIMIT, w.z));
+  // Laufen: Beine und Arme schwingen
+  w.phase += Math.abs(w.speed) * dt * 2.4;
+  const amp = Math.min(1, Math.abs(w.speed) / 3) * (w.speed > 4 ? 0.85 : 0.55);
+  const { legs, arms } = w.mesh.userData;
+  legs.forEach((l, i) => { l.rotation.z = Math.sin(w.phase + i * Math.PI) * amp; });
+  arms.forEach((a, i) => { a.rotation.z = -Math.sin(w.phase + i * Math.PI) * amp * 0.8; });
+  w.mesh.position.set(w.x, Math.abs(Math.sin(w.phase)) * 0.04 * amp, w.z);
+  w.mesh.rotation.y = -w.h;
+  // Welches Auto ist nah genug zum Einsteigen? Das eigene oder eines in der eigenen Base
+  let best = null, bd = Infinity;
+  const d0 = Math.hypot(me.pos.x - w.x, me.pos.z - w.z) - me.radius * 0.6;
+  if (d0 < 1.6) { best = { me: true }; bd = d0; }
+  const B = S.places.bases[city.baseSlot];
+  if (B && B.on) B.bays.forEach((b, i) => {
+    const v = city.base[i];
+    if (!v || !b.mesh || !b.mesh.visible) return;
+    const d = Math.hypot(b.x - w.x, b.z - w.z) - b.mesh.userData.length * 0.35;
+    if (d < 1.6 && d < bd) { bd = d; best = { v, x: b.x, z: b.z, h: -b.ry }; }
+  });
+  if (best && (!w.target || w.target.v !== best.v)) showMsg(best.v ? '🔑 ' + ((city.kinds[best.v.kind] || {}).name || '') + ' – 🚗 einsteigen' : '🚗 Einsteigen?', 1.2);
+  w.target = best;
+  S.ui.walkbtn.classList.toggle('ready', !!best);
 }
 
 // ---------- Fangis (nur online) ----------
@@ -1378,6 +1481,9 @@ const CSS = `
   background: rgba(0,0,0,.35); color: #fff; font-size: 30px; font-weight: 900; touch-action: none; }
 #city .ctl.on { background: rgba(255,255,255,.4); }
 #city .ctl.gas { border-color: #4ade80; } #city .ctl.brake { border-color: #f87171; font-size: 18px; }
+#city .walkbtn { position: absolute; top: 112px; right: 12px; width: 42px; height: 42px; border-radius: 50%; border: none;
+  background: rgba(0,0,0,.55); color: #fff; font-size: 20px; }
+#city .walkbtn.ready { background: #16a34a; box-shadow: 0 0 0 3px #bbf7d0; }
 #city .horn { position: absolute; top: 10px; left: 12px; width: 58px; height: 58px; border-radius: 50%; border: 3px solid rgba(255,255,255,.65);
   background: rgba(0,0,0,.4); font-size: 28px; }
 #city .drift { position: absolute; top: 14%; left: 50%; transform: translateX(-50%); background: linear-gradient(90deg, #f97316, #dc2626);
@@ -1413,6 +1519,7 @@ ${flyCss('city')}#city .basebtn { position: absolute; top: 76px; left: 12px; wid
   background: rgba(0,0,0,.45); padding: 4px 12px; border-radius: 10px; white-space: nowrap; }
 `;
 
+const HINT = '⬅️ ➡️ lenken · ⬆️ Gas · ⬇️ Bremse/rückwärts · Leertaste driften · H hupen · X aussteigen';
 function buildDom() {
   const style = document.createElement('style');
   style.textContent = CSS;
@@ -1426,6 +1533,7 @@ function buildDom() {
     <button class="quit" title="Stadt verlassen">✕</button>
     <button class="cam" title="Kamera wechseln (V)">📷</button>
     <button class="horn" title="Hupen (H)">📯</button>
+    <button class="walkbtn" title="Aussteigen / einsteigen (X)">🚪</button>
     <button class="jobs" title="Aufträge (J)">📋</button>
     <button class="tagbtn" title="Fangis (online)" hidden>🏃</button>
     <button class="basebtn" title="Base (B)" hidden>🏠</button>
@@ -1448,7 +1556,7 @@ function buildDom() {
       <p class="note"></p><p class="count"></p>
       <button class="pay">Okay 👍</button></div></div>
     <div class="speed"><span class="kmh">0</span> km/h<small class="ps"></small></div>
-    <div class="hint">⬅️ ➡️ lenken · ⬆️ Gas · ⬇️ Bremse/rückwärts · Leertaste driften · H hupen</div>
+    <div class="hint">${HINT}</div>
     <button class="ctl" data-k="left" style="left:16px">◀</button>
     <button class="ctl" data-k="right" style="left:124px">▶</button>
     <button class="ctl brake" data-k="brake" style="right:124px">BREMSE</button>
@@ -1458,7 +1566,7 @@ function buildDom() {
   document.body.appendChild(root);
   const $ = s => root.querySelector(s);
   const ui = { root, kmh: $('.kmh'), ps: $('.ps'), msg: $('.msg'), hint: $('.hint'), minimap: $('.minimap'), ctls: [...root.querySelectorAll('.ctl')],
-    flybtn: $('.flybtn'), flyctl: $('.flyctl'), basebtn: $('.basebtn'), basepanel: $('.basepanel'),
+    flybtn: $('.flybtn'), flyctl: $('.flyctl'), basebtn: $('.basebtn'), walkbtn: $('.walkbtn'), basepanel: $('.basepanel'),
     chase: $('.chase'), ticket: $('.ticket'), drift: $('.drift'), clock: $('.clock'),
     tagbtn: $('.tagbtn'), tagbar: $('.tagbar'),
     jobs: $('.jobs'), jobpanel: $('.jobpanel'), goal: $('.goal'), arrow: $('.goal .arrow'), gtext: $('.goal .gtext') };
@@ -1484,6 +1592,7 @@ function buildDom() {
   $('.quit').addEventListener('pointerdown', e => { e.preventDefault(); if (city) endCity(); });
   $('.cam').addEventListener('pointerdown', e => { e.preventDefault(); nextCam(); });
   $('.horn').addEventListener('pointerdown', e => { e.preventDefault(); honk(); });
+  $('.walkbtn').addEventListener('pointerdown', e => { e.preventDefault(); toggleWalk(); });
   $('.flybtn').addEventListener('pointerdown', e => { e.preventDefault(); toggleFly(); });
   $('.basebtn').addEventListener('pointerdown', e => { e.preventDefault(); toggleBase(); });
   ui.basepanel.addEventListener('click', onBaseClick);
@@ -1502,7 +1611,7 @@ function buildDom() {
 }
 
 function toggleFly() {
-  if (!city || !city.canFly) return;
+  if (!city || !city.canFly || city.walk) return;
   const me = city.me;
   if (!me.fly && (city.pulled > 0 || city.ticket || (city.police && city.police.state === 'stop'))) return;
   flyToggle(me, me.alt);
@@ -1528,6 +1637,7 @@ function onKey(e) {
   if (e.code === 'KeyV' && e.type === 'keydown') { nextCam(); e.preventDefault(); return; }
   if (e.code === 'KeyF' && e.type === 'keydown' && !e.repeat) { toggleFly(); e.preventDefault(); return; }
   if (e.code === 'KeyB' && e.type === 'keydown' && !e.repeat) { toggleBase(); e.preventDefault(); return; }
+  if (e.code === 'KeyX' && e.type === 'keydown' && !e.repeat) { toggleWalk(); e.preventDefault(); return; }
   const k = KEYS[e.code];
   if (!k) return;
   city.input[k] = e.type === 'keydown';
@@ -1670,7 +1780,7 @@ function loop(now) {
   stepLights();
   stepDayNight(dt);
   if (city.pulled > 0) city.pulled -= dt;
-  stepMe(dt);
+  if (city.walk) stepWalk(dt); else stepMe(dt);
   stepDrift(dt);
   stepPolice(dt);
   stepPlaces(dt);
@@ -1749,16 +1859,23 @@ function nextCam() {
   showMsg(CAM_NAMES[camMode], 1);
 }
 function render(dt) {
-  const me = city.me, cam = S.camera;
+  const me = city.me, cam = S.camera, w = city.walk;
   const fx = Math.cos(me.heading), fz = Math.sin(me.heading);
   const back = 8.5 + Math.abs(me.speed) * 0.03;
-  if (!camView(camMode, me.pos.x, me.alt, me.pos.z, me.heading, camWant, camAhead)) {
+  if (w) { // zu Fuss: Kamera hinter dem Kopf
+    const wx = Math.cos(w.h), wz = Math.sin(w.h);
+    camWant.set(w.x - wx * 4.2, 2.4, w.z - wz * 4.2);
+    camAhead.set(w.x + wx * 3, 1.3, w.z + wz * 3);
+  } else if (!camView(camMode, me.pos.x, me.alt, me.pos.z, me.heading, camWant, camAhead)) {
     camWant.set(me.pos.x - fx * back, me.alt + 3.3 + Math.abs(me.speed) * 0.01, me.pos.z - fz * back);
     camAhead.set(me.pos.x + fx * 6, me.alt + 1.2, me.pos.z + fz * 6);
   }
-  cam.position.lerp(camWant, 1 - Math.exp(-dt * 6));
-  camLook.lerp(camAhead, 1 - Math.exp(-dt * 10));
-  cam.lookAt(camLook);
+  if (!cockpit(me.mesh, cam, camMode === COCKPIT && !w)) {
+    if (w && me.mesh.userData.driver) me.mesh.userData.driver.visible = false; // ausgestiegen: Sitz bleibt leer
+    cam.position.lerp(camWant, 1 - Math.exp(-dt * 6));
+    camLook.lerp(camAhead, 1 - Math.exp(-dt * 10));
+    cam.lookAt(camLook);
+  }
   cam.fov = 62 + Math.min(16, Math.abs(me.speed) * 0.15);
   cam.updateProjectionMatrix();
   S.sun.position.set(me.pos.x + 70, 110, me.pos.z - 40);
@@ -1780,6 +1897,10 @@ function endCity() {
   window.removeEventListener('keydown', onKey);
   window.removeEventListener('keyup', onKey);
   S.scene.remove(c.me.mesh);
+  if (c.walk) S.scene.remove(c.walk.mesh);
+  S.ui.walkbtn.textContent = '🚪';
+  S.ui.walkbtn.classList.remove('ready');
+  S.ui.hint.textContent = HINT;
   for (const car of c.cars) S.scene.remove(car.mesh); // Formen gehören den Vorlagen in cars3d.js
   if (c.headMat) c.headMat.emissiveIntensity = 1.2; // Scheinwerfer wieder wie am Tag (gilt auch fürs Rennen)
   if (c.netCars) c.netCars.dispose();

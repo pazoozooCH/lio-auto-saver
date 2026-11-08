@@ -14,14 +14,15 @@ Browser-Spiel ohne Build: `index.html` + `game.js` (Spiellogik, Menüs und 2D-Ze
   Normale Autos (Limousine, Kompakt, Kombi, Sport, Coupé, SUV, Schrägheck, Pickup) haben eine echte Karosserie
   (`REAL` + `realBody`: Querschnitte, Radkästen, Kabine mit Säulen, gemalte Front/Heck); `{ classic: true }` = alte Kastenform.
 - `city.js`: 3D-Stadt zum freien Herumfahren (Strassengitter, Häuser, Parks, Ampeln, Verkehr mit Abbiegen und Halten).
-  Testen: `startCityMode()`, dann `window.__city()` (`me`, `cars`, `input`). Oben am Stadtrand ist Platz für sechs Basen nebeneinander (nur für echte Spieler, sonst Wiese): bis zu 10 ausgesuchte
+  Testen: `startCityMode()`, dann `window.__city()` (`me`, `cars`, `input`). 🚪/X: aussteigen und zu Fuss gehen (`city.walk`),
+  einsteigen ins eigene Auto oder in eines der eigenen Base. Oben am Stadtrand ist Platz für sechs Basen nebeneinander (nur für echte Spieler, sonst Wiese): bis zu 10 ausgesuchte
   Autos (`baseGarage` in `game.js`, Spielstand `autoRetterBase`), dort Auto wechseln; online je Spieler eine (`rooms/<CODE>/bases`).
 - `stunt.js`: 3D-Stuntpark mit eigener Physik in der Höhe (Rampen als Formen in `SHAPES`, Looping, Feuerringe, Salto/Schraube).
   Testen: `startStuntMode()`, dann `window.__stunt()` (`me`, `input`, `score`).
 - `viewer.js`: 3D-Ansicht eines Fahrzeugs zum Drehen (eigener Renderer, wird beim Schliessen freigegeben).
 - `photo.js`: Fotos der 3D-Fahrzeuge für die Menüs (`drawVehiclePreview` in `game.js`); eigener Renderer, Fotos werden
   nach und nach gemacht (`work()` in der Hauptschleife) und die letzten 90 gemerkt. Ohne three.js bleibt die 2D-Zeichnung.
-- `fx.js`: Kamera-Ansichten beim Fahren (`camView`), Reifenrauch und Bremsspuren (Stadt, Rennen, Stuntpark); Driften selbst steckt in der Physik des jeweiligen Modus.
+- `fx.js`: Kamera-Ansichten beim Fahren (`camView`; `cockpit` = Fahrersitz, Augen `eye` und Fahrer `driver` aus `buildCar`), Reifenrauch und Bremsspuren (Stadt, Rennen, Stuntpark); Driften selbst steckt in der Physik des jeweiligen Modus.
   Dazu das Fliegen (`fly: true` in `KINDS`; Stadt, Stuntpark, Rennen): Höhe und Knöpfe hier, Hindernisse im jeweiligen Modus.
   Im Rennen bleibt man über der Strecke (Wände gelten, nicht schneller, `T.clear` = erlaubte Höhe in Tunneln und unter Brücken).
 - `netcars.js`: Mitspieler beim freien Fahren online (Stadt, Stuntpark): senden, glätten, Namensschild, Zusammenstösse.
