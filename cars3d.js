@@ -81,6 +81,8 @@ function shared() {
   MAT.wood = new THREE.MeshStandardMaterial({ color: 0xa0703c, roughness: 0.85 });
   MAT.gold = new THREE.MeshStandardMaterial({ color: 0xffd34d, metalness: 1, roughness: 0.22 });
   MAT.white = new THREE.MeshStandardMaterial({ color: 0xf4f4f4, roughness: 0.5 });
+  MAT.barrel = new THREE.MeshStandardMaterial({ color: 0x24262b, metalness: 0.5, roughness: 0.55, side: THREE.DoubleSide });
+  MAT.disc = new THREE.MeshStandardMaterial({ color: 0x9a9fa6, metalness: 0.9, roughness: 0.38 });
   return MAT;
 }
 const mat = (color, opts = {}) => new THREE.MeshStandardMaterial({ color, roughness: 0.5, ...opts });
@@ -175,6 +177,60 @@ function wheelGeometry(r, w, spokes) {
   return g;
 }
 
+// Echtes Rad: flacher Reifen, Doppelspeichen-Felge mit Radmuttern; dahinter sieht man die Bremsscheibe
+const realWheelGeos = new Map();
+function realWheelGeometry(r, w) {
+  const key = r.toFixed(3) + '|' + w.toFixed(3);
+  let g = realWheelGeos.get(key);
+  if (g) return g;
+  const inner = r * 0.72, sh = Math.min(0.07, w * 0.22);
+  const prof = [[inner, -w / 2], [r - sh, -w / 2 - 0.005], [r - sh * 0.2, -w / 2 + sh * 0.4], [r, -w / 2 + sh], [r, w / 2 - sh],
+    [r - sh * 0.2, w / 2 - sh * 0.4], [r - sh, w / 2 + 0.005], [inner, w / 2]].map(([x, y]) => new THREE.Vector2(x, y));
+  const tyre = new THREE.LatheGeometry(prof, 36).rotateX(PI / 2);
+  const dark = mergeGeometries([
+    new THREE.CylinderGeometry(inner * 0.97, inner * 0.97, w * 0.9, 28, 1, true).rotateX(PI / 2), // Felgenbett
+    new THREE.CylinderGeometry(r * 0.12, r * 0.12, w * 0.9, 12).rotateX(PI / 2), // Nabe
+  ]);
+  const disc = new THREE.CylinderGeometry(r * 0.52, r * 0.52, 0.03, 28).rotateX(PI / 2);
+  const bright = [];
+  for (const sg of [-1, 1]) {
+    const zf = sg * w * 0.44;
+    bright.push(new THREE.TorusGeometry(inner * 0.98, r * 0.035, 6, 32).translate(0, 0, sg * w * 0.47)); // Felgenhorn
+    for (let i = 0; i < 5; i++) for (const off of [-0.13, 0.13]) { // Doppelspeichen
+      bright.push(new THREE.BoxGeometry(inner * 0.86, r * 0.07, 0.035).translate(inner * 0.53, 0, 0)
+        .rotateZ(i / 5 * PI * 2 + off * (1 - 0.3)).translate(0, 0, zf));
+    }
+    bright.push(new THREE.CylinderGeometry(r * 0.17, r * 0.19, 0.05, 20).rotateX(PI / 2).translate(0, 0, zf + sg * 0.01)); // Nabendeckel
+    for (let i = 0; i < 5; i++) { // Radmuttern
+      const a = i / 5 * PI * 2 + PI / 5;
+      bright.push(new THREE.CylinderGeometry(r * 0.025, r * 0.025, 0.03, 8).rotateX(PI / 2).translate(Math.cos(a) * r * 0.11, Math.sin(a) * r * 0.11, zf + sg * 0.035));
+    }
+  }
+  g = { tyre, dark, disc, bright: mergeGeometries(bright) };
+  realWheelGeos.set(key, g);
+  return g;
+}
+
+function realWheel(r, width, parent, x, z, rimMat, caliper) {
+  const M = shared();
+  const G = realWheelGeometry(r, width);
+  const g = new THREE.Group();
+  const tyre = new THREE.Mesh(G.tyre, M.tyre);
+  tyre.castShadow = true;
+  g.add(tyre, new THREE.Mesh(G.dark, M.barrel), new THREE.Mesh(G.disc, M.disc), new THREE.Mesh(G.bright, rimMat || M.rim));
+  g.position.set(x, r, z);
+  g.name = 'wheel';
+  parent.add(g);
+  // Bremssattel: dreht sich nicht mit, sitzt oben hinten über der Scheibe
+  const cal = new THREE.Mesh(new THREE.TorusGeometry(r * 0.46, r * 0.075, 6, 8, 0.8), caliper);
+  cal.scale.z = 1.6;
+  cal.rotation.z = PI * 0.55;
+  cal.position.set(x, r, z);
+  cal.name = 'caliper';
+  parent.add(cal);
+  return g;
+}
+
 function wheel(r, width, parent, x, z, rimMat, spokes) {
   const M = shared();
   const G = wheelGeometry(r, width, spokes || (rimMat ? 8 : 5));
@@ -217,7 +273,10 @@ function kit(v, kinds, hDiv, spec) {
   C.ext = (pts, depth, m, bevel = 0.14, z = 0) => { const o = extrude(pts, depth, m, bevel); o.position.z = z; C.body.add(o); return o; };
   C.wheelPair = (x, r = C.r, w = 0.32, rimMat, spokes) => {
     C.axles.push([x, r]);
-    for (const s of [-1, 1]) C.wheels.push(wheel(r, w, C.group, x, s * (C.W / 2 - w / 2 + (C.wheelOut ?? 0.04)), rimMat, spokes));
+    for (const s of [-1, 1]) {
+      const z = s * (C.W / 2 - w / 2 + (C.wheelOut ?? 0.04));
+      C.wheels.push(C.caliper ? realWheel(r, w, C.group, x, z, rimMat, C.caliper) : wheel(r, w, C.group, x, z, rimMat, spokes));
+    }
   };
   // Aufkleber auf beiden Seiten (paint zeichnet auf ein Canvas der Grösse cw × ch)
   C.decal = (w, h, x, y, paint, zExtra = 0) => {
@@ -285,19 +344,19 @@ const REAL = {
     pf: 4.5, pr: 7, cp: [.025, .075], posts: [[.26, .02, 'dark'], [.48, .02, 'dark']] },
   sport: { top: [[0, .44], [.02, .54], [.08, .58], [.28, .59], [.72, .57], [.84, .56], [.95, .48], [1, .36]],
     bot: [[0, .22], [.04, .1], [.95, .1], [1, .2]], axles: [.18, .81], gh: [.2, .44, .58, .73], roof: .9,
-    pf: 3.2, pr: 4.5, cp: [.2, .38], posts: [], twoDoor: true },
+    pf: 3.2, pr: 4.5, cp: [.2, .38], posts: [], twoDoor: true, redCaliper: true },
   coupe: { top: [[0, .43], [.02, .53], [.06, .565], [.2, .575], [.72, .56], [.86, .53], [.96, .48], [1, .4]],
     bot: [[0, .24], [.04, .13], [.08, .1], [.92, .1], [.97, .14], [1, .24]], axles: [.19, .8], gh: [.18, .4, .58, .73], roof: .88,
-    pf: 4, pr: 5, cp: [.18, .34], posts: [], twoDoor: true },
+    pf: 4, pr: 5, cp: [.18, .34], posts: [], twoDoor: true, redCaliper: true },
   suv: { top: [[0, .44], [.012, .6], [.04, .62], [.74, .62], [.88, .6], [.96, .55], [1, .46]],
     bot: [[0, .26], [.04, .18], [.96, .18], [1, .26]], axles: [.18, .81], gh: [.025, .05, .62, .76], roof: .95,
-    pf: 5, pr: 7, cp: [.025, .08], posts: [[.28, .02, 'dark'], [.5, .02, 'dark']] },
+    pf: 5, pr: 7, cp: [.025, .08], posts: [[.28, .02, 'dark'], [.5, .02, 'dark']], clad: true },
   hatch: { top: [[0, .45], [.015, .58], [.05, .61], [.72, .6], [.86, .57], [.96, .52], [1, .43]],
     bot: [[0, .24], [.04, .12], [.96, .12], [1, .24]], axles: [.17, .81], gh: [.04, .13, .58, .73], roof: .94,
     pf: 4, pr: 6, cp: [.04, .18], posts: [[.45, .02, 'dark']] },
   pickup: { top: [[0, .5], [.01, .56], [.5, .565], [.52, .57], [.82, .565], [.92, .55], [.98, .5], [1, .42]],
     bot: [[0, .26], [.03, .17], [.97, .17], [1, .26]], axles: [.18, .82], gh: [.5, .53, .71, .82], roof: .95,
-    pf: 6, pr: 9, cp: [.5, .535], posts: [[.62, .02, 'dark']], bed: [.025, .48] },
+    pf: 6, pr: 9, cp: [.5, .535], posts: [[.62, .02, 'dark']], bed: [.025, .48], clad: true },
 };
 
 // Glatte Linie durch Punkte [x, y] (0…1): erst gerade Stücke, dann mehrmals weichgezeichnet
@@ -317,9 +376,9 @@ const smoothstep = (a, b, v) => { const t = Math.min(1, Math.max(0, (v - a) / (b
 const spow = (v, p) => Math.sign(v) * Math.pow(Math.abs(v), p);
 
 // Fläche aus Querschnitten: rows = Liste von Punktreihen (alle gleich lang); matOf(i, j) wählt für jedes Viereck
-// das Material (Index in mats). Gibt je Material ein eigenes Teil zurück (mit gemeinsamen, weichen Normalen).
-function loftMeshes(rows, closed, mats, matOf) {
-  const n = rows.length, m = rows[0].length, pos = [], uv = [], idx = mats.map(() => []);
+// das Material (0 … nMat-1). Gibt je Material eine eigene Form zurück (mit gemeinsamen, weichen Normalen).
+function loftGeos(rows, closed, nMat, matOf) {
+  const n = rows.length, m = rows[0].length, pos = [], uv = [], idx = Array.from({ length: nMat }, () => []);
   rows.forEach((row, i) => row.forEach(([x, y, z], j) => { pos.push(x, y, z); uv.push(i / (n - 1), j / (m - 1)); }));
   const segs = closed ? m : m - 1;
   for (let i = 0; i < n - 1; i++) for (let j = 0; j < segs; j++) {
@@ -331,15 +390,29 @@ function loftMeshes(rows, closed, mats, matOf) {
   full.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
   full.setIndex(idx.flat());
   full.computeVertexNormals();
-  return mats.map((mt, k) => {
-    if (!idx[k].length) return null;
+  return idx.map(ix => {
+    if (!ix.length) return null;
     const g = new THREE.BufferGeometry();
     for (const a of ['position', 'normal', 'uv']) g.setAttribute(a, full.attributes[a]);
-    g.setIndex(idx[k]);
-    const o = new THREE.Mesh(g, mt);
+    g.setIndex(ix);
+    return g;
+  });
+}
+function loftMeshes(geos, mats) {
+  return geos.map((g, k) => {
+    if (!g) return null;
+    const o = new THREE.Mesh(g, mats[k]);
     o.castShadow = true; o.receiveShadow = true;
+    o.userData.whole = true; // grosse Teile nicht mit mergeStatic zerlegen (bleiben mit Index, sparsam)
     return o;
   });
+}
+// Formen der echten Karosserien hängen nicht von der Farbe ab: einmal rechnen, für alle Farben brauchen
+const shapeCache = new Map();
+function memo(key, make) {
+  let v = shapeCache.get(key);
+  if (!v) { if (shapeCache.size > 400) shapeCache.clear(); shapeCache.set(key, v = make()); }
+  return v;
 }
 
 function realBody(C, name, opts = {}) {
@@ -359,26 +432,57 @@ function realBody(C, name, opts = {}) {
     const at = archTop(x);
     return { hw: hw0 * f, yt, yb, lift: Math.max(0, at - yb), bulge: at ? Math.max(0, at + 0.05 - yt) : 0 };
   };
+  // Sicke: scharfe Kante oben an der Seite (fängt das Licht), darunter leicht eingezogen – wie gepresstes Blech
+  const crease = (st, y) => {
+    const h = st.yt - st.yb, yc = st.yb + 0.74 * h, yl = st.yb + 0.36 * h;
+    return 0.016 * Math.exp(-(((y - yc) / 0.045) ** 2)) - 0.012 * Math.exp(-(((y - yl) / 0.1) ** 2));
+  };
   const ringPt = (st, th) => {
     const zf = spow(Math.cos(th), 2 / N), yf = spow(Math.sin(th), 2 / N), a = Math.abs(zf);
     const lo = st.yb + st.lift * smoothstep(0.42, 0.58, a), hi = st.yt + st.bulge * smoothstep(0.45, 0.85, a);
-    return [zf * st.hw, lo + (yf + 1) / 2 * (hi - lo)];
+    const y = lo + (yf + 1) / 2 * (hi - lo);
+    return [zf * st.hw * (1 + crease(st, y) * smoothstep(0.85, 0.97, a)), y];
   };
-  // Unterbau: Lack, unten dunkel (Unterboden und Radhäuser)
-  const NS = 110, NR = 48, xs = [], rows = [];
-  for (let i = 0; i <= NS; i++) xs.push(Math.sin((i / NS * 2 - 1) * PI / 2) * L / 2); // an den Enden dichter
-  for (const x of xs) {
-    const st = station(x), row = [];
-    for (let j = 0; j < NR; j++) { const [z, y] = ringPt(st, -PI / 2 + j / NR * PI * 2); row.push([x, y, z]); }
-    rows.push(row);
+  // Punkte rund um den Querschnitt gleichmässig verteilen (sonst hätten die Seitenwände kaum Punkte)
+  const NS = 110, NR = 96, xs = [], rows = [], ths = [];
+  {
+    const n = 960, cum = [0];
+    let prev = null;
+    for (let k = 0; k <= n; k++) {
+      const th = -PI / 2 + k / n * PI * 2, pt = [spow(Math.cos(th), 2 / N), spow(Math.sin(th), 2 / N) * 0.8];
+      if (prev) cum.push(cum[cum.length - 1] + Math.hypot(pt[0] - prev[0], pt[1] - prev[1]));
+      prev = pt;
+    }
+    for (let j = 0, k = 0; j < NR; j++) {
+      const want = cum[n] * j / NR;
+      while (cum[k + 1] < want) k++;
+      ths.push(-PI / 2 + (k + (want - cum[k]) / (cum[k + 1] - cum[k] || 1)) / n * PI * 2);
+    }
+    ths.push(ths[0] + PI * 2);
   }
-  const under = mat(0x111215, { roughness: 0.8 });
-  const [bodyMesh, bottomMesh] = loftMeshes(rows, true, [C.paint, under], (i, j) => {
-    const th = -PI / 2 + (j + 0.5) / NR * PI * 2, d = Math.min(Math.abs(th + PI / 2), Math.abs(th - 3 * PI / 2));
-    return d < 0.95 ? 1 : 0;
-  });
+  for (let i = 0; i <= NS; i++) xs.push(Math.sin((i / NS * 2 - 1) * PI / 2) * L / 2); // an den Enden dichter
+  const key = [name, L, H, W, r, rw, JSON.stringify(opts.wheels || ''), !!opts.noCabin, !!opts.noGrille].join('|');
+  // Unterbau: Lack, unten dunkel (Unterboden und Radhäuser); SUV und Pickup unten mit Kunststoff beplankt
+  const under = mat(0x111215, { roughness: 0.8 }), clad = mat(0x2a2c31, { roughness: 0.75 });
+  const [bodyMesh, bottomMesh, cladMesh] = loftMeshes(memo(key + '|body', () => {
+    for (const x of xs) {
+      const st = station(x), row = [];
+      for (let j = 0; j < NR; j++) { const [z, y] = ringPt(st, ths[j]); row.push([x, y, z]); }
+      rows.push(row);
+    }
+    return loftGeos(rows, true, 3, (i, j) => {
+      const th = (ths[j] + ths[j + 1]) / 2, d = Math.min(Math.abs(th + PI / 2), Math.abs(th - 3 * PI / 2));
+      if (d < 0.95) return 1;
+      if (S.clad) {
+        const st = station(xs[i]), y = rows[i][j][1];
+        if (y < st.yb + 0.24 * (st.yt - st.yb) || (st.lift > 0.02 && y < st.yb + st.lift + 0.06)) return 2;
+      }
+      return 0;
+    });
+  }), [C.paint, under, clad]);
   C.bodyMesh = bodyMesh;
   C.body.add(bodyMesh, bottomMesh);
+  if (cladMesh) C.body.add(cladMesh);
 
   // Halbe Breite der Oberfläche an der Stelle (x, y) – für Aufkleber, Lichter, Spiegel
   const [rb, rt, ft, fb] = S.gh.map(X), roofY = S.roof * H, ghPts = [];
@@ -386,26 +490,26 @@ function realBody(C, name, opts = {}) {
     const st = station(x);
     if (st.hw <= 0) return 0;
     const lo = st.yb + st.lift, hi = st.yt + st.bulge, yf = 2 * (y - lo) / (hi - lo || 1) - 1;
-    return Math.abs(yf) >= 1 ? 0 : st.hw * Math.pow(1 - Math.pow(Math.abs(yf), N), 1 / N);
+    return Math.abs(yf) >= 1 ? 0 : st.hw * Math.pow(1 - Math.pow(Math.abs(yf), N), 1 / N) * (1 + crease(st, y));
   };
   // Kabine: Seitenansicht als abgerundetes Viereck, Querschnitt schmaler nach oben (wie echte Autos)
   if (!opts.noCabin) {
     const poly = roundPoly([[rb, topF(frac(rb)) * H - 0.02], [rt, roofY], [(rt + ft) / 2, roofY + 0.03], [ft, roofY], [fb, topF(frac(fb)) * H - 0.02]], 0.4, 6);
     const ghTop = x => edgeTop(poly, x);
-    const NG = 56, NGR = 30, gx = [], grows = [];
+    const NG = 56, NGR = 30, gx = [];
     for (let i = 0; i <= NG; i++) gx.push(rb + (fb - rb) * i / NG);
     const gst = x => {
       const yb = topF(frac(x)) * H - 0.09, gwb = station(x).hw * 0.87;
       return { yb, yt: Math.max(yb, ghTop(x)), gwb, gwt: gwb * 0.78 };
     };
-    for (const x of gx) {
+    const ghRows = () => gx.map(x => {
       const g = gst(x), row = [];
       for (let j = 0; j <= NGR; j++) {
         const th = j / NGR * PI, zf = spow(Math.cos(th), 0.5), yf = Math.pow(Math.sin(th), 0.5);
         row.push([x, g.yb + yf * (g.yt - g.yb), zf * (g.gwb + (g.gwt - g.gwb) * yf)]);
       }
-      grows.push(row);
-    }
+      return row;
+    });
     C.ghZ = (x, y) => {
       if (x < rb || x > fb) return 0;
       const g = gst(x), yf = (y - g.yb) / (g.yt - g.yb || 1);
@@ -413,7 +517,7 @@ function realBody(C, name, opts = {}) {
     };
     const glass = opts.tinted ? mat(0x10161e, { metalness: 0.7, roughness: 0.05 }) : M.glass;
     const xr0 = rt + 0.05, xr1 = ft - 0.05, inX = (x, [a, b]) => x >= X(a) && x <= X(b);
-    const parts = loftMeshes(grows, false, [C.paint, glass, M.dark], (i, j) => {
+    const parts = loftMeshes(memo(key + '|cabin', () => loftGeos(ghRows(), false, 3, (i, j) => {
       const x = (gx[i] + gx[i + 1]) / 2, th = (j + 0.5) / NGR * PI, e = Math.min(th, PI - th);
       if (e < 0.07) return 2; // Gummidichtung unten
       const roof = x > xr0 && x < xr1;
@@ -421,15 +525,26 @@ function realBody(C, name, opts = {}) {
       if (inX(x, S.cp)) return 0;
       for (const [c, w, kind] of S.posts) if (Math.abs(x - X(c)) < w * L / 2) return kind === 'dark' ? 2 : 0;
       return 1;
-    });
+    })), [C.paint, glass, M.dark]);
     for (const p of parts) if (p) C.body.add(p);
     C.roofY = roofY + 0.03;
     C.roofX = (rt + ft) / 2;
-    if (!opts.noMirrors) for (const s of [-1, 1]) { // Aussenspiegel
-      const mx = fb - 0.22, my = topF(frac(mx)) * H + 0.1, mz = station(mx).hw * 0.86;
-      C.box(0.05, 0.03, 0.12, M.dark, mx, my - 0.02, s * (mz + 0.05));
-      C.sph(1, C.paint, mx, my, s * (mz + 0.13), [0.075, 0.055, 0.1]);
+    if (!opts.noMirrors) for (const s of [-1, 1]) { // Aussenspiegel: schwarzer Fuss, Gehäuse in Wagenfarbe, Glas nach hinten, Blinker
+      const mx = fb - 0.2, my = topF(frac(mx)) * H + 0.09, mz = station(mx).hw * 0.86;
+      C.box(0.12, 0.035, 0.1, M.dark, mx, my - 0.03, s * (mz + 0.04));
+      C.sph(1, C.paint, mx, my, s * (mz + 0.15), [0.07, 0.06, 0.12]);
+      C.box(0.01, 0.075, 0.17, M.glass, mx - 0.065, my, s * (mz + 0.15));
+      C.box(0.03, 0.015, 0.1, new THREE.MeshStandardMaterial({ color: 0xffa31a, emissive: 0xff8a00, emissiveIntensity: 0.6 }), mx + 0.035, my - 0.035, s * (mz + 0.18));
     }
+    // Scheibenwischer unten an der Frontscheibe
+    const wy = topF(frac(fb)) * H + 0.03, slope = Math.atan2(roofY - wy, ft - fb);
+    for (const z of [-0.32, 0.2]) {
+      const wp = C.box(0.025, 0.02, 0.62, M.dark, fb - 0.07, wy + 0.03, z);
+      wp.rotation.set(0, 0.12, -slope * 0.25);
+    }
+    // Haifischflossen-Antenne hinten auf dem Dach
+    const ax = rt + 0.18;
+    C.ext([[ax, 0], [ax + 0.18, 0], [ax + 0.03, 0.06]], 0.045, M.dark, 0.012).position.y = ghTop(ax) - 0.01;
     const front = Math.min(fb - 0.03, axles[axles.length - 1] - R - 0.02);
     C.side = { doors: [front, ...S.posts.filter(p => p[2] === 'dark' && X(p[0]) > X(S.cp[1])).map(p => X(p[0]))], doorTop: 0 };
     if (!(opts.twoDoor || S.twoDoor)) C.side.doors.push(Math.max(X(S.cp[1]), axles[0] + R * 0.6));
@@ -453,6 +568,7 @@ function realBody(C, name, opts = {}) {
     for (const s of [-1, 1]) C.box(b1 - b0, 0.05, 0.05, M.dark, (b0 + b1) / 2, y + 0.02, s * W * 0.43);
   }
   C.wheelOut = -0.03;
+  C.caliper = mat(S.redCaliper ? 0xc8161d : 0x55595f, { roughness: 0.45, metalness: 0.3 });
   for (const a of axles) C.wheelPair(a, r, 0.3, opts.rim, opts.spokes);
 
   // Front und Heck: Bild auf die gerundete Fläche gemalt (Scheinwerfer, Grill, Rücklichter); was leuchtet, steht in glow
@@ -464,6 +580,12 @@ function realBody(C, name, opts = {}) {
     return sg * lo;
   };
   const fascia = (front, y0, y1, w, draw) => {
+    const made = memo(key + (front ? '|front' : '|rear'), () => makeFascia(front, y0, y1, w, draw));
+    const o = new THREE.Mesh(made.geometry, made.material);
+    o.userData.whole = true;
+    C.body.add(o);
+  };
+  const makeFascia = (front, y0, y1, w, draw) => {
     const cw = 512, ch = Math.max(64, Math.round(cw * (y1 - y0) / w));
     const base = document.createElement('canvas'), glow = document.createElement('canvas');
     base.width = glow.width = cw; base.height = glow.height = ch;
@@ -481,7 +603,7 @@ function realBody(C, name, opts = {}) {
       pos.setXYZ(i, x === null ? inner : x + (front ? 0.012 : -0.012), y, z);
     }
     geo.computeVertexNormals();
-    C.body.add(new THREE.Mesh(geo, m));
+    return { geometry: geo, material: m };
   };
   const poly = (g, w, h, pts, mirror) => { g.beginPath(); pts.forEach(([x, y], i) => g[i ? 'lineTo' : 'moveTo']((mirror ? 1 - x : x) * w, y * h)); g.closePath(); };
   const sF = station(L / 2 * 0.9), sR = station(-L / 2 * 0.9);
@@ -493,6 +615,13 @@ function realBody(C, name, opts = {}) {
       g.fillStyle = '#dfe8f3'; g.fill();
       poly(gl, w, h, [[.07, .15], [.27, .29], [.265, .39], [.08, .32]], mi);
       gl.fillStyle = '#8a8f96'; gl.fill();
+      for (const lx of [.13, .21]) { // Linsen (Projektoren) mit Chromring
+        const cx = (mi ? 1 - lx : lx) * w, cy = (.25 + (lx - .13) * .45) * h, rr = .028 * w;
+        g.beginPath(); g.arc(cx, cy, rr, 0, PI * 2); g.fillStyle = '#9aa5b3'; g.fill();
+        g.beginPath(); g.arc(cx, cy, rr * 0.7, 0, PI * 2); g.fillStyle = '#30363f'; g.fill();
+        g.beginPath(); g.arc(cx - rr * 0.2, cy - rr * 0.2, rr * 0.3, 0, PI * 2); g.fillStyle = '#ffffff'; g.fill();
+        gl.beginPath(); gl.arc(cx, cy, rr * 0.7, 0, PI * 2); gl.fillStyle = '#e8eef8'; gl.fill();
+      }
       poly(gl, w, h, [[.07, .14], [.27, .28], [.27, .31], [.07, .18]], mi); // Tagfahrlicht
       gl.fillStyle = '#ffffff'; gl.fill();
       poly(g, w, h, [[.07, .14], [.27, .28], [.27, .31], [.07, .18]], mi); g.fillStyle = '#ffffff'; g.fill();
@@ -1241,7 +1370,7 @@ const STICKERS = {
 };
 function applyTune(C, tune) {
   const { L, W, M } = C;
-  if (tune.wheels) for (const w of C.wheels) { const r = w.position.y; w.scale.setScalar(1.22); w.position.y = r * 1.22; }
+  if (tune.wheels) for (const w of [...C.wheels, ...C.group.getObjectsByProperty('name', 'caliper')]) { const r = w.position.y; w.scale.multiplyScalar(1.22); w.position.y = r * 1.22; }
   if (tune.spoiler) { // Heckflügel über dem Heck: Höhe des Hecks aus dem Seitenprofil (sonst aus den Teilen hinten)
     let top = 0.6;
     if (C.side) for (const [x, y] of C.side.pts) { if (x < -L / 2 + L * 0.18) top = Math.max(top, y); }
