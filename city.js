@@ -341,10 +341,21 @@ function buildWorld() {
   }
   function buildDealer(cx, cz) { // Autohändler: Glas-Ausstellungsraum, davor drei Drehteller mit Gebrauchtwagen
     box(46, 0.04, 46, tarmac, cx, 0.18, cz);
-    const glass = mat({ color: 0x9cc7e6, metalness: 0.3, roughness: 0.05, transparent: true, opacity: 0.45 }), frame = mat({ color: 0x1f2937 });
-    box(30, 6, 12, glass, cx, 3.18, cz + 14, true);
+    const glass = mat({ color: 0x9cc7e6, metalness: 0.3, roughness: 0.05, transparent: true, opacity: 0.35 }), frame = mat({ color: 0x1f2937 });
+    // Ausstellungsraum zum Hineingehen (und Hineinfahren): Glas vorne mit Tür in der Mitte, Wand hinten, heller Boden
+    box(30, 0.06, 12, mat({ color: 0xf3f4f6, roughness: 0.25, metalness: 0.1 }), cx, 0.2, cz + 14);
+    for (const s of [-1, 1]) {
+      box(12, 6, 0.2, glass, cx + s * 9, 3.18, cz + 8, true); // vorne links und rechts der Tür
+      box(0.2, 6, 12, glass, cx + s * 15, 3.18, cz + 14, true); // Seiten
+    }
+    box(30, 6, 0.4, mat({ color: 0xe5e7eb }), cx, 3.18, cz + 20, true); // Rückwand
     box(30.4, 0.5, 12.4, frame, cx, 6.4, cz + 14);
-    for (const dx of [-15, -5, 5, 15]) box(0.3, 6, 0.3, frame, cx + dx, 3.18, cz + 8);
+    box(26, 0.05, 8, mat({ color: 0xffffff, emissive: 0xffffff, emissiveIntensity: 0.9 }), cx, 6.12, cz + 14); // Deckenlicht
+    for (const dx of [-15, -3, 3, 15]) box(0.3, 6, 0.3, frame, cx + dx, 3.18, cz + 8);
+    const inside = [-10, 0, 10].map(dx => { // drei Plätze drinnen, mit Teppich
+      box(5, 0.03, 7, mat({ color: 0x991b1b, roughness: 0.9 }), cx + dx, 0.25, cz + 15);
+      return { x: cx + dx, z: cz + 15 };
+    });
     for (const side of [0, 1]) {
       const s1 = sign('🚗 AUTOHÄNDLER', '#f59e0b', '#1f2937', 14, 2.2); s1.position.set(cx, 7.9, cz + 7.9 - side * 0.05); s1.rotation.y = side * Math.PI; decor.add(s1);
     }
@@ -354,7 +365,7 @@ function buildWorld() {
       round.push({ x: cx + dx, z: cz + 1, r: 2.6, h: 1.5 });
       return t;
     });
-    places.dealer = { x: cx, z: cz - 12, w: 14, d: 10, pods };
+    places.dealer = { x: cx, z: cz - 12, w: 14, d: 10, pods, inside, door: { x: cx, z: cz + 8 } };
   }
   // Base: ummauerter Parkplatz mit Einfahrt und Torbogen, je fünf Parkfelder links und rechts der Fahrgasse.
   // Die Autos und das Schild kommen erst beim Spielen dazu (stepBases); bay.solid ist weit weg, solange das Feld leer ist.
@@ -705,6 +716,7 @@ function followLimit(c, me) {
   };
   for (const o of city.cars) if (o !== c) check(o.x, o.z, o.len, false, o.wreck > 0 || o.jam);
   if (city.police) check(city.police.pos.x, city.police.pos.z, 5, false);
+  if (city.truck && c !== city.truck) check(city.truck.x, city.truck.z, city.truck.len, false); // Lieferwagen
   if (me.alt < 2.5) check(me.pos.x, me.pos.z, me.len, true); // wer darüber fliegt, stört nicht
   return { lim, byMe, byWreck };
 }
@@ -1445,9 +1457,10 @@ function stepTag(dt) {
 // Vor dem Ausstellungsraum anhalten: Gebrauchtwagen kaufen (die drei auf den Drehtellern) oder das eigene Auto verkaufen.
 // Gekauft wird mit den Münzen aus dem Spiel (dealer von game.js); das neue Auto fährt man gleich weg.
 function setupDealer() {
-  city.offers = city.dealer ? city.dealer.offers() : [];
-  city.shop = city.dealer ? loadShop() : { on: false, stock: [] };
-  city.whole = city.dealer ? city.dealer.offers().concat(city.dealer.offers()).slice(0, 4).map(o => ({ v: o.v, cost: Math.round(o.price / 2) })) : [];
+  city.offers = city.dealer ? city.dealer.offers().concat(city.dealer.offers()) : []; // sechs Plätze
+  city.shop = city.dealer ? loadShop() : { on: false, stock: [], orders: [] };
+  city.whole = city.dealer ? city.dealer.offers().concat(city.dealer.offers()).map(o => ({ v: o.v, cost: Math.round(o.price / 2) })) : [];
+  city.truckT = 6; // schon Bestelltes kommt bald
   showPods();
 }
 function stepDealer(dt) {
@@ -1518,7 +1531,7 @@ function onDealerClick(e) {
 // Drehteller stellen. Dann kommen Kunden zu Fuss ins Geschäft und wollen eine Beratung: aussteigen, hingehen, 💬.
 // Jeder Kunde hat einen Wunsch; passt das Auto und der Preis, kauft er (und fährt damit weg), sonst geht er wieder.
 // Die ausgestellten Autos bleiben gespeichert (Spielstand autoRetterShop).
-const SHOP_KEY = 'autoRetterShop', SHOP_SLOTS = 3;
+const SHOP_KEY = 'autoRetterShop', SHOP_SLOTS = 6;
 const BIG = ['van', 'minivan', 'kombi', 'camper', 'schoolbus', 'doubledecker', 'jeep', 'safari', 'offroad', 'pickup', 'delivery', 'umzug', 'caravan', 'hippie', 'postauto', 'parcel'];
 const SPORTY = ['sports', 'muscle', 'coupe', 'roadster', 'racer', 'rally', 'hyper', 'nightracer', 'cabrio', 'stockcar', 'gokart', 'dragster', 'lowrider'];
 const WISHES = {
@@ -1540,39 +1553,56 @@ function colorName(hex) {
 }
 const COLOR_ADJ = { schwarz: 'schwarzes', weiss: 'weisses', grau: 'graues', rot: 'rotes', orange: 'oranges', gelb: 'gelbes', 'grün': 'grünes', blau: 'blaues', lila: 'lila', rosa: 'rosa' };
 const shopPrice = (o, kind = 'normal') => Math.max(2, Math.round(o.cost * { cheap: 1.6, normal: 2, high: 3 }[kind]));
-function loadShop() { try { return JSON.parse(localStorage.getItem(SHOP_KEY)) || { on: false, stock: [] }; } catch (err) { return { on: false, stock: [] }; } }
-function saveShop() { try { localStorage.setItem(SHOP_KEY, JSON.stringify({ on: city.shop.on, stock: city.shop.stock })); } catch (err) { /* ohne Speicher */ } }
+function loadShop() {
+  let sh = null;
+  try { sh = JSON.parse(localStorage.getItem(SHOP_KEY)); } catch (err) { /* kaputt oder ohne Speicher */ }
+  sh = { on: false, stock: [], orders: [], ...(sh || {}) };
+  sh.stock = Array.from({ length: SHOP_SLOTS }, (_, k) => sh.stock[k] || null); // feste Plätze (leer = null)
+  return sh;
+}
+const stockCount = () => city.shop.stock.filter(Boolean).length;
+function saveShop() { // nur Fahrzeug und Einkaufspreis (nicht die 3D-Form)
+  const plain = list => list.map(o => o && { v: o.v, cost: o.cost });
+  try { localStorage.setItem(SHOP_KEY, JSON.stringify({ on: city.shop.on, stock: plain(city.shop.stock), orders: plain(city.shop.orders) })); } catch (err) { /* ohne Speicher */ }
+}
 
 // Drehteller: im eigenen Autohaus die eigenen Autos, sonst die Angebote des Händlers
+// Plätze 0–2: Drehteller draussen, 3–5: drinnen im Ausstellungsraum
 function showPods() {
   const D = S.places.dealer, list = city.shop.on ? city.shop.stock : city.offers;
-  D.pods.forEach((p, k) => {
-    p.clear();
+  if (!D.inGroup) { D.inGroup = new THREE.Group(); S.scene.add(D.inGroup); }
+  D.inGroup.clear();
+  for (let k = 0; k < SHOP_SLOTS; k++) {
     const o = list[k];
-    if (!o || o.sold) return;
+    if (k < 3) D.pods[k].clear();
+    if (!o || o.sold) continue;
     const m = buildCar({ ...o.v, kind: city.kinds[o.v.kind] ? o.v.kind : 'car' }, city.kinds);
-    m.position.y = 0.15; p.add(m); o.mesh = m;
-  });
+    if (k < 3) { m.position.y = 0.15; D.pods[k].add(m); }
+    else { const p = D.inside[k - 3]; m.position.set(p.x, 0.23, p.z); m.rotation.y = Math.PI / 2 - 0.5; D.inGroup.add(m); } // schräg zur Tür
+    o.mesh = m;
+  }
 }
 function drawShop() {
   const p = S.ui.dealpanel, K = city.kinds, coins = city.dealer.coins(), sh = city.shop;
   p.textContent = '';
   const el = (tag, cls, text) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text) e.textContent = text; return e; };
   p.append(el('h3', '', '🧑‍💼 Dein Autohaus · ' + coins + ' 🪙'));
-  p.append(el('p', 'note', 'Ausgestellt (' + sh.stock.length + ' / ' + SHOP_SLOTS + ') – Kunden kommen vorbei und wollen beraten werden. Verkaufspreis normal: das Doppelte vom Einkauf.'));
+  p.append(el('p', 'note', 'Ausgestellt (' + stockCount() + ' / ' + SHOP_SLOTS + ': 3 draussen, 3 drinnen) – Kunden kommen vorbei und wollen beraten werden. Verkaufspreis normal: das Doppelte vom Einkauf.'));
+  if (sh.orders.length) p.append(el('p', 'note', '🚚 Bestellt, der Lieferant bringt sie bald: ' + sh.orders.map(o => (K[o.v.kind] || {}).name).join(', ')));
   const mine = el('div', 'cars');
   sh.stock.forEach((o, k) => {
+    if (!o) return;
     const b = el('button'), dot = el('i');
     b.dataset.back = k; dot.style.background = o.v.color;
     b.append(dot, el('span', '', (K[o.v.kind] || {}).name + ' · ⚡ ' + o.v.ps), el('small', '', '↩ ' + o.cost + ' 🪙'));
     mine.append(b);
   });
-  if (!sh.stock.length) mine.append(el('p', 'note', 'Noch nichts ausgestellt – kauf unten etwas ein!'));
-  p.append(mine, el('h3', '', '📦 Einkaufen beim Grosshandel'));
+  if (!stockCount()) mine.append(el('p', 'note', 'Noch nichts ausgestellt – bestell unten etwas!'));
+  p.append(mine, el('h3', '', '📦 Bestellen beim Grosshandel'));
   const buy = el('div', 'cars');
   city.whole.forEach((o, k) => {
     const b = el('button'), dot = el('i');
-    b.dataset.whole = k; b.disabled = o.sold || coins < o.cost || sh.stock.length >= SHOP_SLOTS;
+    b.dataset.whole = k; b.disabled = o.sold || coins < o.cost || stockCount() + sh.orders.length >= SHOP_SLOTS;
     dot.style.background = o.v.color;
     b.append(dot, el('span', '', (K[o.v.kind] || {}).name + ' · ⚡ ' + o.v.ps), el('small', '', o.sold ? 'gekauft' : o.cost + ' 🪙'));
     buy.append(b);
@@ -1588,26 +1618,63 @@ function onShopClick(b) {
   if (b.dataset.act === 'shopoff') { sh.on = false; saveShop(); clearCustomers(); showPods(); drawDealer(); return true; }
   if (b.dataset.act === 'shopon') {
     sh.on = true; saveShop(); showPods();
-    city.whole = city.dealer.offers().concat(city.dealer.offers()).slice(0, 4).map(o => ({ v: o.v, cost: Math.round(o.price / 2) }));
     drawShop(); return true;
   }
   if (b.dataset.whole !== undefined) {
     const o = city.whole[+b.dataset.whole];
-    if (!o || o.sold || sh.stock.length >= SHOP_SLOTS || city.dealer.coins() < o.cost) return true;
+    if (!o || o.sold || stockCount() + sh.orders.length >= SHOP_SLOTS || city.dealer.coins() < o.cost) return true;
     city.pay(o.cost);
     o.sold = true;
-    sh.stock.push({ v: o.v, cost: o.cost });
-    saveShop(); showPods(); drawShop();
-    showMsg('📦 Eingekauft und ausgestellt!', 1.6);
+    sh.orders.push({ v: o.v, cost: o.cost });
+    if (!city.truck) city.truckT = TRUCK_DELAY;
+    saveShop(); drawShop();
+    showMsg('📦 Bestellt! Der Lieferant kommt bald.', 1.8);
     return true;
   }
   if (b.dataset.back !== undefined) { // zurückgeben: Einkaufspreis zurück
-    const o = sh.stock.splice(+b.dataset.back, 1)[0];
+    const o = sh.stock[+b.dataset.back];
+    sh.stock[+b.dataset.back] = null;
     if (o) city.earn(o.cost);
     saveShop(); showPods(); drawShop();
     return true;
   }
   return false;
+}
+
+// Lieferung: bestellte Autos bringt der Autotransporter. Er kommt über die Strasse vor dem Autohaus, hält an,
+// lädt ab (die Autos stehen dann auf freien Plätzen) und fährt weiter.
+const TRUCK_DELAY = 20;
+function stepDelivery(dt) {
+  const sh = city.shop, D = S.places.dealer;
+  if (!city.truck) {
+    if (!sh.orders.length || (city.truckT -= dt) > 0) return;
+    const j = Math.round((D.z - 20) / BLOCK + N / 2), z = node(j) + LANE;
+    const mesh = buildCar({ kind: 'carrier', color: '#f59e0b', special: null }, city.kinds);
+    S.scene.add(mesh);
+    city.truck = { mesh, x: node(0) - 20, z, h: 0, speed: 12, len: mesh.userData.length, stopX: D.x - 2, state: 'come', t: 0 };
+    showMsg('🚚 Der Lieferant ist unterwegs!', 2.2);
+  }
+  const T = city.truck, me = city.me;
+  let want = 12;
+  if (T.state === 'come') want = Math.min(12, Math.max(0, (T.stopX - T.x) * 0.6));
+  else if (T.state === 'unload') { want = 0; if ((T.t -= dt) <= 0) T.state = 'go'; }
+  want = Math.min(want, followLimit(T, me).lim); // nicht auffahren
+  T.speed += Math.max(-8 * dt, Math.min(3 * dt, want - T.speed));
+  T.x += T.speed * dt;
+  if (T.state === 'come' && T.x > T.stopX - 0.3 && T.speed < 0.5) { // da: abladen
+    T.state = 'unload'; T.t = 3;
+    const n = sh.orders.length;
+    for (const o of sh.orders) { const k = sh.stock.indexOf(null); if (k >= 0) sh.stock[k] = o; } // auf freie Plätze
+    sh.orders = [];
+    saveShop(); showPods();
+    for (let k = 0; k < 14; k++) S.fx.puff(T.x + (Math.random() - 0.5) * 8, 1, T.z + (Math.random() - 0.5) * 3, 0, 0);
+    if (Math.hypot(me.pos.x - T.x, me.pos.z - T.z) < 200) showMsg('🚚 Lieferung ist da: ' + n + (n === 1 ? ' Auto' : ' Autos') + ' ausgestellt!', 2.6);
+    window.beep && window.beep(660, 0.1, 'triangle', 0.06); window.beep && window.beep(880, 0.16, 'triangle', 0.06, 0.1);
+  }
+  if (T.state === 'go' && T.x > node(N) + 30) { S.scene.remove(T.mesh); city.truck = null; } // am Stadtrand verschwinden
+  const m = T.mesh;
+  m.position.set(T.x, 0, T.z); m.rotation.y = -T.h;
+  for (const w of m.userData.wheels) w.rotation.z -= T.speed * dt / 0.35;
 }
 
 // Kunden: kommen vom Trottoir, warten vor den Drehtellern auf Beratung, gehen nach einer Weile wieder
@@ -1639,28 +1706,34 @@ function clearCustomers() {
 }
 function spawnCustomer() {
   const D = S.places.dealer, sh = city.shop, pick = a => a[Math.floor(Math.random() * a.length)];
-  const spot = [-10, 0, 10].find(dx => !city.customers.some(c => c.dx === dx)); // vor einem freien Drehteller warten
-  if (spot === undefined) return;
+  // schaut sich ein ausgestelltes Auto an, das noch kein anderer Kunde anschaut (draussen oder drinnen)
+  const free = sh.stock.map((o, k) => k).filter(k => sh.stock[k] && !city.customers.some(c => c.slot === k));
+  if (!free.length) return;
+  const slot = pick(free), inside = slot >= 3, P = inside ? D.inside[slot - 3] : { x: D.x + [-10, 0, 10][slot], z: D.z + 8 };
+  const goal = inside ? { x: P.x, z: P.z - 4.6 } : P;
+  const path = inside ? [{ x: D.door.x, z: D.door.z - 2 }, { x: D.door.x, z: D.door.z + 2 }, goal] : [goal]; // drinnen: durch die Tür
   let wish = pick(Object.keys(WISHES)), color = '';
-  if (wish === 'color') color = colorName(pick(sh.stock).v.color); // meistens gibt es die Farbe
+  if (wish === 'color') color = colorName(pick(sh.stock.filter(Boolean)).v.color); // meistens gibt es die Farbe
   const x = D.x + (Math.random() - 0.5) * 24, z = D.z - 12; // kommt vom Trottoir
-  const cu = { x, z, h: Math.PI / 2, speed: 0, phase: 0, dx: spot, tx: D.x + spot, tz: D.z + 8, state: 'come', wish, color, wait: 50,
+  const cu = { x, z, h: Math.PI / 2, speed: 0, phase: 0, slot, inside, path, state: 'come', wish, color, wait: 60,
     mesh: makePerson(pick(SHIRTS_C), pick(HAIR_C), pick(SKIN_C)) };
   S.scene.add(cu.mesh);
   city.customers.push(cu);
 }
 function stepShop(dt) {
   const sh = city.shop, D = S.places.dealer, me = city.me, near = Math.hypot(me.pos.x - D.x, me.pos.z - D.z) < 160;
-  if (sh.on && sh.stock.length && near && city.customers.length < 2 && (city.custT -= dt) <= 0) {
+  if (sh.on && stockCount() && near && city.customers.length < 2 && (city.custT -= dt) <= 0) {
     city.custT = 18 + Math.random() * 20;
     spawnCustomer();
     if (city.customers.length === 1) showMsg('🛎️ Ein Kunde kommt ins Autohaus!', 2);
   }
   for (const cu of [...city.customers]) {
     if (cu.state === 'come' || cu.state === 'leave') {
-      const dx = cu.tx - cu.x, dz = cu.tz - cu.z, d = Math.hypot(dx, dz);
+      const t = cu.path[0], dx = t.x - cu.x, dz = t.z - cu.z, d = Math.hypot(dx, dz);
       cu.h = Math.atan2(dz, dx); cu.speed = 1.6;
       if (d < 0.3) {
+        cu.path.shift();
+        if (cu.path.length) continue;
         cu.speed = 0;
         if (cu.state === 'leave') { S.scene.remove(cu.mesh); city.customers.splice(city.customers.indexOf(cu), 1); continue; }
         cu.state = 'wait'; cu.h = -Math.PI / 2; say(cu, '💬 Beratung bitte!'); // schaut zum Eingang
@@ -1678,7 +1751,8 @@ function stepShop(dt) {
   city.custMsgT -= dt;
 }
 function leaveCustomer(cu, text) {
-  cu.state = 'leave'; cu.tx = cu.x + (Math.random() - 0.5) * 10; cu.tz = S.places.dealer.z - 12;
+  const D = S.places.dealer, out = { x: cu.x + (Math.random() - 0.5) * 10, z: D.z - 12 };
+  cu.state = 'leave'; cu.path = cu.inside ? [{ x: D.door.x, z: D.door.z + 2 }, { x: D.door.x, z: D.door.z - 2 }, out] : [out];
   say(cu, text);
 }
 // Beratungsgespräch: Wunsch hören, Auto zeigen, Preis sagen
@@ -1702,6 +1776,7 @@ function drawTalk() {
   if (!T.pick) {
     p.append(el('p', 'note', 'Welches Auto zeigst du?'));
     city.shop.stock.forEach((o, k) => {
+      if (!o) return;
       const b = el('button'), dot = el('i');
       b.dataset.show = k; dot.style.background = o.v.color;
       b.append(dot, el('span', '', (K[o.v.kind] || {}).name + ' · ⚡ ' + o.v.ps), el('small', '', colorName(o.v.color)));
@@ -1736,7 +1811,7 @@ function onTalkClick(e) {
   closeTalk();
   if (Math.random() < chance) {
     const i = city.shop.stock.indexOf(o);
-    if (i >= 0) city.shop.stock.splice(i, 1);
+    if (i >= 0) city.shop.stock[i] = null; // Platz wird frei, die anderen bleiben stehen
     saveShop(); showPods();
     city.earn(price);
     city.sold = (city.sold || 0) + 1;
@@ -2553,6 +2628,7 @@ function drawMinimap() {
   }
   g.font = '11px system-ui, sans-serif'; g.textAlign = 'center'; g.textBaseline = 'middle';
   for (const c of city.cars) if (c.wreck > 0) g.fillText('⚠️', mx(c.x), mx(c.z)); // Unfälle
+  if (city.truck) g.fillText('🚚', mx(city.truck.x), mx(city.truck.z));
   const M = city.mission;
   if (M && M.target) { // Ziel des Auftrags blinkt
     g.fillStyle = Math.floor(city.t * 4) % 2 ? M.color : '#ffffff'; g.strokeStyle = '#000'; g.lineWidth = 1.5;
@@ -2639,6 +2715,7 @@ function loop(now) {
   stepDamage(dt);
   stepDealer(dt);
   stepShop(dt);
+  if (city.dealer) stepDelivery(dt);
   stepDrift(dt);
   stepPolice(dt);
   stepPlaces(dt);
@@ -2831,6 +2908,7 @@ function endCity() {
   S.scene.remove(c.me.mesh);
   if (c.walk) S.scene.remove(c.walk.mesh);
   for (const cu of c.customers || []) S.scene.remove(cu.mesh);
+  if (c.truck) S.scene.remove(c.truck.mesh);
   S.ui.talkpanel.hidden = true; S.ui.dealpanel.hidden = true; S.ui.talkbtn.hidden = true;
   S.ui.walkbtn.textContent = '🚪';
   S.ui.walkbtn.classList.remove('ready');
