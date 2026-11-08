@@ -2830,7 +2830,7 @@ function drawQuit() {
 // auf dem Startbildschirm ein Update-Knopf; kommt man auf dem Startbildschirm in die App zurück, wird gleich aktualisiert.
 // APP_FILES: alle Dateien des Spiels (beim Hinzufügen einer Datei hier ergänzen).
 const APP_FILES = ['./', 'index.html', 'game.js', 'version.js', 'press3d.js', 'race.js', 'drag.js', 'cars3d.js', 'world3d.js',
-  'online.js', 'sound.js', 'city.js', 'tracks.js', 'stunt.js', 'netcars.js', 'chat.js', 'fx.js', 'viewer.js', 'manifest.webmanifest', 'icon-192.png', 'icon-512.png', 'apple-touch-icon.png', 'favicon.png'];
+  'online.js', 'sound.js', 'city.js', 'tracks.js', 'stunt.js', 'netcars.js', 'chat.js', 'fx.js', 'viewer.js', 'photo.js', 'manifest.webmanifest', 'icon-192.png', 'icon-512.png', 'apple-touch-icon.png', 'favicon.png'];
 const UPDATE_BTN = { x: W - 262, y: 14, w: 248, h: 46 };
 const appUpdate = { info: null, busy: false, last: 0 };
 
@@ -2915,8 +2915,10 @@ function drawMenuMsg(hint, my = 472) {
   }
 }
 
-// Fahrzeug aus dem Fahrzeugpark als Bild zeichnen (stehend, ohne Bewegung)
+// Fahrzeug aus dem Fahrzeugpark als Bild zeichnen (stehend, ohne Bewegung): als Foto des 3D-Fahrzeugs (photo.js),
+// solange das Foto noch nicht fertig ist oder ohne three.js als 2D-Zeichnung
 const previews = {};
+let photos = null;
 function drawVehiclePreview(v, cx, baseY, maxW, maxScale) {
   if (!previews[v.id]) {
     previews[v.id] = carFromVehicle(v, 0);
@@ -2924,6 +2926,23 @@ function drawVehiclePreview(v, cx, baseY, maxW, maxScale) {
   }
   const c = previews[v.id];
   const s = Math.min(maxScale, maxW / c.w);
+  const img = photos && photos.photo(v, KINDS, maxW >= 250 ? 'big' : 'small');
+  if (img) {
+    const iw = Math.min(maxW, s * c.w * 1.25) / img.fill, ih = iw * img.height / img.width;
+    if (v.special) { // leuchtender Schein um Spezialautos (wie in 2D)
+      ctx.save();
+      ctx.globalAlpha = 0.3 + 0.12 * Math.sin(time * 5);
+      ctx.fillStyle = { gold: '#ffd700', diamond: '#bfefff', obsidian: '#8b5cf6' }[v.special] || 'hsl(' + ((time * 160) % 360) + ', 90%, 60%)';
+      ctx.shadowColor = ctx.fillStyle;
+      ctx.shadowBlur = 25;
+      ctx.beginPath();
+      ctx.ellipse(cx, baseY - ih * 0.35, iw * img.fill * 0.5, ih * 0.4, 0, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.restore();
+    }
+    ctx.drawImage(img, cx - iw / 2, baseY - ih * img.ground, iw, ih);
+    return;
+  }
   ctx.save();
   ctx.translate(cx - (s * c.w) / 2, baseY - s * ROAD_Y);
   ctx.scale(s, s);
@@ -4491,6 +4510,9 @@ import('./press3d.js')
   })
   .catch(err => console.warn('3D-Presse nicht verfügbar, es wird in 2D gezeichnet.', err));
 
+// Fotos der 3D-Fahrzeuge für die Menüs (siehe drawVehiclePreview)
+import('./photo.js').then(m => { photos = m; }).catch(err => console.warn('Fahrzeugfotos nicht verfügbar, es bleibt 2D.', err));
+
 // ---------- Hauptschleife ----------
 let lastTime = performance.now();
 function frame(now) {
@@ -4498,6 +4520,7 @@ function frame(now) {
   lastTime = now;
   if (!['race', 'drag', 'online', 'city', 'stunt'].includes(state)) { // dort zeichnen race.js, drag.js, online.js, city.js bzw. stunt.js
     update(dt);
+    if (photos) photos.work();
     draw();
   }
   requestAnimationFrame(frame);
