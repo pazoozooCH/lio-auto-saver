@@ -650,27 +650,34 @@ function bez(a, b, c, t) { const u = 1 - t; return [u * u * a[0] + 2 * u * t * b
 
 // Höchsttempo wegen Autos (und dir) vorne auf derselben Spur
 function followLimit(c, me) {
-  let lim = Infinity, byMe = false;
+  let lim = Infinity, byMe = false, byWreck = false;
   const fx = Math.cos(c.h), fz = Math.sin(c.h);
-  const check = (ox, oz, olen, isMe) => {
+  const check = (ox, oz, olen, isMe, isWreck) => {
     const dx = ox - c.x, dz = oz - c.z, along = dx * fx + dz * fz, lat = Math.abs(-dx * fz + dz * fx);
     if (along <= 0 || along > 18 || lat > 2.6) return;
     const gap = along - (c.len + olen) / 2 - 2;
     const v = Math.max(0, gap * 1.3);
-    if (v < lim) { lim = v; byMe = isMe; }
+    if (v < lim) { lim = v; byMe = isMe; byWreck = isWreck || false; }
   };
-  for (const o of city.cars) if (o !== c) check(o.x, o.z, o.len, false);
+  for (const o of city.cars) if (o !== c) check(o.x, o.z, o.len, false, o.wreck > 0 || o.jam);
   if (city.police) check(city.police.pos.x, city.police.pos.z, 5, false);
   if (me.alt < 2.5) check(me.pos.x, me.pos.z, me.len, true); // wer darüber fliegt, stört nicht
-  return { lim, byMe };
+  return { lim, byMe, byWreck };
 }
 
 function stepTraffic(dt) {
   const t = city.t, me = city.me;
   for (const c of city.cars) {
+    if (c.wreck > 0) { // Unfallauto steht schräg da
+      const m = c.mesh;
+      m.visible = Math.hypot(c.x - S.camera.position.x, c.z - S.camera.position.z) < SEE;
+      m.position.set(c.x, 0, c.z); m.rotation.y = -c.h - c.wreckYaw;
+      continue;
+    }
     let limit = c.turn ? c.cruise * (c.turn.straight ? 1 : 0.55) : c.cruise;
+    if (c.rush || c.reckless) limit *= 1.5; // Raser
     let atLight = false;
-    if (!c.turn) { // rote oder gelbe Ampel vorne?
+    if (!c.turn && !c.reckless) { // rote oder gelbe Ampel vorne? (Raser fahren einfach durch)
       const bi = c.i + DIRS[c.d][0], bj = c.j + DIRS[c.d][1], stop = STOP - c.len / 2;
       if (hasLights(bi, bj) && c.s < stop) {
         const st = lightState(axisOf(c.d), t);
@@ -681,11 +688,12 @@ function stepTraffic(dt) {
       }
     }
     const f = followLimit(c, me);
-    // Steckt ein Auto lange fest (z.B. zwei Abbieger in der Kreuzung), fährt es vorsichtig weiter
-    c.stuck = !atLight && !f.byMe && f.lim < 0.5 ? (c.stuck || 0) + dt : 0;
+    c.jam = f.byWreck && f.lim < 1; // steht im Stau hinter einem Unfall: Stau wächst nach hinten
+    // Steckt ein Auto lange fest (z.B. zwei Abbieger in der Kreuzung), fährt es vorsichtig weiter (nicht im Stau)
+    c.stuck = !atLight && !f.byMe && !f.byWreck && f.lim < 0.5 ? (c.stuck || 0) + dt : 0;
     if (c.stuck > 6) { c.ghost = 2.5; c.stuck = 0; }
     if (c.ghost > 0) c.ghost -= dt;
-    else limit = Math.min(limit, f.lim);
+    else if (!c.rush && !c.reckless) limit = Math.min(limit, f.lim); // Raser bremsen nicht
     if (c.blocked > 0) { c.blocked -= dt; limit = 0; } // nach einem Rempler kurz stehen
     // Wer wegen dir warten muss, hupt irgendwann
     c.waitMe = f.byMe && limit < 1 ? c.waitMe + dt : 0;
@@ -708,7 +716,7 @@ function stepTraffic(dt) {
       const p = bez(T.P0, T.P1, T.P2, T.t), p2 = bez(T.P0, T.P1, T.P2, Math.min(1, T.t + 0.02));
       if (p2[0] !== p[0] || p2[1] !== p[1]) c.h = Math.atan2(p2[1] - p[1], p2[0] - p[0]);
       c.x = p[0]; c.z = p[1];
-      if (T.t >= 1) { c.i = T.bi; c.j = T.bj; c.d = T.d2; c.s = 7; c.turn = null; placeOnSegment(c); }
+      if (T.t >= 1) { c.i = T.bi; c.j = T.bj; c.d = T.d2; c.s = 7; c.turn = null; c.reckless = c.rush = false; placeOnSegment(c); }
     }
     const m = c.mesh, seen = Math.hypot(c.x - S.camera.position.x, c.z - S.camera.position.z) < SEE;
     m.visible = seen;
@@ -719,6 +727,78 @@ function stepTraffic(dt) {
       animateCar(m, t, null);
     }
   }
+}
+
+// ---------- Unfälle und Stau ----------
+// Ab und zu baut ein Auto einen Unfall: Auffahrunfall (fährt dem Vordermann hinten rein) oder ein Raser fährt über Rot
+// und kracht in die Kreuzung. Die Unfallautos stehen schräg mit Warnblinker und Rauch, dahinter staut es sich.
+// Nach einer Weile werden sie abgeschleppt (verschwinden und fahren woanders wieder los).
+const WRECK_TIME = 45;
+let hazardMat = null, triGeo = null;
+function wreck(c, yaw) {
+  if (c.wreck > 0) return;
+  c.wreck = WRECK_TIME; c.wreckYaw = yaw; c.speed = 0; c.rush = false; c.reckless = false;
+  if (!hazardMat) { hazardMat = new THREE.MeshStandardMaterial({ color: 0x7a4a00, emissive: 0xff9a1a, emissiveIntensity: 0 }); triGeo = new THREE.CylinderGeometry(0.38, 0.38, 0.05, 3).rotateX(-Math.PI / 2); } // Dreieck mit Spitze oben
+  const hl = c.len / 2 - 0.2, g = new THREE.Group(); // Warnblinker an allen vier Ecken
+  for (const x of [-hl, hl]) for (const z of [-0.75, 0.75]) { const b = new THREE.Mesh(new THREE.SphereGeometry(0.09, 8, 6), hazardMat); b.position.set(x, 0.75, z); g.add(b); }
+  c.mesh.add(g); c.hazard = g;
+  const tri = new THREE.Mesh(triGeo, new THREE.MeshStandardMaterial({ color: 0xdc2626, emissive: 0x7f1d1d })); // Warndreieck dahinter
+  const fx = Math.cos(c.h), fz = Math.sin(c.h);
+  tri.position.set(c.x - fx * (c.len / 2 + 7), 0.22, c.z - fz * (c.len / 2 + 7)); tri.rotation.y = Math.atan2(fx, fz); // schaut den Autos entgegen
+  S.scene.add(tri); c.tri = tri;
+}
+function clearWreck(c) {
+  if (c.hazard) c.mesh.remove(c.hazard);
+  if (c.tri) S.scene.remove(c.tri);
+  c.hazard = c.tri = null; c.wreck = 0; c.wreckYaw = 0;
+  // abgeschleppt: woanders weit weg wieder einsetzen
+  for (let tries = 0; tries < 40; tries++) {
+    const i = Math.floor(Math.random() * (N + 1)), j = Math.floor(Math.random() * (N + 1)), d = Math.floor(Math.random() * 4);
+    if (!inGrid(i + DIRS[d][0], j + DIRS[d][1])) continue;
+    Object.assign(c, { i, j, d, s: 10 + Math.random() * (BLOCK - 26), turn: null, speed: 4 });
+    placeOnSegment(c);
+    if (Math.hypot(c.x - city.me.pos.x, c.z - city.me.pos.z) > 150) break;
+  }
+}
+function crashNear(x, z, text) { // Knall und Meldung, wenn es in der Nähe passiert
+  const d = Math.hypot(x - city.me.pos.x, z - city.me.pos.z);
+  if (d < 220) crash(0.15 + 0.6 * (1 - d / 220), 'car');
+  if (d < 260 && !city.mission) showMsg(text, 2.2);
+}
+function stepAccidents(dt) {
+  if (hazardMat) hazardMat.emissiveIntensity = Math.floor(city.t * 2.5) % 2 ? 2.5 : 0;
+  for (const c of city.cars) {
+    if (c.wreck > 0) {
+      if (Math.random() < dt * 3) S.fx.puff(c.x + (Math.random() - 0.5), 1, c.z + (Math.random() - 0.5), 0, 0); // Rauch
+      if ((c.wreck -= dt) <= 0) clearWreck(c);
+    }
+  }
+  // Raser auf Kollisionskurs: kracht, wenn er ein anderes Auto berührt
+  for (const c of city.cars) {
+    if (!(c.rush || c.reckless) || c.wreck > 0) continue;
+    for (const o of city.cars) {
+      if (o === c || o.wreck > 0) continue;
+      if (Math.hypot(o.x - c.x, o.z - c.z) < (c.len + o.len) * 0.32) {
+        wreck(c, (Math.random() < 0.5 ? -1 : 1) * (0.3 + Math.random() * 0.3));
+        wreck(o, (Math.random() < 0.5 ? -1 : 1) * (0.15 + Math.random() * 0.3));
+        crashNear(c.x, c.z, '💥 Unfall! Da vorne gibt es Stau.');
+        break;
+      }
+    }
+  }
+  if ((city.accT -= dt) > 0) return;
+  city.accT = 50 + Math.random() * 70;
+  const me = city.me, near = c => { const d = Math.hypot(c.x - me.pos.x, c.z - me.pos.z); return d > 50 && d < 260; };
+  if (city.cars.filter(c => c.wreck > 0).length >= 4) return; // nicht zu viele auf einmal
+  if (Math.random() < 0.6) { // Auffahrunfall: Auto mit Vordermann auf derselben Spur
+    for (const c of city.cars) {
+      if (c.turn || c.wreck > 0 || !near(c)) continue;
+      const lead = city.cars.find(o => o !== c && !o.turn && !(o.wreck > 0) && o.i === c.i && o.j === c.j && o.d === c.d && o.s > c.s && o.s - c.s < 30);
+      if (lead) { c.rush = true; return; }
+    }
+  }
+  const c = city.cars.find(o => !o.turn && !(o.wreck > 0) && near(o)); // Raser: fährt über Rot
+  if (c) c.reckless = true;
 }
 
 // ---------- Selber fahren ----------
@@ -1907,6 +1987,8 @@ function drawMinimap() {
     g.beginPath(); g.arc(mx(o.x), mx(o.z), 5, 0, Math.PI * 2); g.fill(); g.stroke();
     if (it && it.it === o.slot) { g.strokeStyle = Math.floor(city.t * 4) % 2 ? '#ff2020' : '#fff'; g.lineWidth = 2.5; g.beginPath(); g.arc(mx(o.x), mx(o.z), 9, 0, Math.PI * 2); g.stroke(); }
   }
+  g.font = '11px system-ui, sans-serif'; g.textAlign = 'center'; g.textBaseline = 'middle';
+  for (const c of city.cars) if (c.wreck > 0) g.fillText('⚠️', mx(c.x), mx(c.z)); // Unfälle
   const M = city.mission;
   if (M && M.target) { // Ziel des Auftrags blinkt
     g.fillStyle = Math.floor(city.t * 4) % 2 ? M.color : '#ffffff'; g.strokeStyle = '#000'; g.lineWidth = 1.5;
@@ -1943,7 +2025,7 @@ export function startCity({ player, kinds, topSpeed, onExit, pay = () => 0, earn
   // online starten alle auf einer anderen Strasse am Stadtrand
   const me = { v: player, mesh, pos: new THREE.Vector3(node(1 + (net ? net.mySlot : 0)) + 20, 0, node(0) + LANE), heading: 0, speed: 0, vl: 0, steer: 0,
     ...carStats(player, mesh, kinds, topSpeed), slip: 0, surface: 'asphalt', alt: 0, fly: false, landing: false };
-  city = { me, cars: spawnTraffic(kinds), input: {}, t: Math.random() * CYCLE, msgT: 0, crashT: 0, hornT: 0, inCross: false, tod: 0.02, turbo: 0, fuelT: 0, washT: 0, mission: null,
+  city = { me, cars: spawnTraffic(kinds), input: {}, t: Math.random() * CYCLE, msgT: 0, crashT: 0, hornT: 0, inCross: false, tod: 0.02, turbo: 0, fuelT: 0, washT: 0, mission: null, accT: 25 + Math.random() * 30,
     gears: gearbox(player.kind), onExit, last: performance.now(), kinds, pay, gripBoost: (kinds[player.kind] && kinds[player.kind].grip) || 1, canFly: !!(kinds[player.kind] && kinds[player.kind].fly), fines: 0, police: null, pulled: 0, ticket: false,
     earn, net, topSpeed, garage, baseSlot: net ? net.mySlot : 0, baseT: 0, atBase: -1, baseEdit: false, netCars: net ? makeNetCars({ scene: S.scene, kinds, net }) : null, drift: 0, driftT: 0, driftBest: (() => { try { return +localStorage.getItem('autoRetterDriftBest') || 0; } catch (e) { return 0; } })() };
   S.fx.clear();
@@ -1993,6 +2075,7 @@ function loop(now) {
   stepBases(dt);
   stepMission(dt);
   stepTraffic(dt);
+  stepAccidents(dt);
   if (city.netCars) { // Mitspieler: zeigen, eigene Position senden, nicht durcheinander durchfahren
     const me = city.me, o = { x: me.pos.x, y: me.alt, z: me.pos.z };
     if (city.netCars.bump(o, me.radius)) {
@@ -2107,7 +2190,7 @@ function endCity() {
   S.ui.walkbtn.textContent = '🚪';
   S.ui.walkbtn.classList.remove('ready');
   S.ui.hint.textContent = HINT;
-  for (const car of c.cars) S.scene.remove(car.mesh); // Formen gehören den Vorlagen in cars3d.js
+  for (const car of c.cars) { S.scene.remove(car.mesh); if (car.tri) S.scene.remove(car.tri); } // Formen gehören den Vorlagen in cars3d.js
   if (c.headMat) c.headMat.emissiveIntensity = 1.2; // Scheinwerfer wieder wie am Tag (gilt auch fürs Rennen)
   if (c.netCars) c.netCars.dispose();
   if (c.chat) c.chat.dispose();
