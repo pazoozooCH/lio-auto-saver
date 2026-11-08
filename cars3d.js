@@ -217,7 +217,7 @@ function kit(v, kinds, hDiv, spec) {
   C.ext = (pts, depth, m, bevel = 0.14, z = 0) => { const o = extrude(pts, depth, m, bevel); o.position.z = z; C.body.add(o); return o; };
   C.wheelPair = (x, r = C.r, w = 0.32, rimMat, spokes) => {
     C.axles.push([x, r]);
-    for (const s of [-1, 1]) C.wheels.push(wheel(r, w, C.group, x, s * (C.W / 2 - w / 2 + 0.04), rimMat, spokes));
+    for (const s of [-1, 1]) C.wheels.push(wheel(r, w, C.group, x, s * (C.W / 2 - w / 2 + (C.wheelOut ?? 0.04)), rimMat, spokes));
   };
   // Aufkleber auf beiden Seiten (paint zeichnet auf ein Canvas der Grösse cw × ch)
   C.decal = (w, h, x, y, paint, zExtra = 0) => {
@@ -229,6 +229,19 @@ function kit(v, kinds, hDiv, spec) {
     tex.colorSpace = THREE.SRGBColorSpace;
     const m = new THREE.MeshStandardMaterial({ map: tex, transparent: true, alphaTest: 0.02, roughness: 0.45, polygonOffset: true, polygonOffsetFactor: -2 });
     for (const s of [1, -1]) {
+      if (C.surfZ) { // echte Karosserie: Aufkleber schmiegt sich an die gewölbte Seite
+        const geo = new THREE.PlaneGeometry(w, h, Math.max(2, Math.round(w / 0.08)), Math.max(1, Math.round(h / 0.08)));
+        if (s < 0) geo.rotateY(PI);
+        const pos = geo.attributes.position;
+        for (let i = 0; i < pos.count; i++) {
+          const px = pos.getX(i) + x, py = pos.getY(i) + y, sz = C.surfZ(px, py);
+          if (sz > 0) pos.setXYZ(i, px, py, s * (sz + Math.max(0.006, 0.016 + zExtra)));
+          else pos.setXYZ(i, px, C.side.bottom + 0.25, 0); // ausserhalb der Karosserie: nach innen, unsichtbar
+        }
+        geo.computeVertexNormals();
+        C.body.add(new THREE.Mesh(geo, m));
+        continue;
+      }
       const p = new THREE.Mesh(new THREE.PlaneGeometry(w, h), m);
       p.position.set(x, y, s * (C.W / 2 + 0.015 + zExtra));
       p.rotation.y = s > 0 ? 0 : PI;
@@ -253,9 +266,287 @@ function kit(v, kinds, hDiv, spec) {
   return C;
 }
 
+// ---------- Echte Karosserien ----------
+// Die Form entsteht aus vielen Querschnitten entlang der Länge (wie die Spanten beim Modellbau):
+// runde Nase und rundes Heck von oben gesehen, echte Radkästen, Kotflügel über den Rädern, Kabine mit Säulen.
+// x: Anteil der Länge (hinten 0 → vorne 1), y: Anteil der Höhe H.
+// top/bot: Ober- und Unterkante des Unterbaus, gh: Kabine [hinten unten, hinten oben, vorne oben, vorne unten],
+// roof: Dachhöhe, pf/pr: wie rund Nase/Heck von oben sind (klein = runder), cp: Bereich mit Blech statt Seitenfenster
+// (C-/D-Säule), posts: schmale Säulen [Mitte, Breite, 'dark'|'paint'].
+const REAL = {
+  sedan: { top: [[0, .42], [.015, .52], [.05, .57], [.16, .59], [.45, .6], [.74, .585], [.85, .56], [.95, .52], [1, .43]],
+    bot: [[0, .24], [.04, .13], [.08, .1], [.92, .1], [.97, .14], [1, .24]], axles: [.2, .79], gh: [.15, .36, .58, .74], roof: .93,
+    pf: 4.5, pr: 5, cp: [.15, .31], posts: [[.5, .02, 'dark']] },
+  compact: { top: [[0, .45], [.015, .58], [.05, .62], [.72, .61], [.86, .58], [.96, .53], [1, .44]],
+    bot: [[0, .24], [.04, .12], [.96, .12], [1, .24]], axles: [.16, .82], gh: [.03, .12, .53, .72], roof: .95,
+    pf: 4, pr: 6, cp: [.03, .17], posts: [[.44, .02, 'dark']], twoDoor: true },
+  kombi: { top: [[0, .44], [.012, .58], [.04, .6], [.7, .6], [.85, .57], [.95, .53], [1, .43]],
+    bot: [[0, .24], [.04, .13], [.08, .1], [.92, .1], [.97, .14], [1, .24]], axles: [.18, .8], gh: [.025, .05, .57, .73], roof: .92,
+    pf: 4.5, pr: 7, cp: [.025, .075], posts: [[.26, .02, 'dark'], [.48, .02, 'dark']] },
+  sport: { top: [[0, .44], [.02, .54], [.08, .58], [.28, .59], [.72, .57], [.84, .56], [.95, .48], [1, .36]],
+    bot: [[0, .22], [.04, .1], [.95, .1], [1, .2]], axles: [.18, .81], gh: [.2, .44, .58, .73], roof: .9,
+    pf: 3.2, pr: 4.5, cp: [.2, .38], posts: [], twoDoor: true },
+  coupe: { top: [[0, .43], [.02, .53], [.06, .565], [.2, .575], [.72, .56], [.86, .53], [.96, .48], [1, .4]],
+    bot: [[0, .24], [.04, .13], [.08, .1], [.92, .1], [.97, .14], [1, .24]], axles: [.19, .8], gh: [.18, .4, .58, .73], roof: .88,
+    pf: 4, pr: 5, cp: [.18, .34], posts: [], twoDoor: true },
+  suv: { top: [[0, .44], [.012, .6], [.04, .62], [.74, .62], [.88, .6], [.96, .55], [1, .46]],
+    bot: [[0, .26], [.04, .18], [.96, .18], [1, .26]], axles: [.18, .81], gh: [.025, .05, .62, .76], roof: .95,
+    pf: 5, pr: 7, cp: [.025, .08], posts: [[.28, .02, 'dark'], [.5, .02, 'dark']] },
+  hatch: { top: [[0, .45], [.015, .58], [.05, .61], [.72, .6], [.86, .57], [.96, .52], [1, .43]],
+    bot: [[0, .24], [.04, .12], [.96, .12], [1, .24]], axles: [.17, .81], gh: [.04, .13, .58, .73], roof: .94,
+    pf: 4, pr: 6, cp: [.04, .18], posts: [[.45, .02, 'dark']] },
+  pickup: { top: [[0, .5], [.01, .56], [.5, .565], [.52, .57], [.82, .565], [.92, .55], [.98, .5], [1, .42]],
+    bot: [[0, .26], [.03, .17], [.97, .17], [1, .26]], axles: [.18, .82], gh: [.5, .53, .71, .82], roof: .95,
+    pf: 6, pr: 9, cp: [.5, .535], posts: [[.62, .02, 'dark']], bed: [.025, .48] },
+};
+
+// Glatte Linie durch Punkte [x, y] (0…1): erst gerade Stücke, dann mehrmals weichgezeichnet
+function smoothLine(pts, n = 200) {
+  const ys = [];
+  for (let i = 0; i <= n; i++) {
+    const x = i / n;
+    let k = 0;
+    while (k < pts.length - 2 && pts[k + 1][0] < x) k++;
+    const [x0, y0] = pts[k], [x1, y1] = pts[k + 1];
+    ys.push(y0 + (y1 - y0) * Math.min(1, Math.max(0, (x - x0) / (x1 - x0 || 1))));
+  }
+  for (let pass = 0; pass < 4; pass++) for (let i = 1; i < n; i++) ys[i] = (ys[i - 1] + ys[i] * 2 + ys[i + 1]) / 4;
+  return f => { const t = Math.min(n, Math.max(0, f * n)), i = Math.min(n - 1, Math.floor(t)); return ys[i] + (ys[i + 1] - ys[i]) * (t - i); };
+}
+const smoothstep = (a, b, v) => { const t = Math.min(1, Math.max(0, (v - a) / (b - a))); return t * t * (3 - 2 * t); };
+const spow = (v, p) => Math.sign(v) * Math.pow(Math.abs(v), p);
+
+// Fläche aus Querschnitten: rows = Liste von Punktreihen (alle gleich lang); matOf(i, j) wählt für jedes Viereck
+// das Material (Index in mats). Gibt je Material ein eigenes Teil zurück (mit gemeinsamen, weichen Normalen).
+function loftMeshes(rows, closed, mats, matOf) {
+  const n = rows.length, m = rows[0].length, pos = [], uv = [], idx = mats.map(() => []);
+  rows.forEach((row, i) => row.forEach(([x, y, z], j) => { pos.push(x, y, z); uv.push(i / (n - 1), j / (m - 1)); }));
+  const segs = closed ? m : m - 1;
+  for (let i = 0; i < n - 1; i++) for (let j = 0; j < segs; j++) {
+    const a = i * m + j, b = i * m + (j + 1) % m, c = a + m, d = b + m;
+    idx[matOf(i, j)].push(a, c, b, b, c, d);
+  }
+  const full = new THREE.BufferGeometry();
+  full.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  full.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
+  full.setIndex(idx.flat());
+  full.computeVertexNormals();
+  return mats.map((mt, k) => {
+    if (!idx[k].length) return null;
+    const g = new THREE.BufferGeometry();
+    for (const a of ['position', 'normal', 'uv']) g.setAttribute(a, full.attributes[a]);
+    g.setIndex(idx[k]);
+    const o = new THREE.Mesh(g, mt);
+    o.castShadow = true; o.receiveShadow = true;
+    return o;
+  });
+}
+
+function realBody(C, name, opts = {}) {
+  const S = REAL[name], { L, W, M, r, X } = C, H = Math.min(C.H, L * 0.31), hw0 = W / 2, N = 6; // nicht zu hoch: echte Autos sind etwa 3× so lang wie hoch
+  const topF = smoothLine(S.top), botF = smoothLine(S.bot), frac = x => x / L + 0.5;
+  C.topAt = f => topF(f) * H; // Oberkante des Unterbaus (Haube, Gurtlinie, Kofferraum) an der Stelle f
+  const rw = C.v.tune && C.v.tune.wheels ? r * 1.22 : r; // grosse Tuning-Räder brauchen grössere Radkästen
+  const axles = (opts.wheels || S.axles).map(X), R = rw + 0.08;
+  const plan = u => { const p = u > 0 ? S.pf : S.pr; return Math.pow(Math.max(0, 1 - Math.pow(Math.min(1, Math.abs(u)), p)), 1 / p); };
+  const archTop = x => { let y = 0; for (const a of axles) { const d = x - a; if (Math.abs(d) < R) y = Math.max(y, rw + Math.sqrt(R * R - d * d)); } return y; };
+  // Werte eines Querschnitts an der Stelle x (Meter)
+  const station = x => {
+    const f = plan(x / (L / 2)), e = 0.3 + 0.7 * Math.sqrt(f);
+    let yt = topF(frac(x)) * H, yb = botF(frac(x)) * H;
+    const ym = (yt + yb) / 2;
+    yt = ym + (yt - ym) * e; yb = ym + (yb - ym) * e;
+    const at = archTop(x);
+    return { hw: hw0 * f, yt, yb, lift: Math.max(0, at - yb), bulge: at ? Math.max(0, at + 0.05 - yt) : 0 };
+  };
+  const ringPt = (st, th) => {
+    const zf = spow(Math.cos(th), 2 / N), yf = spow(Math.sin(th), 2 / N), a = Math.abs(zf);
+    const lo = st.yb + st.lift * smoothstep(0.42, 0.58, a), hi = st.yt + st.bulge * smoothstep(0.45, 0.85, a);
+    return [zf * st.hw, lo + (yf + 1) / 2 * (hi - lo)];
+  };
+  // Unterbau: Lack, unten dunkel (Unterboden und Radhäuser)
+  const NS = 110, NR = 48, xs = [], rows = [];
+  for (let i = 0; i <= NS; i++) xs.push(Math.sin((i / NS * 2 - 1) * PI / 2) * L / 2); // an den Enden dichter
+  for (const x of xs) {
+    const st = station(x), row = [];
+    for (let j = 0; j < NR; j++) { const [z, y] = ringPt(st, -PI / 2 + j / NR * PI * 2); row.push([x, y, z]); }
+    rows.push(row);
+  }
+  const under = mat(0x111215, { roughness: 0.8 });
+  const [bodyMesh, bottomMesh] = loftMeshes(rows, true, [C.paint, under], (i, j) => {
+    const th = -PI / 2 + (j + 0.5) / NR * PI * 2, d = Math.min(Math.abs(th + PI / 2), Math.abs(th - 3 * PI / 2));
+    return d < 0.95 ? 1 : 0;
+  });
+  C.bodyMesh = bodyMesh;
+  C.body.add(bodyMesh, bottomMesh);
+
+  // Halbe Breite der Oberfläche an der Stelle (x, y) – für Aufkleber, Lichter, Spiegel
+  const [rb, rt, ft, fb] = S.gh.map(X), roofY = S.roof * H, ghPts = [];
+  const lowerZ = (x, y) => {
+    const st = station(x);
+    if (st.hw <= 0) return 0;
+    const lo = st.yb + st.lift, hi = st.yt + st.bulge, yf = 2 * (y - lo) / (hi - lo || 1) - 1;
+    return Math.abs(yf) >= 1 ? 0 : st.hw * Math.pow(1 - Math.pow(Math.abs(yf), N), 1 / N);
+  };
+  // Kabine: Seitenansicht als abgerundetes Viereck, Querschnitt schmaler nach oben (wie echte Autos)
+  if (!opts.noCabin) {
+    const poly = roundPoly([[rb, topF(frac(rb)) * H - 0.02], [rt, roofY], [(rt + ft) / 2, roofY + 0.03], [ft, roofY], [fb, topF(frac(fb)) * H - 0.02]], 0.4, 6);
+    const ghTop = x => edgeTop(poly, x);
+    const NG = 56, NGR = 30, gx = [], grows = [];
+    for (let i = 0; i <= NG; i++) gx.push(rb + (fb - rb) * i / NG);
+    const gst = x => {
+      const yb = topF(frac(x)) * H - 0.09, gwb = station(x).hw * 0.87;
+      return { yb, yt: Math.max(yb, ghTop(x)), gwb, gwt: gwb * 0.78 };
+    };
+    for (const x of gx) {
+      const g = gst(x), row = [];
+      for (let j = 0; j <= NGR; j++) {
+        const th = j / NGR * PI, zf = spow(Math.cos(th), 0.5), yf = Math.pow(Math.sin(th), 0.5);
+        row.push([x, g.yb + yf * (g.yt - g.yb), zf * (g.gwb + (g.gwt - g.gwb) * yf)]);
+      }
+      grows.push(row);
+    }
+    C.ghZ = (x, y) => {
+      if (x < rb || x > fb) return 0;
+      const g = gst(x), yf = (y - g.yb) / (g.yt - g.yb || 1);
+      return yf < 0 || yf > 1 ? 0 : Math.pow(1 - Math.pow(yf, 4), 0.25) * (g.gwb + (g.gwt - g.gwb) * yf);
+    };
+    const glass = opts.tinted ? mat(0x10161e, { metalness: 0.7, roughness: 0.05 }) : M.glass;
+    const xr0 = rt + 0.05, xr1 = ft - 0.05, inX = (x, [a, b]) => x >= X(a) && x <= X(b);
+    const parts = loftMeshes(grows, false, [C.paint, glass, M.dark], (i, j) => {
+      const x = (gx[i] + gx[i + 1]) / 2, th = (j + 0.5) / NGR * PI, e = Math.min(th, PI - th);
+      if (e < 0.07) return 2; // Gummidichtung unten
+      const roof = x > xr0 && x < xr1;
+      if (e > 0.75) return roof || e < 1.05 ? 0 : 1; // Dach, A-/C-Säulen, Front- und Heckscheibe
+      if (inX(x, S.cp)) return 0;
+      for (const [c, w, kind] of S.posts) if (Math.abs(x - X(c)) < w * L / 2) return kind === 'dark' ? 2 : 0;
+      return 1;
+    });
+    for (const p of parts) if (p) C.body.add(p);
+    C.roofY = roofY + 0.03;
+    C.roofX = (rt + ft) / 2;
+    if (!opts.noMirrors) for (const s of [-1, 1]) { // Aussenspiegel
+      const mx = fb - 0.22, my = topF(frac(mx)) * H + 0.1, mz = station(mx).hw * 0.86;
+      C.box(0.05, 0.03, 0.12, M.dark, mx, my - 0.02, s * (mz + 0.05));
+      C.sph(1, C.paint, mx, my, s * (mz + 0.13), [0.075, 0.055, 0.1]);
+    }
+    const front = Math.min(fb - 0.03, axles[axles.length - 1] - R - 0.02);
+    C.side = { doors: [front, ...S.posts.filter(p => p[2] === 'dark' && X(p[0]) > X(S.cp[1])).map(p => X(p[0]))], doorTop: 0 };
+    if (!(opts.twoDoor || S.twoDoor)) C.side.doors.push(Math.max(X(S.cp[1]), axles[0] + R * 0.6));
+    else C.side.doors.splice(1);
+    C.side.doorTop = topF(frac(C.side.doors[0])) * H - 0.06;
+  }
+  C.surfZ = (x, y) => Math.max(lowerZ(x, y), C.ghZ ? C.ghZ(x, y) : 0);
+
+  // Umriss von der Seite (für Aufkleber, Spoiler); Radkästen ausgespart
+  const pts = [], bots = [];
+  for (let i = 0; i <= 80; i++) {
+    const x = -L / 2 + L * i / 80, st = station(x);
+    pts.push([x, st.yt]);
+    bots.unshift([x, st.yb + st.lift]);
+  }
+  C.side = { ...(C.side || {}), pts: pts.concat(bots), bottom: Math.min(...bots.map(p => p[1])), top: Math.max(...pts.map(p => p[1])), real: true };
+
+  if (S.bed) { // Ladefläche mit Abdeckung und Rand
+    const [b0, b1] = S.bed.map(X), y = topF(frac((b0 + b1) / 2)) * H;
+    C.box(b1 - b0, 0.03, W * 0.84, mat(0x18191c, { roughness: 0.7 }), (b0 + b1) / 2, y + 0.005, 0);
+    for (const s of [-1, 1]) C.box(b1 - b0, 0.05, 0.05, M.dark, (b0 + b1) / 2, y + 0.02, s * W * 0.43);
+  }
+  C.wheelOut = -0.03;
+  for (const a of axles) C.wheelPair(a, r, 0.3, opts.rim, opts.spokes);
+
+  // Front und Heck: Bild auf die gerundete Fläche gemalt (Scheinwerfer, Grill, Rücklichter); was leuchtet, steht in glow
+  const endX = (y, z, front) => { // vorderste/hinterste Stelle der Oberfläche auf Höhe y, im Abstand z von der Mitte
+    const sg = front ? 1 : -1, need = Math.max(Math.abs(z), 1e-4);
+    let lo = Math.min(L / 2 - 0.1, Math.abs(front ? axles[axles.length - 1] : axles[0]) + R + 0.02), hi = L / 2; // vor/hinter dem Radkasten anfangen
+    if (lowerZ(sg * lo, y) <= need) return null;
+    for (let k = 0; k < 22; k++) { const m = (lo + hi) / 2; if (lowerZ(sg * m, y) > need) lo = m; else hi = m; }
+    return sg * lo;
+  };
+  const fascia = (front, y0, y1, w, draw) => {
+    const cw = 512, ch = Math.max(64, Math.round(cw * (y1 - y0) / w));
+    const base = document.createElement('canvas'), glow = document.createElement('canvas');
+    base.width = glow.width = cw; base.height = glow.height = ch;
+    const gg = glow.getContext('2d');
+    gg.fillStyle = '#000'; gg.fillRect(0, 0, cw, ch);
+    draw(base.getContext('2d'), gg, cw, ch);
+    const tex = c => { const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 4; return t; };
+    const m = new THREE.MeshStandardMaterial({ map: tex(base), emissiveMap: tex(glow), emissive: 0xffffff, emissiveIntensity: 1.3,
+      transparent: true, alphaTest: 0.05, roughness: 0.25, metalness: 0.3, polygonOffset: true, polygonOffsetFactor: -2 });
+    const geo = new THREE.PlaneGeometry(w, y1 - y0, 48, 16);
+    geo.rotateY(front ? PI / 2 : -PI / 2);
+    const pos = geo.attributes.position, inner = (front ? 1 : -1) * L * 0.2;
+    for (let i = 0; i < pos.count; i++) {
+      const y = pos.getY(i) + (y0 + y1) / 2, z = pos.getZ(i), x = endX(y, z, front);
+      pos.setXYZ(i, x === null ? inner : x + (front ? 0.012 : -0.012), y, z);
+    }
+    geo.computeVertexNormals();
+    C.body.add(new THREE.Mesh(geo, m));
+  };
+  const poly = (g, w, h, pts, mirror) => { g.beginPath(); pts.forEach(([x, y], i) => g[i ? 'lineTo' : 'moveTo']((mirror ? 1 - x : x) * w, y * h)); g.closePath(); };
+  const sF = station(L / 2 * 0.9), sR = station(-L / 2 * 0.9);
+  fascia(true, sF.yb + 0.03, sF.yt - 0.03, W * 0.98, (g, gl, w, h) => {
+    for (const mi of [false, true]) {
+      poly(g, w, h, [[.04, .1], [.3, .26], [.29, .44], [.06, .36]], mi); // Scheinwerfer: Gehäuse
+      g.fillStyle = '#1b2027'; g.fill();
+      poly(g, w, h, [[.07, .15], [.27, .29], [.265, .39], [.08, .32]], mi); // Glas
+      g.fillStyle = '#dfe8f3'; g.fill();
+      poly(gl, w, h, [[.07, .15], [.27, .29], [.265, .39], [.08, .32]], mi);
+      gl.fillStyle = '#8a8f96'; gl.fill();
+      poly(gl, w, h, [[.07, .14], [.27, .28], [.27, .31], [.07, .18]], mi); // Tagfahrlicht
+      gl.fillStyle = '#ffffff'; gl.fill();
+      poly(g, w, h, [[.07, .14], [.27, .28], [.27, .31], [.07, .18]], mi); g.fillStyle = '#ffffff'; g.fill();
+      g.beginPath(); g.arc((mi ? .88 : .12) * w, .8 * h, .035 * w, 0, PI * 2); g.fillStyle = '#20252c'; g.fill(); // Nebellicht
+      gl.beginPath(); gl.arc((mi ? .88 : .12) * w, .8 * h, .022 * w, 0, PI * 2); gl.fillStyle = '#c8c8c0'; gl.fill();
+    }
+    if (!opts.noGrille) {
+      poly(g, w, h, [[.35, .3], [.65, .3], [.69, .64], [.31, .64]]); // Kühlergrill mit Wabenmuster und Chromrahmen
+      g.fillStyle = '#0c0d10'; g.fill();
+      g.save(); g.clip();
+      g.strokeStyle = '#30343b'; g.lineWidth = 2;
+      const cs = w * 0.022;
+      for (let yy = 0, row = 0; yy < h; yy += cs * 0.9, row++) for (let xx = (row % 2) * cs / 2; xx < w; xx += cs) { g.beginPath(); g.arc(xx, yy, cs * 0.38, 0, PI * 2); g.stroke(); }
+      g.restore();
+      poly(g, w, h, [[.35, .3], [.65, .3], [.69, .64], [.31, .64]]);
+      g.strokeStyle = '#d5dbe3'; g.lineWidth = 5; g.stroke();
+    }
+    poly(g, w, h, [[.2, .74], [.8, .74], [.84, .92], [.16, .92]]); // Lufteinlass unten
+    g.fillStyle = '#0c0d10'; g.fill();
+  });
+  fascia(false, sR.yb + 0.03, sR.yt - 0.03, W * 0.98, (g, gl, w, h) => {
+    for (const mi of [false, true]) {
+      for (const c of [g, gl]) { poly(c, w, h, [[.02, .12], [.3, .14], [.29, .34], [.05, .32]], mi); c.fillStyle = c === g ? '#b3121b' : '#ff2a2a'; c.fill(); }
+      poly(g, w, h, [[.1, .2], [.26, .21], [.25, .28], [.1, .27]], mi); g.fillStyle = '#ff6b6b'; g.fill(); // heller Streifen
+      poly(g, w, h, [[.06, .86], [.14, .86], [.14, .9], [.06, .9]], mi); g.fillStyle = '#c0161f'; g.fill(); // Rückstrahler
+    }
+    for (const c of [g, gl]) { c.fillStyle = c === g ? '#8a0c12' : '#b01818'; c.fillRect(.3 * w, .2 * h, .4 * w, .05 * h); } // Lichtband
+    poly(g, w, h, [[.22, .8], [.78, .8], [.8, 1], [.2, 1]]); g.fillStyle = '#121316'; g.fill(); // Diffusor
+  });
+  // Nummernschilder
+  const own = C.v.tune && C.v.tune.plate, ph = own ? 0.17 : 0.11, pw = own ? 0.72 : 0.5;
+  const py = sF.yb + (sF.yt - sF.yb) * 0.25, pyR = sR.yb + (sR.yt - sR.yb) * 0.45;
+  C.box(0.02, ph, pw, M.plate, endX(py, pw / 2, true) + 0.03, py, 0);
+  C.box(0.02, ph, pw, M.plate, endX(pyR, pw / 2, false) - 0.03, pyR, 0);
+  if (!opts.noExhaust) {
+    const ey = sR.yb + 0.06, ez = W * 0.27, ex = -(L / 2) * Math.pow(1 - Math.pow(ez / hw0, S.pr), 1 / S.pr);
+    C.cyl(0.04, 0.045, 0.2, M.chrome, ex + 0.03, ey, ez, [0, 0, PI / 2], 12);
+  }
+}
+// Höchste Stelle eines Umrisses an der Stelle x
+function edgeTop(pts, x) {
+  let best = -Infinity;
+  for (let i = 0; i < pts.length; i++) {
+    const [ax, ay] = pts[i], [bx, by] = pts[(i + 1) % pts.length];
+    if ((ax - x) * (bx - x) > 0 || ax === bx) continue;
+    best = Math.max(best, ay + (by - ay) * (x - ax) / (bx - ax));
+  }
+  return best;
+}
+
 // Karosserie nach Seitenprofil (Limousine, Kombi, Sportwagen, Kastenwagen, Bus …) mit runden Kanten,
 // Kühlergrill, Stossstangen, Nummernschildern, Spiegeln, Auspuff; Türfugen und Radkästen kommen am Schluss (sideDetails)
 function profileBody(C, name, opts = {}) {
+  if (REAL[name] && !opts.classic) return realBody(C, name, opts);
   const P = PROFILE[name], { X, L, H, W, M } = C;
   const pts = roundPoly(P.body.map(([x, y]) => [X(x), y * H]), P.tall ? 0.22 : 0.16);
   C.bodyMesh = C.ext(pts, W - 0.28, C.paint);
@@ -324,7 +615,7 @@ function sideDetails(C) {
     const shade = g.createLinearGradient(0, 0, 0, ch); // unten etwas dunkler (wie echtes Licht von oben)
     shade.addColorStop(0, 'rgba(255,255,255,0.06)'); shade.addColorStop(0.5, 'rgba(0,0,0,0)'); shade.addColorStop(1, 'rgba(0,0,0,0.22)');
     g.fillStyle = shade; g.fillRect(0, 0, cw, ch);
-    for (const [x, r] of C.axles) { // Radkästen mit Kante
+    if (!side.real) for (const [x, r] of C.axles) { // Radkästen mit Kante (echte Karosserien haben richtige)
       g.fillStyle = 'rgba(0,0,0,0.35)'; g.beginPath(); g.arc(px(x), py(r), (r + 0.2) * sc, 0, PI * 2); g.fill();
       g.fillStyle = 'rgba(10,10,12,0.96)'; g.beginPath(); g.arc(px(x), py(r), (r + 0.15) * sc, 0, PI * 2); g.fill();
     }
@@ -352,7 +643,7 @@ const BUILD = {
   kompakt: C => profileBody(C, 'compact'),
   kombi: C => {
     profileBody(C, 'kombi');
-    for (const s of [-1, 1]) C.box(C.L * 0.6, 0.06, 0.06, C.M.dark, C.X(0.36), C.roofY + 0.06, s * C.W * 0.34); // Dachreling
+    for (const s of [-1, 1]) C.box(C.L * 0.5, 0.05, 0.05, C.M.dark, C.X(0.32), C.roofY + 0.01, s * C.W * 0.3); // Dachreling
   },
   limo: C => {
     profileBody(C, 'sedan', { tinted: true, wheels: [0.12, 0.88] });
@@ -384,16 +675,16 @@ const BUILD = {
   },
   cabrio: C => {
     profileBody(C, 'sedan', { noCabin: true });
-    const { X, H, M } = C;
-    const ws = C.box(0.06, 0.38, C.W * 0.8, M.glass, X(0.66), H * 0.62 + 0.18, 0); // Windschutzscheibe
-    ws.rotation.z = -0.5;
-    for (const z of [-0.42, 0.42]) C.box(0.5, 0.5, 0.55, mat(0x2b2b30), X(0.38), H * 0.62, z); // Sitze
-    C.sph(0.2, M.skin, X(0.45), H * 0.62 + 0.45, -0.42); // Fahrer mit Sonnenbrille
-    C.sph(0.21, mat(0x5a3a1e), X(0.44), H * 0.62 + 0.52, -0.42, [1, 0.7, 1]);
-    C.box(0.06, 0.07, 0.34, M.dark, X(0.45) + 0.18, H * 0.62 + 0.47, -0.42);
+    const { X, M } = C, belt = C.topAt(0.5);
+    const ws = C.box(0.05, 0.42, C.W * 0.78, M.glass, X(0.7), C.topAt(0.7) + 0.16, 0); // Windschutzscheibe
+    ws.rotation.z = -0.9;
+    for (const z of [-0.42, 0.42]) C.box(0.5, 0.5, 0.55, mat(0x2b2b30), X(0.4), belt - 0.05, z); // Sitze
+    C.sph(0.2, M.skin, X(0.47), belt + 0.4, -0.42); // Fahrer mit Sonnenbrille
+    C.sph(0.21, mat(0x5a3a1e), X(0.46), belt + 0.47, -0.42, [1, 0.7, 1]);
+    C.box(0.06, 0.07, 0.34, M.dark, X(0.47) + 0.18, belt + 0.42, -0.42);
   },
   oldtimer: C => {
-    profileBody(C, 'sedan', { wheels: [0.2, 0.8] });
+    profileBody(C, 'sedan', { wheels: [0.2, 0.8], classic: true }); // Oldtimer: alte Form mit runden Kotflügeln
     const { X, r, M, W } = C;
     for (const x of [X(0.2), X(0.8)]) for (const s of [-1, 1]) { // runde Kotflügel
       const f = C.cyl(r + 0.16, r + 0.16, 0.42, C.paint, x, r, s * (W / 2 - 0.12), [PI / 2, 0, 0], 24);
@@ -406,10 +697,8 @@ const BUILD = {
   },
   muscle: C => {
     profileBody(C, 'sport');
-    const top = new THREE.Mesh(new THREE.PlaneGeometry(C.L * 0.98, 0.5), mat(0xf4f4f4)); // Rennstreifen
-    top.rotation.x = -PI / 2;
-    C.add(top, 0, C.H * 0.575, 0);
-    C.box(0.5, 0.14, 0.45, C.M.dark, C.X(0.82), C.H * 0.52, 0); // Lufthutze
+    C.decal(C.L * 0.96, 0.12, 0, C.topAt(0.5) - 0.2, band('#f4f4f4')); // Rennstreifen
+    C.box(0.6, 0.14, 0.5, C.M.dark, C.X(0.82), C.topAt(0.82) + 0.03, 0); // Lufthutze
   },
   sports: C => {
     profileBody(C, 'sport');
@@ -432,9 +721,9 @@ const BUILD = {
     profileBody(C, 'sport', { tinted: true });
     const { X, H, L } = C;
     const neon = new THREE.MeshStandardMaterial({ color: 0x67e8f9, emissive: 0x22d3ee, emissiveIntensity: 2 });
-    for (const s of [-1, 1]) {
-      C.box(L * 0.9, 0.05, 0.03, neon, 0, H * 0.38, s * (C.W / 2 + 0.02));
-      C.box(0.05, H * 0.3, 0.03, neon, X(0.08), H * 0.5, s * (C.W / 2 + 0.02));
+    for (const s of [-1, 1]) { // Leuchtröhren an der Seite (liegen auf der gewölbten Karosserie)
+      C.box(L * 0.5, 0.05, 0.03, neon, X(0.5), H * 0.38, s * (C.surfZ(X(0.5), H * 0.38) + 0.02));
+      C.box(0.05, H * 0.2, 0.03, neon, X(0.22), H * 0.45, s * (C.surfZ(X(0.22), H * 0.45) + 0.02));
     }
     for (const y of [0.42, 0.52]) C.cyl(0.08, 0.08, 0.4, C.M.chrome, X(0) - 0.15, H * y, 0, [0, 0, PI / 2]); // Rohre hinten
   },
@@ -507,7 +796,7 @@ const BUILD = {
     amber.userData.blink = 1;
   },
   dumper: C => {
-    profileBody(C, 'pickup', { wheels: [0.16, 0.85] });
+    profileBody(C, 'pickup', { wheels: [0.16, 0.85], classic: true });
     const { X, H, L, M } = C;
     C.wheelPair(X(0.38));
     C.box(L * 0.5, H * 0.38, 0.08, C.paint, X(0.26), H * 0.75, C.W / 2 - 0.06); // Mulde
@@ -525,7 +814,7 @@ const BUILD = {
     amber.userData.blink = 1;
   },
   cement: C => {
-    profileBody(C, 'pickup', { wheels: [0.16, 0.85] });
+    profileBody(C, 'pickup', { wheels: [0.16, 0.85], classic: true });
     const { X, H, L, M } = C;
     C.wheelPair(X(0.38));
     const tex = new THREE.CanvasTexture((() => { const c = document.createElement('canvas'); c.width = 128; c.height = 64; stripes([C.v.special ? '#ffd34d' : C.v.color, '#f4f4f4'], true)(c.getContext('2d'), 128, 64); return c; })());
@@ -535,7 +824,7 @@ const BUILD = {
     drum.userData.roll = true; // dreht sich
   },
   crane: C => {
-    profileBody(C, 'pickup', { wheels: [0.12, 0.88] });
+    profileBody(C, 'pickup', { wheels: [0.12, 0.88], classic: true });
     const { X, H, L, M } = C;
     C.wheelPair(X(0.3)); C.wheelPair(X(0.7));
     C.cyl(0.55, 0.6, 0.35, C.paint, X(0.25), H * 0.64, 0); // Drehteller
@@ -1124,11 +1413,10 @@ const numberDisc = n => (g, w, h) => { g.fillStyle = '#fff'; g.beginPath(); g.ar
 Object.assign(BUILD, {
   hatch: C => {
     profileBody(C, 'hatch');
-    C.box(0.03, 0.04, 0.5, C.M.dark, C.X(0.07) - 0.06, C.H * 0.8, 0); // Heckwischer
   },
   coupe: C => {
     profileBody(C, 'coupe');
-    C.box(0.3, 0.04, C.W * 0.8, C.paint, C.X(0.03), C.H * 0.57, 0); // Abrisskante
+    C.box(0.3, 0.04, C.W * 0.7, C.paint, C.X(0.04), C.topAt(0.04) + 0.02, 0); // Abrisskante
   },
   schoolbus: C => {
     profileBody(C, 'bus');
@@ -1157,10 +1445,9 @@ Object.assign(BUILD, {
   },
   ecar: C => {
     profileBody(C, 'coupe', { noGrille: true, noExhaust: true, tinted: true, spokes: 10 });
-    const { X, H, L, W } = C;
+    const { X, H, L } = C;
     C.decal(L * 0.88, 0.05, 0, H * 0.3, band('#38bdf8'));
     C.decal(0.3, 0.3, X(0.12), H * 0.42, text('⚡', '#0ea5e9'), 0.004);
-    C.box(0.04, 0.04, W * 0.75, new THREE.MeshStandardMaterial({ color: 0xffffff, emissive: 0xe0f2fe, emissiveIntensity: 1.5 }), L / 2 - 0.02, H * 0.47, 0); // Lichtband
   },
   quad: C => {
     C.W = 1.3;
@@ -1190,13 +1477,13 @@ Object.assign(BUILD, {
   },
   roadster: C => {
     profileBody(C, 'coupe', { noCabin: true });
-    const { X, H, M, W } = C;
-    const ws = C.box(0.05, 0.32, W * 0.8, M.glass, X(0.62), H * 0.56 + 0.13, 0);
-    ws.rotation.z = -0.65;
-    for (const z of [-0.4, 0.4]) C.box(0.45, 0.42, 0.5, mat(0x6b2d14, { roughness: 0.6 }), X(0.4), H * 0.56, z); // Ledersitze
-    for (const z of [-0.4, 0.4]) C.sph(0.2, C.paint, X(0.3), H * 0.56 + 0.1, z, [1.2, 1, 1], 'top'); // Höcker hinter den Sitzen
-    C.sph(0.18, M.skin, X(0.43), H * 0.56 + 0.42, -0.4);
-    C.sph(0.19, mat(0x3b2a1a), X(0.42), H * 0.56 + 0.47, -0.4, [1, 0.6, 1]);
+    const { X, M, W } = C, belt = C.topAt(0.45);
+    const ws = C.box(0.05, 0.36, W * 0.78, M.glass, X(0.66), C.topAt(0.66) + 0.14, 0);
+    ws.rotation.z = -0.9;
+    for (const z of [-0.4, 0.4]) C.box(0.45, 0.42, 0.5, mat(0x6b2d14, { roughness: 0.6 }), X(0.42), belt - 0.05, z); // Ledersitze
+    for (const z of [-0.4, 0.4]) C.sph(0.2, C.paint, X(0.3), C.topAt(0.3) - 0.02, z, [1.2, 1, 1], 'top'); // Höcker hinter den Sitzen
+    C.sph(0.18, M.skin, X(0.45), belt + 0.37, -0.4);
+    C.sph(0.19, mat(0x3b2a1a), X(0.44), belt + 0.42, -0.4, [1, 0.6, 1]);
   },
   rally: C => {
     profileBody(C, 'hatch', { spokes: 6, rim: mat(0xf4f4f4, { metalness: 0.3, roughness: 0.4 }) });
@@ -1285,7 +1572,7 @@ Object.assign(BUILD, {
     }, 0.004);
   },
   tanker: C => {
-    profileBody(C, 'pickup', { wheels: [0.12, 0.86] });
+    profileBody(C, 'pickup', { wheels: [0.12, 0.86], classic: true });
     const { X, H, L, M } = C;
     C.wheelPair(X(0.3));
     const steel = mat(0xe8ecf1, { metalness: 0.8, roughness: 0.28 });
@@ -1752,7 +2039,7 @@ Object.assign(BUILD, {
     }
   },
   racetruck: C => {
-    profileBody(C, 'pickup');
+    profileBody(C, 'pickup', { classic: true }); // Sattelschlepper: kantig wie ein Lastwagen
     const { X, H, L, W, M } = C, deck = H * 0.56;
     C.cyl(0.5, 0.5, 0.08, M.dark, X(0.25), deck + 0.04, 0, [0, 0, 0], 24); // Sattelplatte
     C.ext([[X(0.5), C.roofY - 0.05], [X(0.53), C.roofY + 0.6], [X(0.72), C.roofY - 0.05]], W - 0.5, C.paint, 0.06); // Windabweiser
