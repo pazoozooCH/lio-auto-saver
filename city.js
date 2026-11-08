@@ -22,7 +22,7 @@ const CYCLE = 22;               // Ampelzyklus in Sekunden
 const TRAFFIC = 46;             // so viele Autos fahren herum
 const SEE = 140;                // weiter weg werden Autos nicht gezeichnet
 const DIRS = [[1, 0], [0, 1], [-1, 0], [0, -1]]; // +x, +z, −x, −z
-const SPECIAL = { '2,5': 'gas', '5,2': 'wash', '5,5': 'pizza', '2,2': 'jail', '6,3': 'workshop' }; // Blöcke mit Tankstelle, Waschanlage, Pizzeria, Gefängnis, Werkstatt
+const SPECIAL = { '2,5': 'gas', '5,2': 'wash', '5,5': 'pizza', '2,2': 'jail', '6,3': 'workshop', '1,3': 'dealer' }; // Blöcke mit Tankstelle, Waschanlage, Pizzeria, Gefängnis, Werkstatt, Autohändler
 // Basen: sechs Blöcke nebeneinander am oberen Stadtrand, Platz s im Block (s + 1, 0); Einfahrt von der Strasse, an der man startet
 const BASES = 6, BASE_CARS = 10, BASE_COLORS = ['#ef4444', '#3b82f6', '#22c55e', '#f59e0b', '#a855f7', '#ec4899'];
 const baseOf = key => { const [i, j] = key.split(',').map(Number); return j === 0 && i >= 1 && i <= BASES ? i - 1 : -1; };
@@ -339,6 +339,23 @@ function buildWorld() {
     for (let k = 0; k < 8; k++) bays.push({ x: cx - 13.2 + 1.65 + k * 3.3, z: bz, h: Math.PI / 2 }); // vorwärts hinein: Schnauze nach +z
     places.lot = { bays };
   }
+  function buildDealer(cx, cz) { // Autohändler: Glas-Ausstellungsraum, davor drei Drehteller mit Gebrauchtwagen
+    box(46, 0.04, 46, tarmac, cx, 0.18, cz);
+    const glass = mat({ color: 0x9cc7e6, metalness: 0.3, roughness: 0.05, transparent: true, opacity: 0.45 }), frame = mat({ color: 0x1f2937 });
+    box(30, 6, 12, glass, cx, 3.18, cz + 14, true);
+    box(30.4, 0.5, 12.4, frame, cx, 6.4, cz + 14);
+    for (const dx of [-15, -5, 5, 15]) box(0.3, 6, 0.3, frame, cx + dx, 3.18, cz + 8);
+    for (const side of [0, 1]) {
+      const s1 = sign('🚗 AUTOHÄNDLER', '#f59e0b', '#1f2937', 14, 2.2); s1.position.set(cx, 7.9, cz + 7.9 - side * 0.05); s1.rotation.y = side * Math.PI; decor.add(s1);
+    }
+    const pods = [-10, 0, 10].map(dx => { // Drehteller (drehen sich mit dem Auto darauf)
+      const t = new THREE.Mesh(new THREE.CylinderGeometry(3.2, 3.4, 0.3, 32), mat({ color: 0xd1d5db, metalness: 0.6, roughness: 0.3 }));
+      t.position.set(cx + dx, 0.33, cz + 1); scene.add(t);
+      round.push({ x: cx + dx, z: cz + 1, r: 2.6, h: 1.5 });
+      return t;
+    });
+    places.dealer = { x: cx, z: cz - 12, w: 14, d: 10, pods };
+  }
   // Base: ummauerter Parkplatz mit Einfahrt und Torbogen, je fünf Parkfelder links und rechts der Fahrgasse.
   // Die Autos und das Schild kommen erst beim Spielen dazu (stepBases); bay.solid ist weit weg, solange das Feld leer ist.
   // Eine Base steht nur, wenn sie jemandem gehört (setBaseOn), sonst ist hier eine Wiese
@@ -403,7 +420,7 @@ function buildWorld() {
     const key = bi + ',' + bj;
     if (key === plaza) { buildPlaza(decor, cx, cz, round); continue; }
     if (baseOf(key) >= 0) { buildBase(cx, cz, baseOf(key)); continue; }
-    if (SPECIAL[key]) { ({ gas: buildGas, wash: buildWash, pizza: buildPizza, jail: buildJail, workshop: buildWorkshop })[SPECIAL[key]](cx, cz); continue; }
+    if (SPECIAL[key]) { ({ gas: buildGas, wash: buildWash, pizza: buildPizza, jail: buildJail, workshop: buildWorkshop, dealer: buildDealer })[SPECIAL[key]](cx, cz); continue; }
     if (parks.has(key)) { // Park: Wiese mit Wegkreuz und Bäumen
       const g = quads(1 / 4), h = inner / 2, p = 1.6;
       g.add(cx - h, cz - h, cx - p, cz - p, 0.17); g.add(cx + p, cz - h, cx + h, cz - p, 0.17);
@@ -1420,6 +1437,76 @@ function stepTag(dt) {
   }
 }
 
+// ---------- Autohändler ----------
+// Vor dem Ausstellungsraum anhalten: Gebrauchtwagen kaufen (die drei auf den Drehtellern) oder das eigene Auto verkaufen.
+// Gekauft wird mit den Münzen aus dem Spiel (dealer von game.js); das neue Auto fährt man gleich weg.
+function setupDealer() {
+  const D = S.places.dealer;
+  for (const p of D.pods) p.clear();
+  city.offers = city.dealer ? city.dealer.offers() : [];
+  city.offers.forEach((o, k) => {
+    const m = buildCar({ ...o.v, kind: city.kinds[o.v.kind] ? o.v.kind : 'car' }, city.kinds);
+    m.position.y = 0.15; D.pods[k].add(m); o.mesh = m;
+  });
+}
+function stepDealer(dt) {
+  const D = S.places.dealer, me = city.me;
+  for (const p of D.pods) p.rotation.y += dt * 0.4;
+  const here = inZone(D, me.pos.x, me.pos.z) && Math.abs(me.speed) < 1.5 && me.alt < 2 && !city.walk;
+  if (here && !city.dealOpen && city.dealT === 0) {
+    if (!city.dealer) { showMsg('🚗 Online ist der Autohändler geschlossen', 1.8); city.dealT = 1; return; }
+    city.dealOpen = true; city.dealT = 1; drawDealer();
+  }
+  if (!inZone(D, me.pos.x, me.pos.z, 4)) { city.dealT = 0; if (city.dealOpen) closeDealer(); }
+}
+function closeDealer() { city.dealOpen = false; S.ui.dealpanel.hidden = true; }
+function drawDealer() {
+  const p = S.ui.dealpanel, K = city.kinds, D = city.dealer, coins = D.coins();
+  p.textContent = '';
+  const h = document.createElement('h3'); h.textContent = '🚗 Autohändler · du hast ' + coins + ' 🪙';
+  const grid = document.createElement('div'); grid.className = 'cars';
+  city.offers.forEach((o, k) => {
+    const b = document.createElement('button'), dot = document.createElement('i'), name = document.createElement('span'), ps = document.createElement('small');
+    b.dataset.buy = k; b.disabled = !!o.sold || coins < o.price;
+    dot.style.background = o.v.color;
+    name.textContent = (K[o.v.kind] || {}).name + ' · ⚡ ' + o.v.ps;
+    ps.textContent = o.sold ? 'verkauft' : o.price + ' 🪙';
+    b.append(dot, name, ps); grid.append(b);
+  });
+  const row = document.createElement('div'); row.className = 'row';
+  const value = D.value(city.me.v.id), sell = document.createElement('button'), close = document.createElement('button');
+  sell.dataset.act = 'sell'; sell.disabled = !value;
+  sell.textContent = value ? '💰 ' + ((K[city.me.v.kind] || {}).name || '') + ' verkaufen: +' + value + ' 🪙' : '💰 Dieses Auto kann man nicht verkaufen';
+  close.dataset.act = 'close'; close.textContent = '✕ Schliessen';
+  row.append(sell, close);
+  p.append(h, grid, row);
+  p.hidden = false;
+}
+function onDealerClick(e) {
+  const b = e.target.closest('button');
+  if (!b || b.disabled || !city || !city.dealer) return;
+  if (b.dataset.act === 'close') { closeDealer(); return; }
+  const D = S.places.dealer, out = () => { Object.assign(city.me.pos, { x: D.x, z: D.z - 3 }); city.me.heading = -Math.PI / 2; };
+  if (b.dataset.act === 'sell') {
+    const old = city.me.v, res = city.dealer.sell(old.id);
+    if (typeof res === 'string') { showMsg(res, 2.2); return; }
+    loadBase();
+    const next = city.base[0] || city.garage.all()[0];
+    closeDealer();
+    if (next) { switchCar(next); out(); }
+    showMsg('💰 ' + ((city.kinds[old.kind] || {}).name || '') + ' verkauft: +' + res + ' 🪙', 2.4);
+    return;
+  }
+  const o = city.offers[+b.dataset.buy];
+  if (!o || o.sold || !city.dealer.buy(o)) return;
+  o.sold = true;
+  if (o.mesh) o.mesh.parent.remove(o.mesh);
+  closeDealer();
+  switchCar(o.v); out();
+  showMsg('🔑 Gekauft! Dein neuer ' + ((city.kinds[o.v.kind] || {}).name || '') + ' gehört dir.', 2.6);
+  window.beep && window.beep(784, 0.12, 'triangle', 0.07); window.beep && window.beep(1175, 0.25, 'triangle', 0.07, 0.12);
+}
+
 // ---------- Einparken und Fahrschule ----------
 // Parkplatz vor der Werkstatt: ein paar Autos stehen schon da (fest, mit Rand). Einparken: ins gelbe Feld, gerade
 // stehen, anhalten – ohne ein Auto anzufahren. Fahrschule: vier Punkte abfahren, dabei Tempo einhalten, bei Rot
@@ -1990,6 +2077,7 @@ ${flyCss('city')}#city .basebtn { position: absolute; top: 76px; left: 12px; wid
 #city .basepanel button span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 #city .basepanel button small { margin-left: auto; flex: none; opacity: .8; }
 #city .basepanel button.sel { border-color: #facc15; background: #475569; }
+#city .basepanel button:disabled { opacity: .45; }
 #city .basepanel .row { display: flex; gap: 6px; margin-top: 8px; }
 #city .basepanel .row button { flex: 1; justify-content: center; background: #1e293b; }
 #city .chase { position: absolute; top: 76px; left: 12px; background: #b91c1c; border-radius: 12px; padding: 6px 12px;
@@ -2025,6 +2113,7 @@ function buildDom() {
     <button class="tagbtn" title="Fangis (online)" hidden>🏃</button>
     <button class="basebtn" title="Base (B)" hidden>🏠</button>
     <div class="basepanel" hidden></div>
+    <div class="basepanel dealpanel" hidden></div>
     <div class="tagbar" hidden></div>
     <div class="jobpanel" hidden><b>📋 Aufträge</b>
       <button data-job="taxi">🚕 Taxi: Fahrgast abholen und hinbringen</button>
@@ -2061,7 +2150,7 @@ function buildDom() {
   document.body.appendChild(root);
   const $ = s => root.querySelector(s);
   const ui = { root, kmh: $('.kmh'), ps: $('.ps'), msg: $('.msg'), hint: $('.hint'), minimap: $('.minimap'), ctls: [...root.querySelectorAll('.ctl')],
-    speed: $('.speed'), limit: $('.limit'), fuel: $('.fuel'), fuelIcon: $('.fuel b'), fuelBar: $('.fuel i'), dmg: $('.dmg'), dmgBar: $('.dmg i'), jail: $('.jailbar'), jailtime: $('.jailbar .jt'), bail: $('.bail'), flash: $('.flash'), flybtn: $('.flybtn'), flyctl: $('.flyctl'), basebtn: $('.basebtn'), walkbtn: $('.walkbtn'), basepanel: $('.basepanel'),
+    speed: $('.speed'), limit: $('.limit'), fuel: $('.fuel'), fuelIcon: $('.fuel b'), fuelBar: $('.fuel i'), dmg: $('.dmg'), dmgBar: $('.dmg i'), jail: $('.jailbar'), jailtime: $('.jailbar .jt'), bail: $('.bail'), flash: $('.flash'), flybtn: $('.flybtn'), flyctl: $('.flyctl'), basebtn: $('.basebtn'), walkbtn: $('.walkbtn'), basepanel: $('.basepanel'), dealpanel: $('.dealpanel'),
     chase: $('.chase'), ticket: $('.ticket'), drift: $('.drift'), clock: $('.clock'),
     tagbtn: $('.tagbtn'), tagbar: $('.tagbar'),
     jobs: $('.jobs'), jobpanel: $('.jobpanel'), goal: $('.goal'), arrow: $('.goal .arrow'), gtext: $('.goal .gtext') };
@@ -2092,6 +2181,7 @@ function buildDom() {
   $('.flybtn').addEventListener('pointerdown', e => { e.preventDefault(); toggleFly(); });
   $('.basebtn').addEventListener('pointerdown', e => { e.preventDefault(); toggleBase(); });
   ui.basepanel.addEventListener('click', onBaseClick);
+  ui.dealpanel.addEventListener('click', onDealerClick);
   // Liste mit dem Finger schieben (von Hand: im Hochformat ist alles um 90° gedreht)
   let drag = null;
   ui.basepanel.addEventListener('pointerdown', e => { drag = { x: e.clientX, y: e.clientY, top: ui.basepanel.scrollTop }; baseDragged = false; });
@@ -2172,7 +2262,7 @@ function drawMinimapBase() {
   g.fillStyle = '#4aa3ff';
   g.beginPath(); g.arc(mx(0), mx(0), 3, 0, Math.PI * 2); g.fill();
   g.font = '13px system-ui, sans-serif'; g.textAlign = 'center'; g.textBaseline = 'middle';
-  for (const [k, icon] of [['gas', '⛽'], ['wash', '🫧'], ['pizza', '🍕'], ['jail', '🔒'], ['repair', '🔧']]) { const p = S.places[k]; if (p) g.fillText(icon, mx(p.x), mx(p.z)); }
+  for (const [k, icon] of [['gas', '⛽'], ['wash', '🫧'], ['pizza', '🍕'], ['jail', '🔒'], ['repair', '🔧'], ['dealer', '🚗']]) { const p = S.places[k]; if (p) g.fillText(icon, mx(p.x), mx(p.z)); }
   g.strokeStyle = 'rgba(220,225,235,0.85)'; g.lineWidth = Math.max(2, ROAD * mapScale);
   for (let i = 0; i <= N; i++) {
     g.beginPath(); g.moveTo(mx(node(i)), mx(-HALF)); g.lineTo(mx(node(i)), mx(HALF)); g.stroke();
@@ -2224,7 +2314,7 @@ function carStats(v, mesh, kinds, topSpeed) {
   return { maxV: Math.min(55, topSpeed(v.ps)), acc: 4 + v.ps * 0.06, radius: Math.max(1.3, mesh.userData.radius * 0.8), len: mesh.userData.length };
 }
 
-export function startCity({ player, kinds, topSpeed, onExit, pay = () => 0, earn = () => {}, net = null, garage = null }) {
+export function startCity({ player, kinds, topSpeed, onExit, pay = () => 0, earn = () => {}, net = null, garage = null, dealer = null }) {
   if (!S) {
     S = buildWorld();
     S.ui = buildDom();
@@ -2239,7 +2329,7 @@ export function startCity({ player, kinds, topSpeed, onExit, pay = () => 0, earn
   // online starten alle auf einer anderen Strasse am Stadtrand
   const me = { v: player, mesh, pos: new THREE.Vector3(node(1 + (net ? net.mySlot : 0)) + 20, 0, node(0) + LANE), heading: 0, speed: 0, vl: 0, steer: 0,
     ...carStats(player, mesh, kinds, topSpeed), slip: 0, surface: 'asphalt', alt: 0, fly: false, landing: false };
-  city = { me, cars: spawnTraffic(kinds), input: {}, t: Math.random() * CYCLE, msgT: 0, crashT: 0, hornT: 0, inCross: false, tod: 0.02, turbo: 0, fuelT: 0, washT: 0, mission: null, accT: 25 + Math.random() * 30, fuel: 1, damage: 0, scratches: [], repairT: 0, wx: { kind: 'sun', t: 60 + Math.random() * 60, i: 0 }, wGrip: 1,
+  city = { me, cars: spawnTraffic(kinds), input: {}, t: Math.random() * CYCLE, msgT: 0, crashT: 0, hornT: 0, inCross: false, tod: 0.02, turbo: 0, fuelT: 0, washT: 0, mission: null, accT: 25 + Math.random() * 30, fuel: 1, damage: 0, scratches: [], repairT: 0, wx: { kind: 'sun', t: 60 + Math.random() * 60, i: 0 }, wGrip: 1, dealT: 0, dealOpen: false, dealer,
     gears: gearbox(player.kind), onExit, last: performance.now(), kinds, pay, gripBoost: (kinds[player.kind] && kinds[player.kind].grip) || 1, canFly: !!(kinds[player.kind] && kinds[player.kind].fly), fines: 0, police: null, pulled: 0, ticket: false,
     earn, net, topSpeed, garage, baseSlot: net ? net.mySlot : 0, baseT: 0, atBase: -1, baseEdit: false, netCars: net ? makeNetCars({ scene: S.scene, kinds, net }) : null, drift: 0, driftT: 0, driftBest: (() => { try { return +localStorage.getItem('autoRetterDriftBest') || 0; } catch (e) { return 0; } })() };
   S.fx.clear();
@@ -2260,6 +2350,7 @@ export function startCity({ player, kinds, topSpeed, onExit, pay = () => 0, earn
   S.ui.jail.hidden = true;
   if (jailUntil() > Date.now()) { goToJail(jailUntil()); showMsg('🔒 Du sitzt noch im Gefängnis!', 2.4); } // Zeit läuft weiter
   parkLotCars();
+  setupDealer();
   window.addEventListener('keydown', onKey);
   window.addEventListener('keyup', onKey);
   S.snd = createCarSound({ kind: player.kind });
@@ -2286,6 +2377,7 @@ function loop(now) {
   stepJail();
   stepRules(dt);
   stepDamage(dt);
+  stepDealer(dt);
   stepDrift(dt);
   stepPolice(dt);
   stepPlaces(dt);

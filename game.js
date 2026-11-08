@@ -3950,13 +3950,45 @@ function raceMenuTap(px, py) {
 }
 
 // Stadt (city.js): frei herumfahren mit dem Auto aus dem Rennen-Menü
+// Autohändler in der Stadt (city.js): drei Gebrauchtwagen (Preis = doppelter Wert, PS etwas verschieden) und das eigene Auto verkaufen
+const cityDealer = {
+  coins: () => wallet,
+  offers() {
+    const pool = Object.keys(KINDS).filter(k => ['common', 'uncommon', 'rare', 'epic'].includes(KINDS[k].tier) && !KINDS[k].secret);
+    return [0, 1, 2].map(() => { const v = makeVehicle(pick(pool)); v.ps = Math.max(10, v.ps + Math.round(rand(-8, 6))); return { v, price: vehicleValue(v) * 2 }; });
+  },
+  buy(o) {
+    if (wallet < o.price) return false;
+    wallet -= o.price;
+    fleet.push(o.v);
+    storeJSON('autoRetterCoins', wallet);
+    storeJSON('autoRetterFleet', fleet);
+    return true;
+  },
+  sell(id) { // gibt den Erlös zurück oder einen Grund, warum es nicht geht
+    const v = fleet.find(f => f.id === id);
+    if (!v) return 'Dieses Auto gehört nicht dir';
+    if (KINDS[v.kind].secret) return KINDS[v.kind].name + ' ist einmalig – das kann man nicht verkaufen! ⚡';
+    if (fleet.length <= 1) return 'Dein letztes Fahrzeug kannst du nicht verkaufen!';
+    const value = vehicleValue(v);
+    fleet = fleet.filter(f => f !== v);
+    selectedIds.delete(v.id);
+    wallet += value;
+    storeJSON('autoRetterFleet', fleet);
+    storeJSON('autoRetterCoins', wallet);
+    saveSelection();
+    return value;
+  },
+  value: id => { const v = fleet.find(f => f.id === id); return v ? vehicleValue(v) : 0; },
+};
+
 function startCityMode() {
   const v = raceVehicle();
   state = 'cityload';
   import('./city.js')
     .then(m => {
       state = 'city';
-      m.startCity({ player: { ...v, name: 'Du' }, kinds: KINDS, topSpeed: raceTopSpeed, garage: baseGarage, onExit: () => openMenu('title'),
+      m.startCity({ player: { ...v, name: 'Du' }, kinds: KINDS, topSpeed: raceTopSpeed, garage: baseGarage, dealer: cityDealer, onExit: () => openMenu('title'),
         pay: n => { const paid = Math.min(wallet, n); wallet -= paid; storeJSON('autoRetterCoins', wallet); return paid; },
         earn: n => { wallet += n; storeJSON('autoRetterCoins', wallet); } });
     })
