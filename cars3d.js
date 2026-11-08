@@ -81,6 +81,15 @@ function shared() {
   MAT.wood = new THREE.MeshStandardMaterial({ color: 0xa0703c, roughness: 0.85 });
   MAT.gold = new THREE.MeshStandardMaterial({ color: 0xffd34d, metalness: 1, roughness: 0.22 });
   MAT.white = new THREE.MeshStandardMaterial({ color: 0xf4f4f4, roughness: 0.5 });
+  MAT.glassClear = new THREE.MeshPhysicalMaterial({ color: 0x1c2a38, metalness: 0.1, roughness: 0.03, transparent: true, opacity: 0.42,
+    clearcoat: 1, clearcoatRoughness: 0.02, envMapIntensity: 2.4, depthWrite: false });
+  MAT.glassTint = new THREE.MeshPhysicalMaterial({ color: 0x0b1016, metalness: 0.4, roughness: 0.04, transparent: true, opacity: 0.86,
+    clearcoat: 1, envMapIntensity: 2.2, depthWrite: false });
+  MAT.seam = new THREE.MeshStandardMaterial({ color: 0x08090a, roughness: 0.6 });
+  MAT.seat = new THREE.MeshStandardMaterial({ color: 0x232428, roughness: 0.7 });
+  MAT.trim = new THREE.MeshStandardMaterial({ color: 0x17181b, roughness: 0.55 });
+  MAT.headliner = new THREE.MeshStandardMaterial({ color: 0x8d8f94, roughness: 0.9 });
+  MAT.tyreReal = new THREE.MeshStandardMaterial({ color: 0xffffff, map: tyreTexture(), bumpMap: tyreTexture(), bumpScale: 3, roughness: 0.9, side: THREE.DoubleSide });
   MAT.barrel = new THREE.MeshStandardMaterial({ color: 0x24262b, metalness: 0.5, roughness: 0.55, side: THREE.DoubleSide });
   MAT.disc = new THREE.MeshStandardMaterial({ color: 0x9a9fa6, metalness: 0.9, roughness: 0.38 });
   return MAT;
@@ -177,6 +186,27 @@ function wheelGeometry(r, w, spokes) {
   return g;
 }
 
+// Reifen mit Profil: drei Längsrillen und schräge Lamellen auf der Lauffläche, Flanke mit feinem Ring
+let tyreTex = null;
+function tyreTexture() {
+  if (tyreTex) return tyreTex;
+  const c = document.createElement('canvas');
+  c.width = 1024; c.height = 224;
+  const g = c.getContext('2d');
+  g.fillStyle = '#2a2b2e'; g.fillRect(0, 0, 1024, 224);
+  const t0 = 224 * (1 - 4 / 7), t1 = 224 * (1 - 3 / 7); // Lauffläche (zwischen Punkt 3 und 4 des Reifenprofils)
+  g.fillStyle = '#202123'; g.fillRect(0, t0, 1024, t1 - t0);
+  g.fillStyle = '#0b0b0c';
+  for (const f of [0.25, 0.5, 0.75]) g.fillRect(0, t0 + (t1 - t0) * f - 2, 1024, 4);
+  g.strokeStyle = '#0d0d0e'; g.lineWidth = 3;
+  for (let x = 0; x < 1024; x += 16) { g.beginPath(); g.moveTo(x, t0); g.lineTo(x + 8, t1); g.stroke(); }
+  g.fillStyle = '#36373b'; // Ring auf der Flanke
+  g.fillRect(0, 224 * (1 - 1.5 / 7) - 2, 1024, 3); g.fillRect(0, 224 * (1 - 5.5 / 7) - 2, 1024, 3);
+  tyreTex = new THREE.CanvasTexture(c);
+  tyreTex.colorSpace = THREE.SRGBColorSpace;
+  tyreTex.anisotropy = 4;
+  return tyreTex;
+}
 // Echtes Rad: flacher Reifen, Doppelspeichen-Felge mit Radmuttern; dahinter sieht man die Bremsscheibe
 const realWheelGeos = new Map();
 function realWheelGeometry(r, w) {
@@ -215,7 +245,7 @@ function realWheel(r, width, parent, x, z, rimMat, caliper) {
   const M = shared();
   const G = realWheelGeometry(r, width);
   const g = new THREE.Group();
-  const tyre = new THREE.Mesh(G.tyre, M.tyre);
+  const tyre = new THREE.Mesh(G.tyre, M.tyreReal);
   tyre.castShadow = true;
   g.add(tyre, new THREE.Mesh(G.dark, M.barrel), new THREE.Mesh(G.disc, M.disc), new THREE.Mesh(G.bright, rimMat || M.rim));
   g.position.set(x, r, z);
@@ -295,7 +325,7 @@ function kit(v, kinds, hDiv, spec) {
         for (let i = 0; i < pos.count; i++) {
           const px = pos.getX(i) + x, py = pos.getY(i) + y, sz = C.surfZ(px, py);
           if (sz > 0) pos.setXYZ(i, px, py, s * (sz + Math.max(0.006, 0.016 + zExtra)));
-          else pos.setXYZ(i, px, C.side.bottom + 0.25, 0); // ausserhalb der Karosserie: nach innen, unsichtbar
+          else pos.setXYZ(i, px, (C.side ? C.side.bottom : 0) + 0.25, 0); // ausserhalb der Karosserie: nach innen, unsichtbar
         }
         geo.computeVertexNormals();
         C.body.add(new THREE.Mesh(geo, m));
@@ -415,6 +445,55 @@ function memo(key, make) {
   return v;
 }
 
+// Innenraum (sieht man durch die Scheiben): Boden, Armaturenbrett, Lenkrad, Sitze mit Kopfstützen, Himmel, Innenspiegel
+// und ein Fahrer. Links sitzt der Fahrer (Schweiz), links = −Z.
+const SHIRTS = [0x1d4ed8, 0xdc2626, 0x16a34a, 0x334155, 0xf59e0b, 0x7c3aed, 0xf4f4f4];
+const HAIR = [0x2b1a10, 0x6b4423, 0xd9b26f, 0x111111, 0x8a3b12];
+function interior(C, { rb, rt, ft, fb, belt, ghTop, gw, seats2, rear }) {
+  const M = C.M, cl = fb - rb;
+  // Boden über dem Unterbau (sonst sähe man den Lack)
+  const f0 = (rb + rt) / 2, f1 = (ft + fb) / 2;
+  let fy = 0;
+  for (let k = 0; k <= 10; k++) fy = Math.max(fy, belt(f0 + (f1 - f0) * k / 10));
+  C.box(f1 - f0, 0.03, gw((f0 + f1) / 2) * 2 - 0.08, M.trim, (f0 + f1) / 2, fy + 0.01, 0);
+  // Himmel unter dem Dach
+  const h0 = rt + 0.08, h1 = ft - 0.08;
+  if (h1 > h0) C.box(h1 - h0, 0.02, gw((h0 + h1) / 2) * 1.0, M.headliner, (h0 + h1) / 2, Math.min(ghTop(h0), ghTop(h1)) - 0.08, 0);
+  // Armaturenbrett unter der Frontscheibe
+  const dx1 = fb - 0.22, dx0 = fb - 0.62, dTop = Math.min(belt(dx1) + 0.14, ghTop(dx1) - 0.03);
+  C.box(dx1 - dx0, dTop - fy, gw(dx0) * 2 - 0.1, M.trim, (dx0 + dx1) / 2, (dTop + fy) / 2, 0);
+  C.box(0.05, 0.05, 0.22, mat(0x0a1a2e, { emissive: 0x2b6cb0, emissiveIntensity: 0.7 }), dx0 + 0.02, dTop - 0.03, 0); // Bildschirm
+  // Sitze: Lehne, Kopfstütze
+  const zs = gw(fb - 1) * 0.47, xs = fb - Math.min(1.35, cl * 0.5);
+  const seat = (x, z, w) => {
+    const top = Math.min(belt(x) + 0.36, ghTop(x) - 0.2);
+    const back = C.box(0.13, top - fy + 0.05, w, M.seat, x, (top + fy) / 2, z);
+    back.rotation.z = 0.18;
+    C.box(0.1, 0.15, Math.min(w, 0.26), M.seat, x - 0.06, top + 0.1, z);
+    return top;
+  };
+  const top = seat(xs, -zs, 0.46);
+  seat(xs, zs, 0.46);
+  if (rear && !seats2) { const xr = xs - 0.85; if (xr > rb + 0.3) for (const z of [-zs, zs]) seat(xr, z, 0.44); }
+  // Lenkrad vor dem Fahrer
+  const wx = xs + 0.55, wy = Math.min(belt(wx) + 0.13, ghTop(wx) - 0.12);
+  const wheel = C.add(new THREE.Mesh(new THREE.TorusGeometry(0.17, 0.022, 8, 24), M.trim), wx, wy, -zs);
+  wheel.rotation.set(0, PI / 2, 0.45);
+  C.cyl(0.03, 0.03, 0.3, M.trim, wx + 0.12, wy - 0.06, -zs, [0, 0, PI / 2 + 0.45], 8);
+  // Fahrer: Kopf mit Haaren, Oberkörper, Arme zum Lenkrad
+  const hsh = [...C.v.kind].reduce((a, ch) => a * 31 + ch.charCodeAt(0) >>> 0, 7);
+  const shirt = mat(SHIRTS[hsh % SHIRTS.length], { roughness: 0.8 }), hy = top + 0.06;
+  C.sph(0.1, M.skin, xs + 0.12, hy, -zs, [1, 1.12, 0.95]);
+  C.sph(0.105, mat(HAIR[(hsh >> 3) % HAIR.length], { roughness: 0.9 }), xs + 0.1, hy + 0.035, -zs, [1, 0.8, 1], 'top');
+  C.add(new THREE.Mesh(new THREE.CapsuleGeometry(0.13, 0.16, 4, 10), shirt), xs + 0.08, hy - 0.3, -zs).scale.set(0.75, 1, 1.15); // Oberkörper
+  const sx = xs + 0.1, sy = hy - 0.2, len = Math.hypot(wx - 0.06 - sx, wy - sy);
+  for (const s of [-1, 1]) { // Arme zum Lenkrad
+    const arm = C.add(new THREE.Mesh(new THREE.CapsuleGeometry(0.035, len - 0.07, 3, 8), shirt), (sx + wx - 0.06) / 2, (sy + wy) / 2, -zs + s * 0.14);
+    arm.rotation.z = Math.atan2(wy - sy, wx - 0.06 - sx) - PI / 2;
+  }
+  // Innenspiegel oben an der Frontscheibe
+  C.box(0.03, 0.06, 0.22, M.trim, ft - 0.02, ghTop(ft) - 0.1, 0);
+}
 function realBody(C, name, opts = {}) {
   const S = REAL[name], { L, W, M, r, X } = C, H = Math.min(C.H, L * 0.31), hw0 = W / 2, N = 6; // nicht zu hoch: echte Autos sind etwa 3× so lang wie hoch
   const topF = smoothLine(S.top), botF = smoothLine(S.bot), frac = x => x / L + 0.5;
@@ -474,8 +553,8 @@ function realBody(C, name, opts = {}) {
       const th = (ths[j] + ths[j + 1]) / 2, d = Math.min(Math.abs(th + PI / 2), Math.abs(th - 3 * PI / 2));
       if (d < 0.95) return 1;
       if (S.clad) {
-        const st = station(xs[i]), y = rows[i][j][1];
-        if (y < st.yb + 0.24 * (st.yt - st.yb) || (st.lift > 0.02 && y < st.yb + st.lift + 0.06)) return 2;
+        const st = station(xs[i]), [, y, z] = rows[i][j];
+        if (Math.abs(z) > st.hw * 0.8 && (y < st.yb + 0.24 * (st.yt - st.yb) || (st.lift > 0.02 && y < st.yb + st.lift + 0.07))) return 2; // nur an der Seite
       }
       return 0;
     });
@@ -515,7 +594,7 @@ function realBody(C, name, opts = {}) {
       const g = gst(x), yf = (y - g.yb) / (g.yt - g.yb || 1);
       return yf < 0 || yf > 1 ? 0 : Math.pow(1 - Math.pow(yf, 4), 0.25) * (g.gwb + (g.gwt - g.gwb) * yf);
     };
-    const glass = opts.tinted ? mat(0x10161e, { metalness: 0.7, roughness: 0.05 }) : M.glass;
+    const glass = opts.tinted ? M.glassTint : M.glassClear; // durchsichtig: man sieht hinein
     const xr0 = rt + 0.05, xr1 = ft - 0.05, inX = (x, [a, b]) => x >= X(a) && x <= X(b);
     const parts = loftMeshes(memo(key + '|cabin', () => loftGeos(ghRows(), false, 3, (i, j) => {
       const x = (gx[i] + gx[i + 1]) / 2, th = (j + 0.5) / NGR * PI, e = Math.min(th, PI - th);
@@ -542,6 +621,7 @@ function realBody(C, name, opts = {}) {
       const wp = C.box(0.025, 0.02, 0.62, M.dark, fb - 0.07, wy + 0.03, z);
       wp.rotation.set(0, 0.12, -slope * 0.25);
     }
+    interior(C, { rb, rt, ft, fb, belt: x => topF(frac(x)) * H, ghTop, gw: x => gst(x).gwb, seats2: S.twoDoor && S.redCaliper, rear: !(opts.twoDoor || S.twoDoor) });
     // Haifischflossen-Antenne hinten auf dem Dach
     const ax = rt + 0.18;
     C.ext([[ax, 0], [ax + 0.18, 0], [ax + 0.03, 0.06]], 0.045, M.dark, 0.012).position.y = ghTop(ax) - 0.01;
@@ -651,6 +731,24 @@ function realBody(C, name, opts = {}) {
     for (const c of [g, gl]) { c.fillStyle = c === g ? '#8a0c12' : '#b01818'; c.fillRect(.3 * w, .2 * h, .4 * w, .05 * h); } // Lichtband
     poly(g, w, h, [[.22, .8], [.78, .8], [.8, 1], [.2, 1]]); g.fillStyle = '#121316'; g.fill(); // Diffusor
   });
+  // Fugen von Motorhaube und Kofferraum: dünne dunkle Linien knapp über der Oberfläche
+  const topY = (x, z) => {
+    const st = station(x), zf = Math.min(0.999, Math.abs(z) / (st.hw || 1)), yf = Math.pow(1 - Math.pow(zf, N), 1 / N);
+    const lo = st.yb + st.lift * smoothstep(0.42, 0.58, zf), hi = st.yt + st.bulge * smoothstep(0.45, 0.85, zf);
+    return lo + (yf + 1) / 2 * (hi - lo);
+  };
+  const seam = pts => {
+    const curve = new THREE.CatmullRomCurve3(pts.map(([x, z]) => new THREE.Vector3(x, topY(x, z) + 0.004, z)));
+    C.add(new THREE.Mesh(new THREE.TubeGeometry(curve, pts.length * 3, 0.006, 4), M.seam));
+  };
+  const lid = (x0, x1, k) => { // Deckel als Rechteck mit leicht runden Ecken (k: Anteil der halben Breite)
+    const z0 = station(x0).hw * k, z1 = station(x1).hw * k, line = (xa, za, xb, zb, n = 8) => Array.from({ length: n + 1 }, (_, i) => [xa + (xb - xa) * i / n, za + (zb - za) * i / n]);
+    for (const sg of [-1, 1]) seam(line(x0, sg * z0, x1, sg * z1));
+    seam(line(x0, -z0, x0, z0, 12));
+    seam(line(x1, -z1, x1, z1, 12));
+  };
+  lid(fb + 0.07, L / 2 * 0.9, 0.74); // Motorhaube
+  if (S.gh[0] > 0.1) lid(-L / 2 * 0.9, rb - 0.06, 0.74); // Kofferraumdeckel (nur mit Stufenheck)
   // Nummernschilder
   const own = C.v.tune && C.v.tune.plate, ph = own ? 0.17 : 0.11, pw = own ? 0.72 : 0.5;
   const py = sF.yb + (sF.yt - sF.yb) * 0.25, pyR = sR.yb + (sR.yt - sR.yb) * 0.45;
@@ -772,7 +870,7 @@ const BUILD = {
   kompakt: C => profileBody(C, 'compact'),
   kombi: C => {
     profileBody(C, 'kombi');
-    for (const s of [-1, 1]) C.box(C.L * 0.5, 0.05, 0.05, C.M.dark, C.X(0.32), C.roofY + 0.01, s * C.W * 0.3); // Dachreling
+    roofRails(C, 0.42, 0.27);
   },
   limo: C => {
     profileBody(C, 'sedan', { tinted: true, wheels: [0.12, 0.88] });
@@ -1308,11 +1406,20 @@ function liftedTruck(C, rimMat) {
   return lift;
 }
 
+// Dachreling auf Füssen (len: Anteil der Länge, z: Abstand von der Mitte als Anteil der Breite)
+function roofRails(C, len, z) {
+  const x = C.roofX, l = C.L * len, y = C.roofY - 0.02;
+  for (const s of [-1, 1]) {
+    C.box(l, 0.04, 0.045, C.M.dark, x, y + 0.04, s * C.W * z);
+    for (const f of [-0.48, 0.48]) C.box(0.08, 0.06, 0.06, C.M.dark, x + f * l, y + 0.01, s * C.W * z);
+  }
+}
+
 function jeepBody(C) {
   profileBody(C, 'suv');
-  const { X, H, M } = C;
+  const { H, M } = C;
   C.cyl(C.r * 0.95, C.r * 0.95, 0.3, M.tyre, -C.L / 2 - 0.18, H * 0.55, 0, [0, 0, PI / 2], 20); // Reserverad
-  for (const s of [-1, 1]) C.box(C.L * 0.6, 0.06, 0.06, M.dark, X(0.4), C.roofY + 0.08, s * C.W * 0.35); // Dachträger
+  roofRails(C, 0.45, 0.28);
 }
 
 function formula(C, rearR, frontR) {
@@ -2107,8 +2214,8 @@ Object.assign(BUILD, {
     Object.assign(C, { body: car, L: Lc, X: f => f * Lc - Lc / 2 });
     profileBody(C, 'kombi');
     sideDetails(C);
-    delete C.side;
-    for (const w of C.wheels.slice(nW)) w.position.x += off;
+    for (const k of ['side', 'surfZ', 'ghZ', 'caliper', 'wheelOut']) delete C[k]; // der Wohnwagen ist keine echte Karosserie
+    for (const w of [...C.wheels.slice(nW), ...C.group.getObjectsByProperty('name', 'caliper')]) w.position.x += off;
     C.axles = C.axles.map(([x, r]) => [x + off, r]);
     Object.assign(C, { body, L, X: X0, roofX: C.roofX + off });
     const { M } = C, cl = L * 0.45, cx = -L / 2 + cl / 2, y0 = 0.42, ch = 2.3, white = mat(0xf8fafc, { roughness: 0.5 });
