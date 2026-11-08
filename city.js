@@ -34,6 +34,8 @@ const node = i => (i - N / 2) * BLOCK;
 const inGrid = (i, j) => i >= 0 && i <= N && j >= 0 && j <= N;
 const hasLights = (i, j) => !((i === 0 || i === N) && (j === 0 || j === N)); // Ecken: nur Kurve, keine Ampel
 const axisOf = d => (d % 2 === 0 ? 'x' : 'z');
+// Tempolimit einer Strasse (k: Nummer der Strasse): aussen der Ring 80, durch die Mitte (Platz) 30, sonst 50 km/h
+const streetLimit = k => (k === 0 || k === N ? 80 : k === N / 2 ? 30 : 50);
 
 // Ampel je Fahrtrichtung: x fährt zuerst, dann z; dazwischen kurz alle rot
 function lightState(axis, t) {
@@ -484,13 +486,69 @@ function buildWorld() {
     }
   }
 
+
+  // Blitzer: an jeder zehnten Ampel eine Rotlicht-Kamera am Mast; an einigen Strassen ein Radarkasten fürs Tempo
+  const camBody = mat({ color: 0x8f969f, metalness: 0.4, roughness: 0.5 }), lensM = mat({ color: 0x050505, metalness: 0.9, roughness: 0.1 });
+  const redCams = new Map(), speedCams = [];
+  const camAt = (x, y, z, fx, fz) => { // Kamerakasten, schaut gegen die Fahrtrichtung (fx, fz)
+    box(fx ? 0.6 : 0.42, 0.4, fx ? 0.42 : 0.6, camBody, x, y, z);
+    const l = new THREE.Mesh(new THREE.CylinderGeometry(0.1, 0.1, 0.12, 12), lensM);
+    l.rotation.set(fz ? Math.PI / 2 : 0, 0, fx ? Math.PI / 2 : 0);
+    l.position.set(x - fx * 0.33, y + 0.05, z - fz * 0.33);
+    decor.add(l);
+    box(fx ? 0.04 : 0.24, 0.12, fx ? 0.24 : 0.04, mat({ color: 0xdddddd, emissive: 0x555555 }), x - fx * 0.31, y - 0.12, z - fz * 0.31);
+    return { x: x - fx * 0.4, y, z: z - fz * 0.4 };
+  };
+  let nLight = 0;
+  for (let i = 0; i <= N; i++) for (let j = 0; j <= N; j++) {
+    if (!hasLights(i, j)) continue;
+    for (let d = 0; d < 4; d++) {
+      const [fx, fz] = DIRS[d];
+      if (!inGrid(i - fx, j - fz) || nLight++ % 10 !== 4) continue;
+      const rx = -fz, rz = fx, x = node(i) - fx * 11 + rx * 8.4, z = node(j) - fz * 11 + rz * 8.4;
+      redCams.set(i + ',' + j + ',' + d, camAt(x - fx * 0.1, 3.0, z - fz * 0.1, fx, fz));
+    }
+  }
+  // Tempotafeln am Anfang jeder Strasse (rechts) und Radarkästen an zehn Stellen
+  const limitTex = n => {
+    const c = document.createElement('canvas'); c.width = c.height = 128;
+    const g = c.getContext('2d');
+    g.fillStyle = '#fff'; g.beginPath(); g.arc(64, 64, 62, 0, Math.PI * 2); g.fill();
+    g.strokeStyle = '#d61f1f'; g.lineWidth = 16; g.beginPath(); g.arc(64, 64, 52, 0, Math.PI * 2); g.stroke();
+    g.fillStyle = '#111'; g.font = 'bold 54px system-ui, sans-serif'; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText(n, 64, 68);
+    const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; return t;
+  };
+  const plates = Object.fromEntries([30, 50, 80].map(n => [n, mat({ map: limitTex(n), transparent: true, alphaTest: 0.5, roughness: 0.5 })]));
+  const plateGeo = new THREE.PlaneGeometry(0.9, 0.9), signPole = new THREE.CylinderGeometry(0.05, 0.05, 2.4, 6);
+  const rs = rng(77), segs = [];
+  for (let i = 0; i <= N; i++) for (let j = 0; j <= N; j++) for (const [fx, fz] of DIRS) {
+    if (!inGrid(i + fx, j + fz)) continue;
+    const rx = -fz, rz = fx, lim = streetLimit(fx ? j : i), x = node(i) + fx * 15 + rx * (ROAD / 2 + 0.9), z = node(j) + fz * 15 + rz * (ROAD / 2 + 0.9);
+    const p = new THREE.Mesh(signPole, dark); p.position.set(x, 1.2, z); decor.add(p);
+    const s = new THREE.Mesh(plateGeo, plates[lim]); s.position.set(x - fx * 0.06, 2.4, z - fz * 0.06);
+    s.rotation.y = Math.atan2(-fx, -fz); // Schild schaut den ankommenden Autos entgegen
+    decor.add(s);
+    segs.push({ i, j, fx, fz, lim });
+  }
+  while (speedCams.length < 10) {
+    const g = segs[Math.floor(rs() * segs.length)];
+    if (speedCams.some(c => c.seg === g)) continue;
+    const rx = -g.fz, rz = g.fx, x = node(g.i) + g.fx * BLOCK / 2 + rx * (ROAD / 2 + 1.2), z = node(g.j) + g.fz * BLOCK / 2 + rz * (ROAD / 2 + 1.2);
+    box(0.5, 1.6, 0.5, mat({ color: 0x5b6470, roughness: 0.6 }), x, 0.8, z, true); // Säule
+    const at = camAt(x, 1.85, z, g.fx, g.fz);
+    speedCams.push({ seg: g, ...at, fx: g.fx, fz: g.fz, limit: g.lim, cd: 0 });
+  }
+
   scene.add(decor);
   mergeStatic(decor);
   const clouds = cloudDome({ radius: 2600, coverage: 0.52, shade: '#aebccd', seed: 9 });
   clouds.layers.set(1);
   scene.add(clouds);
   warmUp(renderer, scene, camera);
-  return { renderer, scene, camera, sun, clouds, lamps, solid, round, parks, places,
+  const flash = new THREE.Mesh(new THREE.SphereGeometry(0.6, 12, 8), new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0, depthWrite: false }));
+  flash.visible = false;
+  scene.add(flash);
+  return { renderer, scene, camera, sun, clouds, lamps, solid, round, parks, places, redCams, speedCams, flash,
     night: { sky: su, hemi, envs: { ...envs, day: dayEnv }, walls: [...walls, ...homeWalls], heads: headM.material, pools, stars, headlight, fog: scene.fog } };
 }
 
@@ -753,7 +811,11 @@ function stepMe(dt) {
   const inX = inGrid(ni, nj) && Math.abs(me.pos.x - node(ni)) < ROAD / 2 && Math.abs(me.pos.z - node(nj)) < ROAD / 2;
   if (inX && !city.inCross && hasLights(ni, nj) && Math.abs(me.speed) > 5 && me.alt < 2.5) {
     const ax = Math.abs(Math.cos(me.heading)) > Math.abs(Math.sin(me.heading)) ? 'x' : 'z';
-    if (lightState(ax, city.t) === 'red' && !POLICE_KINDS.includes(me.v.kind)) { showMsg('🚦 Über Rot gefahren!', 1.6); startChase(); } // Polizei darf (im Einsatz)
+    if (lightState(ax, city.t) === 'red' && !POLICE_KINDS.includes(me.v.kind)) { // Polizei darf (im Einsatz)
+      const d = ((Math.round(me.heading / (Math.PI / 2)) % 4) + 4) % 4, cam = S.redCams.get(ni + ',' + nj + ',' + d);
+      if (cam) blitz(cam, 'red', '📸 Geblitzt! Über Rot gefahren', 'Über Rot gefahren 🚦');
+      else showMsg('🚦 Rot! Zum Glück kein Blitzer 😅', 1.6);
+    }
   }
   city.inCross = inX;
   const m = me.mesh;
@@ -1271,8 +1333,47 @@ function stepThief(M, dt) {
   for (const w of m.userData.wheels) w.rotation.z -= T.speed * dt / 0.35;
 }
 
+// ---------- Tempolimit und Blitzer ----------
+// Die Polizei merkt nur etwas, wenn ein Blitzer dich erwischt: Rotlicht-Kamera (an jeder zehnten Ampel) oder
+// Radarkasten (zu schnell: mehr als 5 km/h über dem Limit). Polizeiautos dürfen im Einsatz.
+function limitAt(x, z) {
+  const i = Math.round(x / BLOCK + N / 2), j = Math.round(z / BLOCK + N / 2);
+  const alongX = inGrid(0, j) && Math.abs(z - node(j)) < ROAD / 2, alongZ = inGrid(i, 0) && Math.abs(x - node(i)) < ROAD / 2;
+  if (alongX === alongZ) return 0; // Kreuzung oder neben der Strasse: bleibt wie vorher
+  return streetLimit(alongX ? j : i);
+}
+function stepRules(dt) {
+  const me = city.me, kmh = Math.round(Math.abs(me.speed) * 3.6);
+  const lim = limitAt(me.pos.x, me.pos.z);
+  if (lim && lim !== city.limit) { city.limit = lim; S.ui.limit.textContent = lim; }
+  S.ui.limit.hidden = !city.limit || me.alt > 2 || !!city.walk;
+  S.ui.speed.classList.toggle('over', !!city.limit && kmh > city.limit + 5 && me.alt < 2);
+  const F = S.flash; // Blitz verglüht
+  if (F.visible && (F.material.opacity -= dt * 4) <= 0) F.visible = false;
+  if (me.alt > 2.5 || city.walk || POLICE_KINDS.includes(me.v.kind)) return;
+  const hx = Math.cos(me.heading), hz = Math.sin(me.heading);
+  for (const c of S.speedCams) {
+    const dx = me.pos.x - c.x, dz = me.pos.z - c.z, along = dx * c.fx + dz * c.fz, side = Math.abs(dz * c.fx - dx * c.fz);
+    if (Math.abs(along) > 4 || side > 13 || c.cd > city.t || hx * c.fx + hz * c.fz < 0.5) continue;
+    c.cd = city.t + 3;
+    if (kmh > c.limit + 5) blitz(c, 'speed', '📸 Geblitzt! ' + kmh + ' statt ' + c.limit + ' km/h', 'Zu schnell: ' + kmh + ' statt ' + c.limit + ' km/h 📸');
+  }
+}
+function blitz(cam, kind, msg, reason) {
+  const F = S.flash;
+  F.position.set(cam.x, cam.y, cam.z);
+  F.material.opacity = 1;
+  F.visible = true;
+  S.ui.flash.classList.remove('on'); void S.ui.flash.offsetWidth; S.ui.flash.classList.add('on'); // weisser Blitz übers Bild
+  window.beep && window.beep(2200, 0.06, 'square', 0.05);
+  showMsg(msg, 2);
+  if (city.police || city.ticket) return;
+  city.reason = { kind, text: reason };
+  startChase();
+}
+
 // ---------- Polizei ----------
-// Über Rot gefahren: hinter dir taucht ein Streifenwagen auf und folgt dir über die Strassen (Weg über die
+// Geblitzt (über Rot oder zu schnell): hinter dir taucht ein Streifenwagen auf und folgt dir über die Strassen (Weg über die
 // Kreuzungen), in der Nähe direkt. Bleibt er ein paar Sekunden dicht dran, zieht er dich raus → Strafzettel.
 // Fährst du weit genug weg, gibt er auf.
 function startChase() {
@@ -1400,6 +1501,7 @@ function giveTicket() {
   city.ticket = true;
   const T = S.ui.ticket;
   T.querySelector('.amount').textContent = paid ? paid + ' 🪙' : 'Verwarnung';
+  T.querySelector('.reason').textContent = (city.reason || {}).text || 'Über Rot gefahren 🚦';
   T.querySelector('.note').textContent = paid === amount ? 'Die Münzen wurden abgezogen.'
     : paid ? 'Du hattest nur noch ' + paid + ' Münzen – Glück gehabt!' : 'Keine Münzen dabei – diesmal nur eine Verwarnung!';
   T.querySelector('.count').textContent = city.fines > 1 ? 'Schon ' + city.fines + '× erwischt!' : '';
@@ -1413,7 +1515,7 @@ function closeTicket() {
   S.ui.chase.hidden = true;
   const P = city.police;
   if (P) { P.state = 'leave'; P.t = 0; P.siren.set(0); }
-  showMsg('Gute Fahrt! Und bei Rot anhalten 😉', 2);
+  showMsg((city.reason || {}).kind === 'speed' ? 'Gute Fahrt! Und nicht zu schnell 😉' : 'Gute Fahrt! Und bei Rot anhalten 😉', 2);
 }
 function removePolice() {
   const P = city.police;
@@ -1452,6 +1554,13 @@ const CSS = `
 #city .speed { position: absolute; bottom: 14px; left: 50%; transform: translateX(-50%); text-align: center;
   background: rgba(0,0,0,.55); border-radius: 14px; padding: 6px 16px; font-weight: 800; font-size: 26px; }
 #city .speed small { display: block; font-size: 13px; font-weight: 600; opacity: .8; }
+#city .speed.over { background: rgba(185,28,28,.85); }
+#city .limit { position: absolute; bottom: 18px; left: calc(50% - 128px); width: 46px; height: 46px; border-radius: 50%; background: #fff;
+  border: 7px solid #d61f1f; color: #111; font: 900 20px system-ui, sans-serif; display: flex; align-items: center; justify-content: center; }
+#city .limit[hidden] { display: none; }
+#city .flash { position: absolute; inset: 0; background: #fff; opacity: 0; pointer-events: none; }
+#city .flash.on { animation: cityflash .45s ease-out; }
+@keyframes cityflash { from { opacity: .85; } to { opacity: 0; } }
 #city .minimap { position: absolute; top: 10px; right: 62px; background: rgba(0,0,0,.45); border-radius: 10px; }
 #city .tagbtn { position: absolute; top: 10px; left: 148px; width: 58px; height: 58px; border-radius: 50%; border: 3px solid #f87171;
   background: rgba(0,0,0,.4); font-size: 26px; }
@@ -1551,11 +1660,13 @@ function buildDom() {
     <div class="drift" hidden></div>
     <div class="ticket" hidden><div class="card">
       <h2>🚔 STRAFZETTEL</h2>
-      <p>Grund: <b>Über Rot gefahren 🚦</b></p>
+      <p>Grund: <b class="reason"></b></p>
       <p>Busse: <b class="amount"></b></p>
       <p class="note"></p><p class="count"></p>
       <button class="pay">Okay 👍</button></div></div>
     <div class="speed"><span class="kmh">0</span> km/h<small class="ps"></small></div>
+    <div class="limit" hidden></div>
+    <div class="flash"></div>
     <div class="hint">${HINT}</div>
     <button class="ctl" data-k="left" style="left:16px">◀</button>
     <button class="ctl" data-k="right" style="left:124px">▶</button>
@@ -1566,7 +1677,7 @@ function buildDom() {
   document.body.appendChild(root);
   const $ = s => root.querySelector(s);
   const ui = { root, kmh: $('.kmh'), ps: $('.ps'), msg: $('.msg'), hint: $('.hint'), minimap: $('.minimap'), ctls: [...root.querySelectorAll('.ctl')],
-    flybtn: $('.flybtn'), flyctl: $('.flyctl'), basebtn: $('.basebtn'), walkbtn: $('.walkbtn'), basepanel: $('.basepanel'),
+    speed: $('.speed'), limit: $('.limit'), flash: $('.flash'), flybtn: $('.flybtn'), flyctl: $('.flyctl'), basebtn: $('.basebtn'), walkbtn: $('.walkbtn'), basepanel: $('.basepanel'),
     chase: $('.chase'), ticket: $('.ticket'), drift: $('.drift'), clock: $('.clock'),
     tagbtn: $('.tagbtn'), tagbar: $('.tagbar'),
     jobs: $('.jobs'), jobpanel: $('.jobpanel'), goal: $('.goal'), arrow: $('.goal .arrow'), gtext: $('.goal .gtext') };
@@ -1781,6 +1892,7 @@ function loop(now) {
   stepDayNight(dt);
   if (city.pulled > 0) city.pulled -= dt;
   if (city.walk) stepWalk(dt); else stepMe(dt);
+  stepRules(dt);
   stepDrift(dt);
   stepPolice(dt);
   stepPlaces(dt);
