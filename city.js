@@ -604,7 +604,7 @@ function buildWorld() {
   const flash = new THREE.Mesh(new THREE.SphereGeometry(0.6, 12, 8), new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0, depthWrite: false }));
   flash.visible = false;
   scene.add(flash);
-  return { renderer, scene, camera, sun, clouds, lamps, solid, round, parks, places, redCams, speedCams, flash,
+  return { renderer, scene, camera, sun, clouds, lamps, solid, round, parks, places, redCams, speedCams, flash, ground: { asphalt: asphaltMat, grass: grassMat, pave: paveMat, land: land.material },
     night: { sky: su, hemi, envs: { ...envs, day: dayEnv }, walls: [...walls, ...homeWalls], heads: headM.material, pools, stars, headlight, fog: scene.fog } };
 }
 
@@ -883,7 +883,8 @@ function stepMe(dt) {
   else if (Math.abs(me.vl) < 1.2 || Math.abs(me.speed) < 5) me.driftMode = false;
   const sliding = me.driftMode;
   const total = Math.hypot(me.speed, me.vl); // Tempo in alle Richtungen (auch seitwärts)
-  const yawMax = hand || sliding ? Math.min(1.9, 30 / Math.max(total, 0.1)) : Math.min(1.6 * city.gripBoost, GRIP * city.gripBoost / Math.max(Math.abs(me.speed), 0.1));
+  const gb = city.gripBoost * (0.6 + 0.4 * city.wGrip); // Reifen-Haftung (Fahrzeug und Wetter)
+  const yawMax = hand || sliding ? Math.min(1.9, 30 / Math.max(total, 0.1)) : Math.min(1.6 * gb, GRIP * gb / Math.max(Math.abs(me.speed), 0.1));
   const turn = Math.abs(me.speed) > 0.3 ? me.steer * yawMax * dt * Math.sign(me.speed) : 0;
   me.heading += turn;
   // Die Bewegung bleibt in der alten Richtung (Trägheit): vorwärts (speed) und seitwärts (vl) neu aufteilen
@@ -891,14 +892,14 @@ function stepMe(dt) {
   me.vl = -me.speed * s + me.vl * c;
   me.speed = vf;
   // Reifen greifen: seitliches Rutschen wird abgebaut – normal schnell, im Drift mit Gas langsam, mit Handbremse kaum
-  const grip = hand ? 0.8 : sliding ? (gas ? 1.3 : 2.4) : me.surface === 'grass' ? 4 : 9;
+  const grip = (hand ? 0.8 : sliding ? (gas ? 1.3 : 2.4) : me.surface === 'grass' ? 4 : 9) * city.wGrip; // Regen und Schnee: rutschiger
   me.vl *= Math.exp(-grip * dt);
   const fx = Math.cos(me.heading), fz = Math.sin(me.heading);
   me.pos.x += (fx * me.speed - fz * me.vl) * dt;
   me.pos.z += (fz * me.speed + fx * me.vl) * dt;
   me.drifting = Math.abs(me.vl) > 2.5 && Math.abs(me.speed) > 5;
   const latA = Math.abs(me.steer) * yawMax * Math.abs(me.speed);
-  me.slip = 0.7 * Math.min(1, Math.max(0, (latA - 10.8 * city.gripBoost) / 1.2)) * Math.min(1, Math.max(0, (Math.abs(me.speed) - 16) / 8));
+  me.slip = 0.7 * Math.min(1, Math.max(0, (latA - 10.8 * gb) / 1.2)) * Math.min(1, Math.max(0, (Math.abs(me.speed) - 16) / 8));
   if (brake && me.speed > 6) me.slip = Math.max(me.slip, 0.45 + 0.55 * Math.min(1, me.speed / 40));
   if (me.drifting) me.slip = Math.max(me.slip, Math.min(1, Math.abs(me.vl) / 7));
   if (me.fly) me.slip = 0;
@@ -2158,7 +2159,7 @@ export function startCity({ player, kinds, topSpeed, onExit, pay = () => 0, earn
   // online starten alle auf einer anderen Strasse am Stadtrand
   const me = { v: player, mesh, pos: new THREE.Vector3(node(1 + (net ? net.mySlot : 0)) + 20, 0, node(0) + LANE), heading: 0, speed: 0, vl: 0, steer: 0,
     ...carStats(player, mesh, kinds, topSpeed), slip: 0, surface: 'asphalt', alt: 0, fly: false, landing: false };
-  city = { me, cars: spawnTraffic(kinds), input: {}, t: Math.random() * CYCLE, msgT: 0, crashT: 0, hornT: 0, inCross: false, tod: 0.02, turbo: 0, fuelT: 0, washT: 0, mission: null, accT: 25 + Math.random() * 30, fuel: 1, damage: 0, scratches: [], repairT: 0,
+  city = { me, cars: spawnTraffic(kinds), input: {}, t: Math.random() * CYCLE, msgT: 0, crashT: 0, hornT: 0, inCross: false, tod: 0.02, turbo: 0, fuelT: 0, washT: 0, mission: null, accT: 25 + Math.random() * 30, fuel: 1, damage: 0, scratches: [], repairT: 0, wx: { kind: 'sun', t: 60 + Math.random() * 60, i: 0 }, wGrip: 1,
     gears: gearbox(player.kind), onExit, last: performance.now(), kinds, pay, gripBoost: (kinds[player.kind] && kinds[player.kind].grip) || 1, canFly: !!(kinds[player.kind] && kinds[player.kind].fly), fines: 0, police: null, pulled: 0, ticket: false,
     earn, net, topSpeed, garage, baseSlot: net ? net.mySlot : 0, baseT: 0, atBase: -1, baseEdit: false, netCars: net ? makeNetCars({ scene: S.scene, kinds, net }) : null, drift: 0, driftT: 0, driftBest: (() => { try { return +localStorage.getItem('autoRetterDriftBest') || 0; } catch (e) { return 0; } })() };
   S.fx.clear();
@@ -2198,6 +2199,7 @@ function loop(now) {
   city.hornT -= dt;
   stepLights();
   stepDayNight(dt);
+  stepWeather(dt);
   if (city.pulled > 0) city.pulled -= dt;
   if (city.walk) stepWalk(dt); else stepMe(dt);
   stepJail();
@@ -2255,8 +2257,73 @@ function stepDayNight(dt) {
   n.headlight.target.position.set(me.pos.x + fx * 25, 0, me.pos.z + fz * 25);
   // Uhr: Mittag = höchster Sonnenstand
   const mins = Math.floor(((city.tod - 0.25 + 1) % 1) * 24 * 60 + 12 * 60) % (24 * 60);
-  const clock = (night > 0.5 ? '🌙 ' : '☀️ ') + String(Math.floor(mins / 60)).padStart(2, '0') + ':' + String(mins % 60).padStart(2, '0');
+  const clock = (city.wx.kind !== 'sun' && city.wx.i > 0.3 ? WX[city.wx.kind].icon + ' ' : night > 0.5 ? '🌙 ' : '☀️ ') + String(Math.floor(mins / 60)).padStart(2, '0') + ':' + String(mins % 60).padStart(2, '0');
   if (S.ui.clock.textContent !== clock) S.ui.clock.textContent = clock;
+}
+
+// ---------- Wetter ----------
+// Sonne, Regen oder Schnee, wechselt alle paar Minuten. Regen: nasse, glänzende Strasse, Autos rutschen mehr;
+// Schnee: alles wird weiss und noch rutschiger. Tropfen und Flocken fallen in einer Kiste rund um die Kamera.
+const WX = { sun: { icon: '☀️', grip: 1, msg: '☀️ Die Sonne kommt wieder raus' }, rain: { icon: '🌧️', grip: 0.72, msg: '🌧️ Es regnet – die Strasse ist rutschig!' },
+  snow: { icon: '❄️', grip: 0.55, msg: '❄️ Es schneit – fahr vorsichtig!' } };
+const C_GREY = new THREE.Color(0x8a96a3), C_WHITE = new THREE.Color(0xf4f7fb);
+function makeWeatherFx() {
+  const box = (n, per) => { const a = new Float32Array(n * per * 3); for (let i = 0; i < n; i++) { const x = (Math.random() - 0.5) * 70, y = Math.random() * 34, z = (Math.random() - 0.5) * 70; for (let k = 0; k < per; k++) a.set([x, y - k * 1.1, z], (i * per + k) * 3); } return a; };
+  const rg = new THREE.BufferGeometry(); rg.setAttribute('position', new THREE.BufferAttribute(box(1500, 2), 3));
+  const rain = new THREE.LineSegments(rg, new THREE.LineBasicMaterial({ color: 0xe2e9f2, transparent: true, opacity: 0, depthWrite: false }));
+  const dot = document.createElement('canvas'); dot.width = dot.height = 32;
+  const g = dot.getContext('2d'), r = g.createRadialGradient(16, 16, 1, 16, 16, 15);
+  r.addColorStop(0, 'rgba(255,255,255,1)'); r.addColorStop(1, 'rgba(255,255,255,0)'); g.fillStyle = r; g.fillRect(0, 0, 32, 32);
+  const sg = new THREE.BufferGeometry(); sg.setAttribute('position', new THREE.BufferAttribute(box(1800, 1), 3));
+  const snow = new THREE.Points(sg, new THREE.PointsMaterial({ map: new THREE.CanvasTexture(dot), size: 0.35, transparent: true, opacity: 0, depthWrite: false }));
+  for (const o of [rain, snow]) { o.frustumCulled = false; o.visible = false; S.scene.add(o); }
+  const G = S.ground;
+  return { rain, snow, base: { asphalt: G.asphalt.color.clone(), grass: G.grass.color.clone(), pave: G.pave.color.clone(), land: G.land.color.clone(), rough: G.asphalt.roughness } };
+}
+function stepWeather(dt) {
+  const W = city.wx;
+  if (!S.wxFx) S.wxFx = makeWeatherFx();
+  const F = S.wxFx;
+  if ((W.t -= dt) <= 0) { // Zeit für anderes Wetter: erst ausklingen lassen, dann wechseln
+    if (W.i > 0.01 && W.kind !== 'sun') W.i = Math.max(0, W.i - dt * 0.2);
+    else {
+      const r = Math.random(), next = r < 0.5 ? 'sun' : r < 0.82 ? 'rain' : 'snow';
+      if (next !== W.kind) showMsg(WX[next].msg, 2.6);
+      W.kind = next; W.t = 90 + Math.random() * 90;
+    }
+  } else if (W.kind !== 'sun') W.i = Math.min(1, W.i + dt * 0.15);
+  const i = W.kind === 'sun' ? 0 : W.i, rainI = W.kind === 'rain' ? i : 0, snowI = W.kind === 'snow' ? i : 0;
+  city.wGrip = 1 - (1 - WX[W.kind].grip) * i;
+  // Himmel und Licht: trüber, Nebel näher
+  S.sun.intensity *= 1 - 0.65 * i;
+  S.night.hemi.intensity *= 1 - 0.2 * i;
+  const fog = S.night.fog;
+  fog.color.lerp(snowI ? C_WHITE : C_GREY, 0.55 * i);
+  fog.near = 160 - 130 * i; fog.far = 1100 - (snowI ? 850 : 700) * i;
+  // Boden: nass glänzend oder verschneit (Schnee hellt die Texturen auf: weisses Eigenleuchten, Farbe dunkler)
+  const G = S.ground, B = F.base;
+  G.asphalt.roughness = B.rough - 0.6 * rainI;
+  G.asphalt.color.copy(B.asphalt).multiplyScalar(1 - 0.3 * rainI - 0.3 * snowI);
+  for (const [m, base, k] of [[G.asphalt, null, 0.35], [G.grass, B.grass, 0.75], [G.pave, B.pave, 0.5], [G.land, B.land, 0.75]]) {
+    m.emissive.setScalar(k * snowI * (0.35 + 0.65 * S.sun.intensity / 2.4)); // nachts leuchtet der Schnee weniger
+    if (base) m.color.copy(base).lerp(C_GREY, 0.8 * snowI * k);
+  }
+  // Tropfen und Flocken fallen um die Kamera herum
+  const cam = S.camera.position;
+  for (const [o, I, speed, per] of [[F.rain, rainI, 24, 2], [F.snow, snowI, 2.4, 1]]) {
+    o.visible = I > 0.02;
+    if (!o.visible) continue;
+    o.material.opacity = (per === 2 ? 0.85 : 0.95) * I;
+    o.position.set(cam.x, cam.y - 14, cam.z);
+    const a = o.geometry.attributes.position, arr = a.array;
+    for (let k = 0; k < arr.length; k += 3 * per) {
+      let y = arr[k + 1] - speed * dt;
+      if (per === 1) arr[k] += Math.sin(city.t * 1.3 + k) * dt * 0.6; // Flocken tanzen
+      if (y < 0) y += 34;
+      for (let q = 0; q < per; q++) arr[k + q * 3 + 1] = y - q * 1.1;
+    }
+    a.needsUpdate = true;
+  }
 }
 
 function updateHud(dt) {
