@@ -8,6 +8,7 @@ import { makeNoise, rng, smoothstep, surface, terrain, cloudDome } from './world
 import { createCarSound, crash, gearbox, horn, createSiren } from './sound.js';
 import { makeNetCars } from './netcars.js';
 import { makeChat } from './chat.js';
+import { buildHighway, outskirtsDist, hwDrivable, onHighway, makeHighwayTraffic, stepHighway, hwProject, hwPoint, HW, HW_LEN } from './outskirts.js';
 import { makeEffects, camView, cockpit, COCKPIT, CAM_NAMES, FLY_HTML, FLY_KEYS, flyCss, flyHelp, flyToggle, flyStep } from './fx.js';
 
 const N = 8;                    // Blöcke pro Seite
@@ -187,7 +188,8 @@ function buildWorld() {
   // Gelände rundherum: in der Stadt flach, draussen Hügel
   const height = (x, z) => {
     const rr = Math.max(Math.abs(x), Math.abs(z));
-    return smoothstep(HALF + 90, HALF + 500, rr) * NZ.fbm(x / 260, z / 260, 4) * 190 - 0.06;
+    const flat = rr > HALF + 60 ? smoothstep(6, 80, outskirtsDist(x, z)) : 1; // unter der Autobahn eben
+    return smoothstep(HALF + 90, HALF + 500, rr) * NZ.fbm(x / 260, z / 260, 4) * 190 * flat - 0.06;
   };
   const C = h => new THREE.Color(h), gA = C(0x5e9142), gB = C(0x4a7c35), rock = C(0x857b70);
   const land = terrain({ size: 2200, segments: 110, height, detail: grassDetail, detailRepeat: 260,
@@ -496,7 +498,7 @@ function buildWorld() {
   for (let k = 0; k < 360;) {
     const a = r() * Math.PI * 2, rr = HALF + 30 + r() * 150;
     const tx = Math.cos(a) * rr * 1.1, tz = Math.sin(a) * rr * 1.1;
-    if (Math.max(Math.abs(tx), Math.abs(tz)) < HALF + ROAD / 2 + 12) continue;
+    if (Math.max(Math.abs(tx), Math.abs(tz)) < HALF + ROAD / 2 + 12 || outskirtsDist(tx, tz) < 14) continue; // nicht auf Strassen
     trees.push([tx, height(tx, tz), tz, 0.9 + r() * 0.9]);
     k++;
   }
@@ -625,6 +627,7 @@ function buildWorld() {
     speedCams.push({ seg: g, ...at, fx: g.fx, fz: g.fz, limit: g.lim, cd: 0 });
   }
 
+  buildHighway({ group: decor, asphaltMat, lineMat, sign }); // Autobahn im Süden (outskirts.js)
   scene.add(decor);
   mergeStatic(decor);
   const clouds = cloudDome({ radius: 2600, coverage: 0.52, shade: '#aebccd', seed: 9 });
@@ -975,12 +978,14 @@ function stepMe(dt) {
     me.alt = flyStep(me, input, dt, me.alt, floor, FLY_MAX);
     if (me.landing && me.alt <= 0.03) { me.fly = me.landing = false; me.alt = 0; showMsg('🛬 Gelandet', 1.2); }
   }
-  // Am Stadtrand ist Schluss
-  if (Math.abs(me.pos.x) > LIMIT || Math.abs(me.pos.z) > LIMIT) {
-    me.pos.x = Math.max(-LIMIT, Math.min(LIMIT, me.pos.x)); me.pos.z = Math.max(-LIMIT, Math.min(LIMIT, me.pos.z));
-    me.speed *= 0.5;
-    if (city.msgT <= 0) showMsg('🌲 Hier ist die Stadt zu Ende', 1.5);
-  }
+  // Am Stadtrand ist Schluss – ausser auf der Autobahn (dort halten die Leitplanken einen auf der Fahrbahn)
+  if (!allowedAt(me.pos.x, me.pos.z, me.radius)) {
+    const fast = Math.abs(me.speed) > 8;
+    me.pos.x = city.okPos.x; me.pos.z = city.okPos.z;
+    if (fast && city.crashT <= 0) { crash(Math.min(1, Math.abs(me.speed) / 30), 'car'); hurt(Math.abs(me.speed) / 40); city.crashT = 0.5; }
+    me.speed *= fast ? -0.25 : 0.3; me.vl *= 0.2;
+    if (city.msgT <= 0 && !onHighway(me.pos.x, me.pos.z)) showMsg('🌲 Hier ist die Stadt zu Ende', 1.5);
+  } else city.okPos = { x: me.pos.x, z: me.pos.z };
   // Über eine rote Ampel gefahren?
   const ni = Math.round(me.pos.x / BLOCK + N / 2), nj = Math.round(me.pos.z / BLOCK + N / 2);
   const inX = inGrid(ni, nj) && Math.abs(me.pos.x - node(ni)) < ROAD / 2 && Math.abs(me.pos.z - node(nj)) < ROAD / 2;
@@ -1003,6 +1008,25 @@ function stepMe(dt) {
   }
   animateCar(m, city.t, me.v.special, me.fly);
 }
+
+// Autobahn-Verkehr (outskirts.js): du bist dort ein Hindernis, Drängler hupen, Zusammenstösse schieben dich weg
+function stepHw(dt) {
+  const me = city.me;
+  city.hwMsgT -= dt;
+  const on = !city.walk && me.alt < 2 && onHighway(me.pos.x, me.pos.z);
+  stepHighway(city.hw, dt, city.t, { x: me.pos.x, z: me.pos.z, heading: me.heading, speed: me.speed, len: me.len, radius: me.radius, on }, S.camera.position, {
+    honk: c => horn(Math.max(0.15, 1 - Math.hypot(c.x - me.pos.x, c.z - me.pos.z) / 60), 0.4, 1.1),
+    msg: text => { if (city.hwMsgT <= 0) { showMsg(text, 1.8); city.hwMsgT = 10; } },
+    bump: c => {
+      const dx = me.pos.x - c.x, dz = me.pos.z - c.z, d = Math.hypot(dx, dz) || 1, min = (me.radius + c.radius) * 0.75;
+      me.pos.x += dx / d * (min - d); me.pos.z += dz / d * (min - d);
+      if (city.crashT <= 0) { const rel = Math.abs(me.speed - c.speed); crash(0.2 + rel / 25, 'car'); hurt(rel / 20, c.x, c.z); city.crashT = 0.6; }
+      me.speed *= 0.7;
+    },
+  });
+}
+// Wo man fahren (und gehen) darf: in der Stadt bis zum Waldrand, draussen nur auf der Autobahn
+const allowedAt = (x, z, r) => (Math.abs(x) <= LIMIT && Math.abs(z) <= LIMIT) || hwDrivable(x, z, r);
 
 // ---------- Reifenrauch und Bremsspuren ----------
 // Rauch, Spuren und Drift-Punkte nach jedem Schritt
@@ -1396,7 +1420,7 @@ function stepWalk(dt) {
   for (const o of S.round) push(o.x, o.z, R + o.r);
   for (const c of city.cars) push(c.x, c.z, R + c.mesh.userData.radius * 0.7); // Autos schieben einen weg
   push(me.pos.x, me.pos.z, R + me.radius * 0.6);
-  w.x = Math.max(-LIMIT, Math.min(LIMIT, w.x)); w.z = Math.max(-LIMIT, Math.min(LIMIT, w.z));
+  if (!allowedAt(w.x, w.z, 0.5)) { w.x = w.okX ?? w.x; w.z = w.okZ ?? w.z; } else { w.okX = w.x; w.okZ = w.z; }
   // Laufen: Beine und Arme schwingen
   animatePerson(w, dt);
   // Welches Auto ist nah genug zum Einsteigen? Das eigene oder eines in der eigenen Base
@@ -2080,9 +2104,11 @@ function limitAt(x, z) {
 }
 function stepRules(dt) {
   const me = city.me, kmh = Math.round(Math.abs(me.speed) * 3.6);
-  const lim = limitAt(me.pos.x, me.pos.z);
-  if (lim && lim !== city.limit) { city.limit = lim; S.ui.limit.textContent = lim; }
-  S.ui.limit.hidden = !city.limit || me.alt > 2 || !!city.walk;
+  const lim = limitAt(me.pos.x, me.pos.z), hw = onHighway(me.pos.x, me.pos.z) && Math.abs(me.pos.z) > HALF + ROAD / 2;
+  if (hw !== city.onHw) { city.onHw = hw; if (hw) { city.limit = 0; S.ui.limit.textContent = '∞'; } } // Autobahn: kein Tempolimit
+  if (lim && lim !== city.limit && !hw) { city.limit = lim; S.ui.limit.textContent = lim; }
+  S.ui.limit.classList.toggle('free', hw);
+  S.ui.limit.hidden = (!city.limit && !hw) || me.alt > 2 || !!city.walk;
   S.ui.speed.classList.toggle('over', !!city.limit && kmh > city.limit + 5 && me.alt < 2);
   const F = S.flash; // Blitz verglüht
   if (F.visible && (F.material.opacity -= dt * 4) <= 0) F.visible = false;
@@ -2318,7 +2344,7 @@ function removePolice() {
 }
 
 function surfaceAt(x, z) {
-  if (Math.abs(x) > HALF + ROAD / 2 || Math.abs(z) > HALF + ROAD / 2) return 'grass';
+  if (Math.abs(x) > HALF + ROAD / 2 || Math.abs(z) > HALF + ROAD / 2) return onHighway(x, z) ? 'asphalt' : 'grass';
   const bi = Math.floor(x / BLOCK + N / 2), bj = Math.floor(z / BLOCK + N / 2);
   const nx = node(Math.round(x / BLOCK + N / 2)), nz = node(Math.round(z / BLOCK + N / 2));
   if (Math.abs(x - nx) < ROAD / 2 || Math.abs(z - nz) < ROAD / 2) return 'asphalt';
@@ -2349,6 +2375,7 @@ const CSS = `
 #city .limit { position: absolute; bottom: 18px; left: calc(50% - 128px); width: 46px; height: 46px; border-radius: 50%; background: #fff;
   border: 7px solid #d61f1f; color: #111; font: 900 20px system-ui, sans-serif; display: flex; align-items: center; justify-content: center; }
 #city .limit[hidden], #city .jailbar[hidden], #city .fuel[hidden] { display: none; }
+#city .limit.free { border-color: #111; font-size: 26px; background: repeating-linear-gradient(-45deg, #fff 0 7px, #9ca3af 7px 9px); }
 #city .fuel { position: absolute; bottom: 20px; left: calc(50% + 92px); display: flex; align-items: center; gap: 5px; background: rgba(0,0,0,.55);
   border-radius: 10px; padding: 5px 8px; font-size: 18px; }
 #city .fuel span { display: block; width: 64px; height: 12px; border-radius: 6px; background: rgba(255,255,255,.2); overflow: hidden; }
@@ -2620,9 +2647,24 @@ function drawMinimapBase() {
   }
   return c;
 }
+// Draussen: Übersicht mit Stadt, Zufahrt und Autobahn
+function drawWideMap(g) {
+  const sc = (MAP - 16) / 1700, wx = x => MAP / 2 + x * sc, wz = z => MAP / 2 + (z - 297) * sc, me = city.me;
+  g.fillStyle = 'rgba(32,62,38,0.92)'; g.fillRect(0, 0, MAP, MAP);
+  g.fillStyle = '#7b8490'; g.fillRect(wx(-HALF), wz(-HALF), 2 * HALF * sc, 2 * HALF * sc);
+  g.strokeStyle = '#e5e7eb'; g.lineWidth = 3; g.beginPath();
+  for (let s = 0; s <= HW_LEN; s += 40) { const p = hwPoint(s); if (s) g.lineTo(wx(p.x), wz(p.z)); else g.moveTo(wx(p.x), wz(p.z)); }
+  g.stroke();
+  g.beginPath(); g.moveTo(wx(0), wz(HALF)); g.lineTo(wx(0), wz(HW.cz - HW.R)); g.stroke();
+  g.fillStyle = '#fde047';
+  for (const c of city.hw) g.fillRect(wx(c.x) - 1.2, wz(c.z) - 1.2, 2.5, 2.5);
+  g.fillStyle = '#ef4444'; g.strokeStyle = '#000'; g.lineWidth = 1.5;
+  g.beginPath(); g.arc(wx(me.pos.x), wz(me.pos.z), 5, 0, Math.PI * 2); g.fill(); g.stroke();
+}
 function drawMinimap() {
   const g = S.ui.minimap.getContext('2d');
   g.clearRect(0, 0, MAP, MAP);
+  if (Math.max(Math.abs(city.me.pos.x), Math.abs(city.me.pos.z)) > LIMIT) { drawWideMap(g); return; }
   g.drawImage(S.mapBase, 0, 0);
   g.fillStyle = '#ffffff';
   for (const c of city.cars) g.fillRect(mx(c.x) - 1.5, mx(c.z) - 1.5, 3, 3);
@@ -2680,7 +2722,7 @@ export function startCity({ player, kinds, topSpeed, onExit, pay = () => 0, earn
   // online starten alle auf einer anderen Strasse am Stadtrand
   const me = { v: player, mesh, pos: new THREE.Vector3(node(1 + (net ? net.mySlot : 0)) + 20, 0, node(0) + LANE), heading: 0, speed: 0, vl: 0, steer: 0,
     ...carStats(player, mesh, kinds, topSpeed), slip: 0, surface: 'asphalt', alt: 0, fly: false, landing: false };
-  city = { me, cars: spawnTraffic(kinds), input: {}, t: Math.random() * CYCLE, msgT: 0, crashT: 0, hornT: 0, inCross: false, tod: 0.02, turbo: 0, fuelT: 0, washT: 0, mission: null, accT: 25 + Math.random() * 30, fuel: 1, damage: 0, scratches: [], repairT: 0, wx: { kind: 'sun', t: 60 + Math.random() * 60, i: 0 }, wGrip: 1, dealT: 0, dealOpen: false, dealer, customers: [], custT: 4, custMsgT: 0, talk: null,
+  city = { me, cars: spawnTraffic(kinds), input: {}, t: Math.random() * CYCLE, msgT: 0, crashT: 0, hornT: 0, inCross: false, tod: 0.02, turbo: 0, fuelT: 0, washT: 0, mission: null, accT: 25 + Math.random() * 30, fuel: 1, damage: 0, scratches: [], repairT: 0, wx: { kind: 'sun', t: 60 + Math.random() * 60, i: 0 }, wGrip: 1, dealT: 0, dealOpen: false, dealer, customers: [], custT: 4, custMsgT: 0, talk: null, okPos: { x: me.pos.x, z: me.pos.z }, hw: [], hwMsgT: 0, onHw: false,
     gears: gearbox(player.kind), onExit, last: performance.now(), kinds, pay, gripBoost: (kinds[player.kind] && kinds[player.kind].grip) || 1, canFly: !!(kinds[player.kind] && kinds[player.kind].fly), fines: 0, police: null, pulled: 0, ticket: false,
     earn, net, topSpeed, garage, baseSlot: net ? net.mySlot : 0, baseT: 0, atBase: -1, baseEdit: false, netCars: net ? makeNetCars({ scene: S.scene, kinds, net }) : null, drift: 0, driftT: 0, driftBest: (() => { try { return +localStorage.getItem('autoRetterDriftBest') || 0; } catch (e) { return 0; } })() };
   S.fx.clear();
@@ -2701,6 +2743,7 @@ export function startCity({ player, kinds, topSpeed, onExit, pay = () => 0, earn
   S.ui.jail.hidden = true;
   if (jailUntil() > Date.now()) { goToJail(jailUntil()); showMsg('🔒 Du sitzt noch im Gefängnis!', 2.4); } // Zeit läuft weiter
   parkLotCars();
+  city.hw = makeHighwayTraffic(S.scene, kinds);
   setupDealer();
   window.addEventListener('keydown', onKey);
   window.addEventListener('keyup', onKey);
@@ -2738,6 +2781,7 @@ function loop(now) {
   stepMission(dt);
   stepTraffic(dt);
   stepAccidents(dt);
+  stepHw(dt);
   if (city.netCars) { // Mitspieler: zeigen, eigene Position senden, nicht durcheinander durchfahren
     const me = city.me, o = { x: me.pos.x, y: me.alt, z: me.pos.z };
     if (city.netCars.bump(o, me.radius)) {
@@ -2924,6 +2968,7 @@ function endCity() {
   if (c.walk) S.scene.remove(c.walk.mesh);
   for (const cu of c.customers || []) S.scene.remove(cu.mesh);
   if (c.truck) S.scene.remove(c.truck.mesh);
+  for (const h of c.hw || []) S.scene.remove(h.mesh);
   S.ui.talkpanel.hidden = true; S.ui.dealpanel.hidden = true; S.ui.talkbtn.hidden = true;
   S.ui.walkbtn.textContent = '🚪';
   S.ui.walkbtn.classList.remove('ready');
