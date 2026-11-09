@@ -26,7 +26,8 @@ Browser-Spiel ohne Build: `index.html` + `game.js` (Spiellogik, Menüs und 2D-Ze
   Autotransporter (`stepDelivery`), Kunden mit Wunsch und Beratung (💬/T), Spielstand `autoRetterShop` (stock, orders). Oben am Stadtrand ist Platz für sechs Basen nebeneinander (nur für echte Spieler, sonst Wiese): bis zu 10 ausgesuchte
   Autos (`baseGarage` in `game.js`, Spielstand `autoRetterBase`), dort Auto wechseln; online je Spieler eine (`rooms/<CODE>/bases`).
 - `outskirts.js`: Gebiete ausserhalb des Stadtgitters (für `city.js`): Autobahn-Oval im Süden (4,8 km, vier Spuren je Richtung) mit Tempolimit 140 (Verkehr mit
-  Lastwagen, Normalen, Dränglern, Rasern), Hafen (Westen, ab 5 goldenen Schlüsseln), Flughafen (Osten, ab 12) und
+  Lastwagen, Normalen, Dränglern, Rasern; Tunnel mit Hügel, Baustelle mit Leitkegeln, Polizei jagt Raser,
+  „Knapp vorbei“-Bonus über `hooks.nearMiss`), Hafen (Westen, ab 5 goldenen Schlüsseln), Flughafen (Osten, ab 12) und
   Passstrasse mit Höhe (Norden, ab 20; `passGround` = Bodenhöhe, `passTerrain` formt das Gelände). In der Stadt:
   Überraschungen (Feuer, Banküberfall, Notfall → Spital), 30 goldene Schlüssel (Spielstand `autoRetterKeys`).
 - `stunt.js`: 3D-Stuntpark mit eigener Physik in der Höhe (Rampen als Formen in `SHAPES`, Looping, Feuerringe, Salto/Schraube).

@@ -193,7 +193,8 @@ function buildWorld() {
     const rr = Math.max(Math.abs(x), Math.abs(z));
     if (rr <= HALF + 60) return -0.06;
     if (inPassRegion(x, z)) return passTerrain(x, z, natural(x, z), 15); // am Berg: das feinere Gelände liegt darüber
-    const gs = groundShape(x, z), f = smoothstep(6, 80, gs.d); // unter Autobahn, Hafen und Flughafen eben (Hafenbecken tiefer)
+    const gs = groundShape(x, z), f = smoothstep(24, 100, gs.d); // unter Autobahn, Hafen und Flughafen eben (Hafenbecken tiefer); breiter
+    // ebener Rand, sonst ragt das grobe Gelände (20-m-Raster) über die äusserste Spur
     return smoothstep(HALF + 90, HALF + 500, rr) * NZ.fbm(x / 260, z / 260, 4) * 190 * f + gs.y * (1 - f) - 0.06;
   };
   const C = h => new THREE.Color(h), gA = C(0x5e9142), gB = C(0x4a7c35), rock = C(0x857b70);
@@ -646,7 +647,7 @@ function buildWorld() {
     speedCams.push({ seg: g, ...at, fx: g.fx, fz: g.fz, limit: g.lim, cd: 0 });
   }
 
-  buildHighway({ group: decor, asphaltMat, lineMat, sign }); // Autobahn im Süden (outskirts.js)
+  buildHighway({ group: decor, asphaltMat, lineMat, sign, grassMat }); // Autobahn im Süden (outskirts.js)
   const areas = buildAreas({ group: decor, scene, asphaltMat, lineMat, sign }); // Hafen und Flughafen
   solid.push(...areas.solids);
   areas.pass = buildPass({ scene, group: decor, asphaltMat, lineMat, sign, natural, // Passstrasse im Norden
@@ -1072,7 +1073,18 @@ function stepMe(dt) {
 const hwMe = {}; // wird jedes Bild neu befüllt (kein neues Objekt pro Bild)
 const hwHooks = {
   honk: c => horn(Math.max(0.15, 1 - Math.hypot(c.x - city.me.pos.x, c.z - city.me.pos.z) / 60), 0.4, 1.1),
-  msg: text => { if (city.hwMsgT <= 0) { showMsg(text, 1.8); city.hwMsgT = 10; } },
+  msg: (text, now) => { if (now || city.hwMsgT <= 0) { showMsg(text, 1.8); city.hwMsgT = 10; } },
+  // knapp überholt: Kette (innert 5 s) gibt mehr; online keine Münzen
+  nearMiss: () => {
+    city.nmN = city.t - (city.nmT || -99) < 5 ? (city.nmN || 0) + 1 : 1; city.nmT = city.t;
+    const coins = city.net ? 0 : Math.min(3, Math.ceil(city.nmN / 2));
+    if (coins) city.earn(coins);
+    showMsg('😎 Knapp vorbei!' + (city.nmN > 1 ? ' ×' + city.nmN : '') + (coins ? '  +' + coins + ' 🪙' : ''), 1.2);
+  },
+  siren: v => { // Sirene der Autobahnpolizei (erst gebaut, wenn sie zum ersten Mal unterwegs ist)
+    if (v > 0 && city.hwSiren === undefined) city.hwSiren = createSiren();
+    if (city.hwSiren) city.hwSiren.set(v);
+  },
   bump: c => {
     const me = city.me, dx = me.pos.x - c.x, dz = me.pos.z - c.z, d = Math.hypot(dx, dz) || 1, min = (me.radius + c.radius) * 0.75;
     me.pos.x += dx / d * (min - d); me.pos.z += dz / d * (min - d);
@@ -3211,6 +3223,7 @@ function render(dt) {
 
 function endCity() {
   removePolice();
+  if (city.hwSiren) city.hwSiren.stop();
   endMission(false);
   S.ui.jobpanel.hidden = true;
   S.ui.ticket.hidden = true;

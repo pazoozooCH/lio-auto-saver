@@ -51,6 +51,7 @@ export function outskirtsDist(x, z) { return Math.min(Math.abs(hwProject(x, z).l
 // Darf ein Fahrzeug (Radius r) hier draussen stehen? Leitplanken aussen und in der Mitte, Zufahrt mit Leitplanken
 export function hwDrivable(x, z, r = 1) {
   const p = hwProject(x, z), gap = inGap(p.s) && p.s < 2 * HW.half;
+  if (rwBlocked(p.s, p.lat, r)) return false; // Baustelle
   if (Math.abs(p.lat) <= EDGE - r * 0.8 && (Math.abs(p.lat) >= MEDIAN + r * 0.6 || gap)) return true;
   if (gap && p.lat < 0 && p.lat > -WIDE - 3) return true; // Einfahrt von der Zufahrt her
   return x > RAMP.x0 + r * 0.6 && x < RAMP.x1 - r * 0.6 && z > RAMP.z0 && z < RAMP.z1 + 8;
@@ -86,7 +87,70 @@ function ribbon(lat0, lat1, y0, y1, mat, keep = () => true, step = 4) {
   return out;
 }
 
-export function buildHighway({ group, asphaltMat, lineMat, sign }) {
+// ---------- Spannung auf der Autobahn ----------
+// Tunnel durch einen Hügel auf der unteren Geraden, eine Baustelle auf der oberen (Richtung +s: die zwei rechten Spuren
+// gesperrt, alle müssen nach links), knapp überholen gibt Bonus (hooks.nearMiss) und ab und zu jagt die Polizei einen Raser.
+const TUNNEL = { s0: 2 * HW.half + Math.PI * HW.R + 520, len: 420, h: 7 };
+const RW = { dir: 1, s0: 140, s1: 440, lat: 8.5, taper: 60 }; // Baustelle: ab lat 8.5 nach rechts gesperrt (davor schräg)
+const SHOULDER = 16.4; // Pannenstreifen (dort hält die Polizei einen Raser an)
+const inRW = (s, lat) => lat > 0 && s > RW.s0 - RW.taper && s < RW.s1;
+const coneLat = s => s >= RW.s0 ? RW.lat : EDGE - 1 - (EDGE - 1 - RW.lat) * (s - RW.s0 + RW.taper) / RW.taper; // Linie der Leitkegel
+const rwBlocked = (s, lat, r) => inRW(s, lat) && lat > coneLat(s) - r * 0.6;
+// Muss ein Auto (Richtung +1) wegen der Baustelle schon auf die linken Spuren? (220 m vor den Kegeln bis zum Ende)
+const rwZone = c => c.dir === 1 && (((RW.s0 - RW.taper - c.s) % HW_LEN + HW_LEN) % HW_LEN < 220 || (c.s > RW.s0 - RW.taper && c.s < RW.s1));
+function buildExtras(group, sign, grassMat) {
+  const concrete = new THREE.MeshStandardMaterial({ color: 0x9ca3af, roughness: 0.9, side: THREE.DoubleSide });
+  const T0 = TUNNEL.s0, T1 = TUNNEL.s0 + TUNNEL.len, inT = s => s >= T0 && s <= T1, H = TUNNEL.h;
+  // Tunnel: Wände, Decke, Lampenreihen; darüber ein Grashügel, vorne und hinten ein Portal
+  for (const l of [-EDGE - 0.3, EDGE + 0.3]) for (const m of ribbon(l, l, 0, H, concrete, inT, 6)) group.add(m);
+  for (const m of ribbon(-EDGE - 0.3, EDGE + 0.3, H, H, concrete, inT, 6)) { m.castShadow = true; group.add(m); }
+  const lamp = new THREE.MeshBasicMaterial({ color: 0xfff6d8 });
+  for (const l of [-9, 9]) for (const m of ribbon(l + 0.3, l - 0.3, H - 0.05, H - 0.05, lamp, s => inT(s) && s % 14 < 5, 2)) group.add(m); // zeigt nach unten
+  // Grashügel als Gitter über (s, lat): rund nach allen Seiten, über der Strasse ausserhalb des Tunnels ausgeschnitten
+  const TOP = 14, smooth = (a, b, x) => { const t = Math.min(1, Math.max(0, (x - a) / (b - a))); return t * t * (3 - 2 * t); };
+  const road = (s, lat) => Math.abs(lat) < EDGE + 1.5 && (s < T0 || s > T1);
+  const hs = [], ls = [];
+  for (let q = T0 - 48; q <= T1 + 48; q += 4) hs.push(q);
+  for (let l = -72; l <= 72; l += 3) ls.push(l);
+  const pos = [], uv = [], idx = [], NL = ls.length;
+  for (const q of hs) for (const l of ls) {
+    const ds = q < T0 ? T0 - q : q > T1 ? q - T1 : 0, bump = 1 + 0.08 * Math.sin(q * 0.05) * Math.cos(l * 0.09)
+      + (ds ? 0 : 1.1 * Math.sin(Math.PI * (q - T0) / TUNNEL.len)); // in der Mitte ein richtiger Berg
+    const h = road(q, l) ? 0 : Math.max(0, TOP * bump * (1 - smooth(EDGE + 4, 72, Math.abs(l))) * (1 - smooth(0, 48, ds)) - 0.3);
+    const p = at(q, l); pos.push(p.x, h, p.z); uv.push(l / 8, q / 8);
+  }
+  for (let i = 1; i < hs.length; i++) for (let j = 0; j + 1 < NL; j++) {
+    if (road(hs[i - 1], ls[j]) || road(hs[i], ls[j]) || road(hs[i - 1], ls[j + 1]) || road(hs[i], ls[j + 1])) continue;
+    const A = (i - 1) * NL + j, B = A + 1, C = i * NL + j, D = C + 1;
+    idx.push(A, B, C, B, D, C);
+  }
+  const hg = new THREE.BufferGeometry();
+  hg.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); hg.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2)); hg.setIndex(idx); hg.computeVertexNormals();
+  const mound = new THREE.Mesh(hg, grassMat); mound.castShadow = mound.receiveShadow = true; group.add(mound);
+  for (const s of [T0, T1]) { // Portale: Betonwand von der Tunneldecke bis über den Hügel, mit dunklem Rand
+    const p = at(s, 0), w = 2 * EDGE + 4;
+    const portal = new THREE.Mesh(new THREE.BoxGeometry(1.4, TOP - H + 0.6, w), new THREE.MeshStandardMaterial({ color: 0x8b9099, roughness: 0.85 }));
+    portal.position.set(p.x, (H + TOP + 0.6) / 2, p.z); portal.rotation.y = -Math.atan2(p.tz, p.tx); portal.castShadow = true;
+    group.add(portal);
+    const band = new THREE.Mesh(new THREE.BoxGeometry(1.6, 0.8, w + 0.2), new THREE.MeshStandardMaterial({ color: 0xf59e0b, roughness: 0.7 }));
+    band.position.set(p.x, H + 0.4, p.z); band.rotation.y = portal.rotation.y; group.add(band);
+  }
+  // Baustelle: Leitkegel und Baken entlang der Sperrung, Schild davor
+  const cone = new THREE.MeshStandardMaterial({ color: 0xf97316, roughness: 0.6 }), white = new THREE.MeshStandardMaterial({ color: 0xffffff });
+  const cones = [];
+  for (let s = RW.s0 - RW.taper; s < RW.s1; s += 5) cones.push(at(s, coneLat(s) + 0.3)); // schräg hineinführen, dann geradeaus
+  const coneM = new THREE.InstancedMesh(new THREE.ConeGeometry(0.28, 0.8, 10), cone, cones.length), ringM = new THREE.InstancedMesh(new THREE.CylinderGeometry(0.2, 0.24, 0.12, 10), white, cones.length);
+  const m4 = new THREE.Matrix4();
+  cones.forEach((p, k) => { coneM.setMatrixAt(k, m4.makeTranslation(p.x, 0.43, p.z)); ringM.setMatrixAt(k, m4.makeTranslation(p.x, 0.5, p.z)); });
+  group.add(coneM, ringM);
+  for (const s of [RW.s0 - 230, RW.s0 - 110]) for (const side of [0, 1]) {
+    const p = at(s, EDGE + 1.5), sg = sign(s < RW.s0 - 200 ? '🚧 BAUSTELLE in 200 m' : '🚧 Rechte Spuren gesperrt', '#f59e0b', '#111827', 9, 1.6);
+    sg.position.set(p.x - side * 0.05 * p.tz, 4.5, p.z + side * 0.05); sg.rotation.y = -Math.PI / 2 + side * Math.PI; group.add(sg); // schaut den Autos entgegen
+  }
+}
+
+export function buildHighway({ group, asphaltMat, lineMat, sign, grassMat }) {
+  buildExtras(group, sign, grassMat);
   const concrete = new THREE.MeshStandardMaterial({ color: 0xb9bcc2, roughness: 0.9, side: THREE.DoubleSide });
   const rail = new THREE.MeshStandardMaterial({ color: 0xc9ced6, metalness: 0.7, roughness: 0.35, side: THREE.DoubleSide });
   const add = list => { for (const m of list) group.add(m); };
@@ -158,7 +222,61 @@ export function makeHighwayTraffic(scene, kinds, n = 48) {
       radius: mesh.userData.radius, gapT: { slow: 1.8, normal: 1.4, tail: 0.35, racer: 0.8 }[type], laneT: Math.random() * 2, flashT: 0, honkT: 0, x: 0, z: 0 });
     scene.add(mesh);
   }
+  if (kinds.police) { // ein Polizeiauto, das ab und zu einen Raser jagt (dir 0 = gerade nicht unterwegs)
+    const mesh = buildCar({ kind: 'police', color: kinds.police.color, special: null }, kinds);
+    mesh.visible = false; scene.add(mesh);
+    cars.push({ mesh, type: 'cop', state: 'idle', t: 25 + Math.random() * 20, dir: 0, lane: 3, lat: 0, s: 0, speed: 0, want: 60, len: mesh.userData.length,
+      radius: mesh.userData.radius, gapT: 0.5, laneT: 0, flashT: 0, honkT: 0, x: 0, z: 0, target: null });
+  }
   return cars;
+}
+const wrapDs = d => { d %= HW_LEN; if (d < -HW_LEN / 2) d += HW_LEN; if (d > HW_LEN / 2) d -= HW_LEN; return d; };
+
+// Polizei: wartet unsichtbar, taucht dann hinter dir auf und jagt einen Raser vor dir; hat sie ihn, winken beide
+// auf den Pannenstreifen und bleiben eine Weile stehen. Gibt die gewünschte Geschwindigkeit zurück (null = nicht unterwegs).
+function stepCop(c, dt, cars, P, ahead, hooks) {
+  c.t -= dt;
+  if (c.state === 'idle') {
+    if (c.t > 0 || !P) return null;
+    let best = null, bd = Infinity;
+    for (const r of cars) {
+      if (r.type !== 'racer' || r.dir !== P.dir || r.shoulder) continue;
+      const ds = wrapDs((r.s - P.s) * P.dir);
+      if (ds > 30 && ds < 400 && ds < bd) { bd = ds; best = r; }
+    }
+    if (!best) { c.t = 8; return null; }
+    Object.assign(c, { state: 'chase', target: best, dir: P.dir, s: ((P.s - P.dir * 160) % HW_LEN + HW_LEN) % HW_LEN, lane: 3, speed: 60, t: 70, shoulder: false });
+    c.lat = c.dir * LANES[3];
+    c.mesh.visible = true;
+    hooks.msg('🚨 Die Polizei jagt einen Raser!', true);
+  }
+  const R = c.target, gap = wrapDs((R.s - c.s) * c.dir) - (R.len + c.len) / 2;
+  if (c.state === 'chase') {
+    if (gap < 70) c.lane = R.lane; // nah dran: hinter den Raser
+    else if ((c.laneT -= dt) <= 0) { // sonst die Spur mit dem meisten Platz nehmen
+      c.laneT = 0.5;
+      let bl = c.lane, bg = -1;
+      for (let l = c.dir === 1 && rwZone(c) ? 2 : 0; l < LANES.length; l++) {
+        const a = ahead(c, c.dir * LANES[l], -12, 160), g = a ? a.gap : 999;
+        if (g > bg + (l === c.lane ? -5 : 5)) { bg = g; bl = l; }
+      }
+      c.lane = bl;
+    }
+    if (gap < 14 && !(c.dir === 1 && rwZone(c)) && !(c.dir === 1 && rwZone(R))) { // erwischt (nicht in der Baustelle anhalten)
+      c.state = 'stop'; c.t = 16; R.shoulder = c.shoulder = true; c.speed = Math.min(c.speed, R.speed); // nicht am Raser vorbeischiessen
+      if (P && Math.abs(wrapDs(c.s - P.s)) < 300) hooks.msg('🚓 Raser erwischt! Ab auf den Pannenstreifen.', true);
+    } else if (c.t <= 0 || gap < -20) { c.state = 'leave'; c.t = 12; } // zu schnell weg oder überholt: aufgeben
+    return Math.min(78, Math.max(R.speed + 16, gap > 40 ? 75 : R.speed + 4));
+  }
+  if (c.state === 'stop') {
+    if (c.t <= 0) { R.shoulder = c.shoulder = false; R.laneT = 0; c.state = 'leave'; c.t = 25; c.lane = 0; }
+    return Math.max(0, R.speed + (gap - 5) * 0.8);
+  }
+  // leave: fährt davon und verschwindet, sobald niemand mehr hinschaut
+  if (c.t <= 0 || !P || Math.abs(wrapDs(c.s - P.s)) > 500) {
+    c.state = 'idle'; c.dir = 0; c.t = 70 + Math.random() * 60; c.mesh.visible = false; c.target = null; return null;
+  }
+  return 42;
 }
 
 // Ein Schritt: me = { x, z, heading, speed, len, radius, on } (on: steht auf der Autobahn), hooks = { honk, msg, bump }
@@ -173,29 +291,50 @@ export function stepHighway(cars, dt, t, me, cam, hooks) {
     let best = null, bd = Infinity;
     for (const o of all) {
       if (o === c || o.dir !== c.dir || Math.abs(o.lat - lat) > 2.3) continue;
-      let ds = ((o.s - c.s) * c.dir) % HW_LEN; if (ds < -HW_LEN / 2) ds += HW_LEN; if (ds > HW_LEN / 2) ds -= HW_LEN;
+      if (o.shoulder && !c.shoulder && Math.abs(o.lat) > 15.3) continue; // steht schon auf dem Pannenstreifen
+      const ds = wrapDs((o.s - c.s) * c.dir);
       if (ds > from && ds < range && ds < bd) { bd = ds; best = o; }
     }
     return best ? { o: best, gap: bd - (c.len + best.len) / 2 } : null;
   };
+  let siren = 0;
+  const cop = cars[cars.length - 1].type === 'cop' && cars[cars.length - 1].state === 'chase' ? cars[cars.length - 1] : null;
   for (const c of cars) {
-    const lead = ahead(c, c.lat), safe = Math.max(3, c.speed * c.gapT);
-    let v = c.want;
-    if (lead && lead.gap < safe + 25) v = Math.min(v, Math.max(0, lead.o.speed + (lead.gap - safe) * 0.7));
+    let want = c.want;
+    if (c.type === 'cop') {
+      want = stepCop(c, dt, cars, P, ahead, hooks);
+      if (want === null) { c.mesh.visible = false; continue; }
+      if (P) siren = Math.max(0, 1 - Math.hypot(me.x - c.x, me.z - c.z) / 260);
+    }
+    if (c.shoulder && c.type === 'racer') want = 0; // angehalten
+    const lead = c.shoulder ? null : ahead(c, c.lat), safe = Math.max(3, c.speed * c.gapT);
+    let v = want;
+    if (lead && lead.gap < safe + 25 && !(c.type === 'cop' && lead.o === c.target)) v = Math.min(v, Math.max(0, lead.o.speed + (lead.gap - safe) * 0.7));
+    // Baustelle: wer noch rechts ist, muss hinüber und notfalls vor den Kegeln anhalten
+    const minL = rwZone(c) ? 2 : 0;
+    if (c.lane < minL) {
+      if (c.s > RW.s0 - RW.taper && c.s < RW.s1) c.lane = minL; // steckt schon drin (z.B. beim Start)
+      else v = Math.min(v, Math.sqrt(2 * 6 * Math.max(0, ((RW.s0 - RW.taper - 6 - c.s) % HW_LEN + HW_LEN) % HW_LEN)));
+      if (c.laneT > 0.3) c.laneT = 0.3;
+    }
+    if (cop && cop.dir === c.dir && c.laneT > 0.4) { const d = wrapDs((c.s - cop.s) * c.dir); if (d > 0 && d < 90) c.laneT = 0.4; } // Polizei hinten
     // Spurwechsel: überholen, wenn vorne einer bummelt; normale Autos gehen danach wieder nach rechts
-    if ((c.laneT -= dt) <= 0) {
+    if (c.type !== 'cop' && !c.shoulder && (c.laneT -= dt) <= 0) {
       c.laneT = c.type === 'racer' ? 0.6 : 1.5;
-      const free = l => l >= 0 && l < LANES.length && !ahead(c, c.dir * LANES[l], -22, 45);
-      const slowLead = lead && lead.gap < 70 && lead.o.speed < c.want - 3, top = c.type === 'slow' ? 1 : LANES.length - 1;
-      if (slowLead && c.lane < top && free(c.lane + 1)) c.lane++; // links überholen
+      const free = l => l >= minL && l < LANES.length && !ahead(c, c.dir * LANES[l], -22, 45);
+      const slowLead = lead && lead.gap < 70 && lead.o.speed < c.want - 3, top = Math.max(minL, c.type === 'slow' ? 1 : LANES.length - 1);
+      const copDs = cop && cop.dir === c.dir && Math.abs(cop.lat - c.lat) < 2.3 ? wrapDs((c.s - cop.s) * c.dir) : -1;
+      if (c.lane < minL) { if (free(c.lane + 1)) c.lane++; } // einfädeln
+      else if (copDs > 0 && copDs < 90) { if (free(c.lane - 1)) c.lane--; else if (free(c.lane + 1)) c.lane++; } // Platz machen für die Polizei
+      else if (slowLead && c.lane < top && free(c.lane + 1)) c.lane++; // links überholen
       else if (slowLead && c.type === 'racer' && free(c.lane - 1)) c.lane--; // Raser: auch rechts vorbei
       else if (!slowLead && (c.type === 'normal' || c.type === 'slow') && c.lane > 0 && free(c.lane - 1)
         && !ahead(c, c.dir * LANES[c.lane - 1], -10, 80)) c.lane--; // Rechtsfahrgebot
     }
-    const lat = c.dir * LANES[c.lane];
-    c.speed += Math.max(-9 * dt, Math.min((c.type === 'racer' ? 5 : 3) * dt, v - c.speed));
+    const lat = c.dir * (c.shoulder ? SHOULDER : LANES[c.lane]);
+    c.speed += Math.max(-9 * dt, Math.min((c.type === 'racer' || c.type === 'cop' ? 5 : 3) * dt, v - c.speed));
     c.s = ((c.s + c.dir * c.speed * dt) % HW_LEN + HW_LEN) % HW_LEN;
-    const dl = (lat - c.lat) * Math.min(1, dt * (c.type === 'racer' ? 2.2 : 1.2));
+    const dl = (lat - c.lat) * Math.min(1, dt * (c.type === 'racer' || c.type === 'cop' ? 2.2 : 1.2));
     c.lat += dl;
     // Drängler: klebt hinten dran, blinkt mit dem Licht und hupt (bei dir besonders)
     c.flashT -= dt; c.honkT -= dt;
@@ -208,7 +347,15 @@ export function stepHighway(cars, dt, t, me, cam, hooks) {
     c.x = p.x; c.z = p.z;
     if (c.type === 'racer' && P && c.dir === P.dir && c.speed > P.speed + 15 && Math.hypot(me.x - c.x, me.z - c.z) < 9) hooks.msg('💨 Achtung, ein Raser!');
     // du wirst angefahren oder fährst auf
-    if (P && Math.hypot(me.x - c.x, me.z - c.z) < (me.radius + c.radius) * 0.75) { hooks.bump(c); c.speed *= 0.5; }
+    const hit = P && Math.hypot(me.x - c.x, me.z - c.z) < (me.radius + c.radius) * 0.75;
+    if (hit) { hooks.bump(c); c.speed *= 0.5; c.nmBad = 3; }
+    // knapp überholt (auf der Nebenspur, du deutlich schneller): Bonus
+    c.nmBad = (c.nmBad || 0) - dt;
+    if (P && c.dir === P.dir) {
+      const ds = wrapDs((c.s - P.s) * c.dir), side = Math.abs(c.lat - P.lat);
+      if (c.nmDs > 0 && ds <= 0 && side > 1.4 && side < 4.4 && P.speed > 24 && P.speed > c.speed + 5 && c.nmBad <= 0 && c.type !== 'cop') hooks.nearMiss(c, side);
+      c.nmDs = ds;
+    } else c.nmDs = undefined;
     const m = c.mesh, seen = Math.hypot(c.x - cam.x, c.z - cam.z) < (me.see || 240);
     m.visible = seen;
     if (!seen) continue;
@@ -217,6 +364,7 @@ export function stepHighway(cars, dt, t, me, cam, hooks) {
     for (const w of m.userData.wheels) w.rotation.z -= c.speed * dt / 0.35;
     animateCar(m, t, null);
   }
+  hooks.siren(siren);
 }
 
 // ---------- Hafen und Flughafen ----------
@@ -511,7 +659,8 @@ export function slideInside(x, z, r, keys) {
   if (z > RAMP.z0 && z < RAMP.z1 && Math.abs(x) < RAMP.x1 + 4) return { x: Math.max(RAMP.x0 + r * 0.6 + 0.05, Math.min(RAMP.x1 - r * 0.6 - 0.05, x)), z };
   const p = hwProject(x, z);
   if (Math.abs(p.lat) < WIDE + 2) {
-    const lo = MEDIAN + r * 0.6 + 0.05, hi = EDGE - r * 0.8 - 0.05, lat = (p.lat >= 0 ? 1 : -1) * Math.min(hi, Math.max(lo, Math.abs(p.lat)));
+    const hi = inRW(p.s, p.lat) ? Math.min(EDGE - r * 0.8, coneLat(p.s) - r * 0.6) - 0.05 : EDGE - r * 0.8 - 0.05; // Baustelle: an den Kegeln entlang
+    const lo = MEDIAN + r * 0.6 + 0.05, lat = (p.lat >= 0 ? 1 : -1) * Math.min(hi, Math.max(lo, Math.abs(p.lat)));
     const q = at(p.s, lat);
     return { x: q.x, z: q.z };
   }
