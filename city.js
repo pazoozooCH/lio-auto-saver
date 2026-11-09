@@ -941,7 +941,8 @@ function stepMe(dt) {
   const sliding = me.driftMode;
   const total = Math.hypot(me.speed, me.vl); // Tempo in alle Richtungen (auch seitwärts)
   const gb = city.gripBoost * (0.6 + 0.4 * city.wGrip); // Reifen-Haftung (Fahrzeug und Wetter)
-  const yawMax = hand || sliding ? Math.min(1.9, 30 / Math.max(total, 0.1)) : Math.min(1.6 * gb, GRIP * gb / Math.max(Math.abs(me.speed), 0.1));
+  let yawMax = hand || sliding ? Math.min(1.9, 30 / Math.max(total, 0.1)) : Math.min(1.6 * gb, GRIP * gb / Math.max(Math.abs(me.speed), 0.1));
+  if (me.maxV > 60) yawMax = Math.max(yawMax, 0.85); // LIONEL X lenkt auch bei 300 noch gut
   const turn = Math.abs(me.speed) > 0.3 ? me.steer * yawMax * dt * Math.sign(me.speed) : 0;
   me.heading += turn;
   // Die Bewegung bleibt in der alten Richtung (Trägheit): vorwärts (speed) und seitwärts (vl) neu aufteilen
@@ -2891,8 +2892,8 @@ function drawMinimap() {
 // ---------- Start, Schleife, Ende ----------
 // net (nur online): Mitspieler fahren mit (netcars.js); Verkehr und Polizei rechnet jedes Gerät für sich
 // Werte, die vom Fahrzeug abhängen (beim Start und beim Wechseln in der Base)
-// Höchstens 198 km/h – ausser LIONEL X: 450 km/h (und zieht entsprechend kräftiger an)
-const LIONEL_MAX = 450 / 3.6;
+// Höchstens 198 km/h – ausser LIONEL X: 300 km/h (und zieht entsprechend kräftiger an)
+const LIONEL_MAX = 300 / 3.6;
 function carStats(v, mesh, kinds, topSpeed) {
   const lionel = v.kind === 'lionelx';
   return { maxV: lionel ? LIONEL_MAX : Math.min(55, topSpeed(v.ps)), acc: (4 + v.ps * 0.06) * (lionel ? 2 : 1),
