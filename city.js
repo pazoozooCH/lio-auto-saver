@@ -684,10 +684,29 @@ function buildPlaza(g, cx, cz, round) {
 }
 
 // ---------- Verkehr ----------
+// Alles einmal an die Grafikkarte schicken (Formen, Bilder), solange noch geladen wird – sonst ruckelt es jedes Mal,
+// wenn man zum ersten Mal in eine Gegend kommt (in der Stadtmitte fast eine Sekunde)
+function prewarm() {
+  const shown = [], culled = [];
+  S.scene.traverse(o => {
+    if (!o.visible) { shown.push(o); o.visible = true; }
+    if (o.frustumCulled) { culled.push(o); o.frustumCulled = false; }
+  });
+  const rt = new THREE.WebGLRenderTarget(64, 64);
+  S.renderer.setRenderTarget(rt);
+  S.renderer.render(S.scene, S.camera);
+  S.renderer.setRenderTarget(null);
+  rt.dispose();
+  for (const o of shown) o.visible = false;
+  for (const o of culled) o.frustumCulled = true;
+}
+// Bot-Autos werfen keinen echten Schatten (der weiche Schatten darunter reicht): spart viel Arbeit pro Bild
+const noShadow = m => m.traverse(o => { o.castShadow = false; });
 function makeCar(kinds, i, j, d, s, given = null) {
   const kind = POOL[Math.floor(Math.random() * POOL.length)];
   const v = given || { kind, color: kinds[kind].color || COLORS[Math.floor(Math.random() * COLORS.length)], special: null };
   const mesh = buildCar(v, kinds);
+  noShadow(mesh);
   return { v, mesh, i, j, d, s, speed: 6 + Math.random() * 4, cruise: 10 + Math.random() * 4, turn: null,
     len: mesh.userData.length, x: 0, z: 0, h: 0, blocked: 0, waitMe: 0, honkT: 0 };
 }
@@ -2938,7 +2957,9 @@ export function startCity({ player, kinds, topSpeed, onExit, pay = () => 0, earn
   parkLotCars();
   setupKeys();
   city.hw = makeHighwayTraffic(S.scene, kinds);
+  for (const h of city.hw) noShadow(h.mesh);
   setupDealer();
+  prewarm();
   window.addEventListener('keydown', onKey);
   window.addEventListener('keyup', onKey);
   S.snd = createCarSound({ kind: player.kind });
