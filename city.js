@@ -929,7 +929,7 @@ function stepMe(dt) {
   }
   if (gas) {
     if (me.speed < 0) me.speed = Math.min(0, me.speed + BRAKE * dt);
-    else me.speed += me.acc * boost * Math.max(0, 1 - me.speed / maxV) * dt;
+    else me.speed += me.acc * boost * Math.max(0, 1 - (me.speed / maxV) ** (me.maxV > 60 ? 3 : 1)) * dt; // LIONEL X zieht bis fast oben durch
   } else if (!brake) me.speed -= Math.sign(me.speed) * Math.min(Math.abs(me.speed), 2.5 * dt);
   if (brake) me.speed = me.speed > 0 ? Math.max(0, me.speed - BRAKE * dt) : Math.max(-8, me.speed - 6 * dt);
   if (me.speed > maxV) me.speed = Math.max(maxV, me.speed - 12 * dt);
@@ -2890,8 +2890,12 @@ function drawMinimap() {
 // ---------- Start, Schleife, Ende ----------
 // net (nur online): Mitspieler fahren mit (netcars.js); Verkehr und Polizei rechnet jedes Gerät für sich
 // Werte, die vom Fahrzeug abhängen (beim Start und beim Wechseln in der Base)
+// Höchstens 198 km/h – ausser LIONEL X: 450 km/h (und zieht entsprechend kräftiger an)
+const LIONEL_MAX = 450 / 3.6;
 function carStats(v, mesh, kinds, topSpeed) {
-  return { maxV: Math.min(55, topSpeed(v.ps)), acc: 4 + v.ps * 0.06, radius: Math.max(1.3, mesh.userData.radius * 0.8), len: mesh.userData.length };
+  const lionel = v.kind === 'lionelx';
+  return { maxV: lionel ? LIONEL_MAX : Math.min(55, topSpeed(v.ps)), acc: (4 + v.ps * 0.06) * (lionel ? 2 : 1),
+    radius: Math.max(1.3, mesh.userData.radius * 0.8), len: mesh.userData.length };
 }
 
 export function startCity({ player, kinds, topSpeed, onExit, pay = () => 0, earn = () => {}, net = null, garage = null, dealer = null }) {
