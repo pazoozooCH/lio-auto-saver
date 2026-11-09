@@ -1185,10 +1185,12 @@ function scratchTexture() {
   const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace;
   return t;
 }
+const UNBREAKABLE = ['lionelx']; // geht nie kaputt (muss nie in die Werkstatt)
 function hurt(intensity, fromX, fromZ) {
-  city.damage = Math.min(1, city.damage + Math.min(0.3, intensity * 0.28));
   if (city.mission && city.mission.type === 'school') failSchool('💥 Unfall gebaut');
   if (city.mission && city.mission.type === 'park') endMission(false, '💥 Angefahren! Einparken nicht bestanden.');
+  if (UNBREAKABLE.includes(city.me.v.kind)) return;
+  city.damage = Math.min(1, city.damage + Math.min(0.3, intensity * 0.28));
   const m = city.me.mesh;
   if (city.scratches.length >= 12 || fromX === undefined) return;
   if (!scratchMat) scratchMat = new THREE.MeshStandardMaterial({ map: scratchTexture(), transparent: true, depthWrite: false, roughness: 0.6,
