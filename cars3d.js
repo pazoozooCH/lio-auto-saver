@@ -219,16 +219,16 @@ function realWheelGeometry(r, w) {
   const inner = r * 0.72, sh = Math.min(0.07, w * 0.22);
   const prof = [[inner, -w / 2], [r - sh, -w / 2 - 0.005], [r - sh * 0.2, -w / 2 + sh * 0.4], [r, -w / 2 + sh], [r, w / 2 - sh],
     [r - sh * 0.2, w / 2 - sh * 0.4], [r - sh, w / 2 + 0.005], [inner, w / 2]].map(([x, y]) => new THREE.Vector2(x, y));
-  const tyre = new THREE.LatheGeometry(prof, 36).rotateX(PI / 2);
+  const tyre = new THREE.LatheGeometry(prof, 24).rotateX(PI / 2);
   const dark = mergeGeometries([
-    new THREE.CylinderGeometry(inner * 0.97, inner * 0.97, w * 0.9, 28, 1, true).rotateX(PI / 2), // Felgenbett
+    new THREE.CylinderGeometry(inner * 0.97, inner * 0.97, w * 0.9, 18, 1, true).rotateX(PI / 2), // Felgenbett
     new THREE.CylinderGeometry(r * 0.12, r * 0.12, w * 0.9, 12).rotateX(PI / 2), // Nabe
   ]);
-  const disc = new THREE.CylinderGeometry(r * 0.52, r * 0.52, 0.03, 28).rotateX(PI / 2);
+  const disc = new THREE.CylinderGeometry(r * 0.52, r * 0.52, 0.03, 18).rotateX(PI / 2);
   const bright = [];
   for (const sg of [-1, 1]) {
     const zf = sg * w * 0.44;
-    bright.push(new THREE.TorusGeometry(inner * 0.98, r * 0.035, 6, 32).translate(0, 0, sg * w * 0.47)); // Felgenhorn
+    bright.push(new THREE.TorusGeometry(inner * 0.98, r * 0.035, 4, 20).translate(0, 0, sg * w * 0.47)); // Felgenhorn
     for (let i = 0; i < 5; i++) for (const off of [-0.13, 0.13]) { // Doppelspeichen
       bright.push(new THREE.BoxGeometry(inner * 0.86, r * 0.07, 0.035).translate(inner * 0.53, 0, 0)
         .rotateZ(i / 5 * PI * 2 + off * (1 - 0.3)).translate(0, 0, zf));
@@ -236,7 +236,7 @@ function realWheelGeometry(r, w) {
     bright.push(new THREE.CylinderGeometry(r * 0.17, r * 0.19, 0.05, 20).rotateX(PI / 2).translate(0, 0, zf + sg * 0.01)); // Nabendeckel
     for (let i = 0; i < 5; i++) { // Radmuttern
       const a = i / 5 * PI * 2 + PI / 5;
-      bright.push(new THREE.CylinderGeometry(r * 0.025, r * 0.025, 0.03, 8).rotateX(PI / 2).translate(Math.cos(a) * r * 0.11, Math.sin(a) * r * 0.11, zf + sg * 0.035));
+      bright.push(new THREE.CylinderGeometry(r * 0.025, r * 0.025, 0.03, 5).rotateX(PI / 2).translate(Math.cos(a) * r * 0.11, Math.sin(a) * r * 0.11, zf + sg * 0.035));
     }
   }
   g = { tyre, dark, disc, bright: mergeGeometries(bright) };
@@ -322,7 +322,7 @@ function kit(v, kinds, hDiv, spec) {
     const m = new THREE.MeshStandardMaterial({ map: tex, transparent: true, alphaTest: 0.02, roughness: 0.45, polygonOffset: true, polygonOffsetFactor: -2 });
     for (const s of [1, -1]) {
       if (C.surfZ) { // echte Karosserie: Aufkleber schmiegt sich an die gewölbte Seite
-        const geo = new THREE.PlaneGeometry(w, h, Math.max(2, Math.round(w / 0.08)), Math.max(1, Math.round(h / 0.08)));
+        const geo = new THREE.PlaneGeometry(w, h, Math.max(2, Math.round(w / 0.16)), Math.max(1, Math.round(h / 0.2)));
         if (s < 0) geo.rotateY(PI);
         const pos = geo.attributes.position;
         for (let i = 0; i < pos.count; i++) {
@@ -480,7 +480,7 @@ function interior(C, { rb, rt, ft, fb, belt, ghTop, gw, seats2, rear }) {
   if (rear && !seats2) { const xr = xs - 0.85; if (xr > rb + 0.3) for (const z of [-zs, zs]) seat(xr, z, 0.44); }
   // Lenkrad vor dem Fahrer
   const wx = xs + 0.68, wy = Math.min(belt(wx) + 0.12, ghTop(wx) - 0.12);
-  const wheel = C.add(new THREE.Mesh(new THREE.TorusGeometry(0.16, 0.02, 8, 24), M.trim), wx, wy, -zs);
+  const wheel = C.add(new THREE.Mesh(new THREE.TorusGeometry(0.16, 0.02, 5, 16), M.trim), wx, wy, -zs);
   wheel.rotation.set(0, PI / 2, 0.45);
   C.cyl(0.03, 0.03, 0.3, M.trim, wx + 0.12, wy - 0.06, -zs, [0, 0, PI / 2 + 0.45], 8);
   // Fahrer: Kopf mit Haaren, Oberkörper, Arme zum Lenkrad
@@ -491,14 +491,15 @@ function interior(C, { rb, rt, ft, fb, belt, ghTop, gw, seats2, rear }) {
   drv.userData.driver = true;
   C.body.add(drv);
   const part = (geo, m, x, y, z) => { const o = new THREE.Mesh(geo, m); o.position.set(x, y, z); o.castShadow = true; drv.add(o); return o; };
-  part(new THREE.SphereGeometry(0.1, 20, 14), M.skin, xs + 0.12, hy, -zs).scale.set(1, 1.12, 0.95);
-  part(new THREE.SphereGeometry(0.105, 20, 10, 0, PI * 2, 0, PI / 2), mat(HAIR[(hsh >> 3) % HAIR.length], { roughness: 0.9 }), xs + 0.1, hy + 0.035, -zs).scale.set(1, 0.8, 1);
-  part(new THREE.CapsuleGeometry(0.13, 0.16, 4, 10), shirt, xs + 0.08, hy - 0.3, -zs).scale.set(0.75, 1, 1.15); // Oberkörper
+  part(new THREE.SphereGeometry(0.1, 12, 8), M.skin, xs + 0.12, hy, -zs).scale.set(1, 1.12, 0.95);
+  part(new THREE.SphereGeometry(0.105, 12, 5, 0, PI * 2, 0, PI / 2), mat(HAIR[(hsh >> 3) % HAIR.length], { roughness: 0.9 }), xs + 0.1, hy + 0.035, -zs).scale.set(1, 0.8, 1);
+  part(new THREE.CapsuleGeometry(0.13, 0.16, 2, 8), shirt, xs + 0.08, hy - 0.3, -zs).scale.set(0.75, 1, 1.15); // Oberkörper
   const sx = xs + 0.1, sy = hy - 0.2, len = Math.hypot(wx - 0.06 - sx, wy - sy);
   for (const s of [-1, 1]) { // Arme zum Lenkrad
-    const arm = part(new THREE.CapsuleGeometry(0.035, len - 0.07, 3, 8), shirt, (sx + wx - 0.06) / 2, (sy + wy) / 2, -zs + s * 0.14);
+    const arm = part(new THREE.CapsuleGeometry(0.035, len - 0.07, 2, 5), shirt, (sx + wx - 0.06) / 2, (sy + wy) / 2, -zs + s * 0.14);
     arm.rotation.z = Math.atan2(wy - sy, wx - 0.06 - sx) - PI / 2;
   }
+  mergeStatic(drv); // Fahrer: wenige Teile statt vieler
   C.eye = [xs + 0.14, hy - 0.03, -zs]; // Augen des Fahrers (Fahrersitz-Kamera)
   // Innenspiegel oben an der Frontscheibe
   C.box(0.03, 0.06, 0.22, M.trim, ft - 0.02, ghTop(ft) - 0.1, 0);
@@ -532,7 +533,7 @@ function realBody(C, name, opts = {}) {
     return [zf * st.hw * (1 + crease(st, y) * smoothstep(0.85, 0.97, a)), y];
   };
   // Punkte rund um den Querschnitt gleichmässig verteilen (sonst hätten die Seitenwände kaum Punkte)
-  const NS = 110, NR = 96, xs = [], rows = [], ths = [];
+  const NS = 72, NR = 64, xs = [], rows = [], ths = []; // genug für runde Formen, nicht zu viele Dreiecke
   {
     const n = 960, cum = [0];
     let prev = null;
@@ -584,7 +585,7 @@ function realBody(C, name, opts = {}) {
   if (!opts.noCabin) {
     const poly = roundPoly([[rb, topF(frac(rb)) * H - 0.02], [rt, roofY], [(rt + ft) / 2, roofY + 0.03], [ft, roofY], [fb, topF(frac(fb)) * H - 0.02]], 0.4, 6);
     const ghTop = x => edgeTop(poly, x);
-    const NG = 56, NGR = 30, gx = [];
+    const NG = 40, NGR = 22, gx = [];
     for (let i = 0; i <= NG; i++) gx.push(rb + (fb - rb) * i / NG);
     const gst = x => {
       const yb = topF(frac(x)) * H - 0.09, gwb = station(x).hw * 0.87;
@@ -691,7 +692,7 @@ function realBody(C, name, opts = {}) {
     const tex = c => { const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 4; return t; };
     const m = new THREE.MeshStandardMaterial({ map: tex(base), emissiveMap: tex(glow), emissive: 0xffffff, emissiveIntensity: 1.3,
       transparent: true, alphaTest: 0.05, roughness: 0.25, metalness: 0.3, polygonOffset: true, polygonOffsetFactor: -2 });
-    const geo = new THREE.PlaneGeometry(w, y1 - y0, 48, 16);
+    const geo = new THREE.PlaneGeometry(w, y1 - y0, 28, 10);
     geo.rotateY(front ? PI / 2 : -PI / 2);
     const pos = geo.attributes.position, inner = (front ? 1 : -1) * L * 0.2;
     for (let i = 0; i < pos.count; i++) {

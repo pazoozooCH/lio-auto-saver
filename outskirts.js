@@ -206,7 +206,7 @@ export function stepHighway(cars, dt, t, me, cam, hooks) {
     if (c.type === 'racer' && P && c.dir === P.dir && c.speed > P.speed + 15 && Math.hypot(me.x - c.x, me.z - c.z) < 9) hooks.msg('💨 Achtung, ein Raser!');
     // du wirst angefahren oder fährst auf
     if (P && Math.hypot(me.x - c.x, me.z - c.z) < (me.radius + c.radius) * 0.75) { hooks.bump(c); c.speed *= 0.5; }
-    const m = c.mesh, seen = Math.hypot(c.x - cam.x, c.z - cam.z) < 320;
+    const m = c.mesh, seen = Math.hypot(c.x - cam.x, c.z - cam.z) < 240;
     m.visible = seen;
     if (!seen) continue;
     m.position.set(c.x, 0, c.z);
