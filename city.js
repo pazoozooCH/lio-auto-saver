@@ -10,7 +10,7 @@ import { makeNetCars } from './netcars.js';
 import { makeChat } from './chat.js';
 import { buildHighway, outskirtsDist, hwDrivable, onHighway, makeHighwayTraffic, stepHighway, hwProject, hwPoint, HW, HW_LEN,
   AREAS, buildAreas, stepAreas, groundShape, areaDrivable, inArea, lockedGate,
-  PASS_AREA, buildPass, passGround, passDrivable, onPass, passTerrain, passNearest, inPassRegion, passPoints, SUMMIT } from './outskirts.js';
+  PASS_AREA, buildPass, passGround, passDrivable, onPass, passTerrain, passNearest, inPassRegion, passPoints, SUMMIT, slideInside } from './outskirts.js';
 import { makeEffects, camView, cockpit, COCKPIT, CAM_NAMES, FLY_HTML, FLY_KEYS, flyCss, flyHelp, flyToggle, flyStep } from './fx.js';
 
 const N = 8;                    // Blöcke pro Seite
@@ -1002,14 +1002,20 @@ function stepMe(dt) {
     if (me.landing && me.alt <= 0.03) { me.fly = me.landing = false; me.alt = 0; showMsg('🛬 Gelandet', 1.2); }
   }
   // Am Stadtrand ist Schluss – ausser auf der Autobahn (dort halten die Leitplanken einen auf der Fahrbahn)
-  if (!allowedAt(me.pos.x, me.pos.z, me.radius)) {
+  const slide = allowedAt(me.pos.x, me.pos.z, me.radius) ? null : slideInside(me.pos.x, me.pos.z, me.radius, city.keys.size);
+  if (slide && allowedAt(slide.x, slide.z, me.radius)) { // an der Leitplanke entlang schrammen
+    me.pos.x = slide.x; me.pos.z = slide.z;
+    me.speed *= 1 - 0.6 * dt; me.vl *= 0.3;
+    if (Math.abs(me.speed) > 12 && city.crashT <= 0) { crash(0.2, 'tyres'); hurt(0.1); city.crashT = 0.8; }
+    city.okPos = { x: me.pos.x, z: me.pos.z };
+  } else if (!allowedAt(me.pos.x, me.pos.z, me.radius)) {
     const fast = Math.abs(me.speed) > 8;
     me.pos.x = city.okPos.x; me.pos.z = city.okPos.z;
     if (fast && city.crashT <= 0) { crash(Math.min(1, Math.abs(me.speed) / 30), 'car'); hurt(Math.abs(me.speed) / 40); city.crashT = 0.5; }
     me.speed *= fast ? -0.25 : 0.3; me.vl *= 0.2;
     const lg = lockedGate(me.pos.x, me.pos.z, city.keys.size);
     if (lg && city.msgT <= 0) showMsg('🔒 ' + lg.name + ' öffnet ab ' + lg.need + ' goldenen Schlüsseln (du hast ' + city.keys.size + ')', 2.4);
-    else if (city.msgT <= 0 && !onHighway(me.pos.x, me.pos.z)) showMsg('🌲 Hier ist die Stadt zu Ende', 1.5);
+    else if (city.msgT <= 0 && !onHighway(me.pos.x, me.pos.z) && !onPass(me.pos.x, me.pos.z) && !inArea(me.pos.x, me.pos.z)) showMsg('🌲 Hier ist die Stadt zu Ende', 1.5);
   } else city.okPos = { x: me.pos.x, z: me.pos.z };
   // Über eine rote Ampel gefahren?
   const ni = Math.round(me.pos.x / BLOCK + N / 2), nj = Math.round(me.pos.z / BLOCK + N / 2);

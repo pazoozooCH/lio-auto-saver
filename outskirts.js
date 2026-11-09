@@ -497,3 +497,20 @@ export function buildPass({ scene, group, asphaltMat, lineMat, sign, natural, te
   }
   return { flag, land };
 }
+
+// An einer Leitplanke entlangrutschen statt hängen zu bleiben: die nächste erlaubte Stelle auf der Fahrbahn
+// (Passstrasse, Autobahn, Zufahrt) – oder null, wenn man gar nicht auf einer dieser Strassen ist
+export function slideInside(x, z, r, keys) {
+  if (keys >= PASS_AREA.need && inRegion(x, z) && Math.hypot(x - SUMMIT.x, z - SUMMIT.z) > SUMMIT.r - r) {
+    const q = passNearest(x, z), max = PASS_W - r * 0.5 - 0.05;
+    if (q.d < max + 4) { const k = max / (q.d || 1); return { x: q.p.x + (x - q.p.x) * k, z: q.p.z + (z - q.p.z) * k }; }
+  }
+  if (z > RAMP.z0 && z < RAMP.z1 && Math.abs(x) < RAMP.x1 + 4) return { x: Math.max(RAMP.x0 + r * 0.6 + 0.05, Math.min(RAMP.x1 - r * 0.6 - 0.05, x)), z };
+  const p = hwProject(x, z);
+  if (Math.abs(p.lat) < 13) {
+    const lo = MEDIAN + r * 0.6 + 0.05, hi = EDGE - r * 0.8 - 0.05, lat = (p.lat >= 0 ? 1 : -1) * Math.min(hi, Math.max(lo, Math.abs(p.lat)));
+    const q = at(p.s, lat);
+    return { x: q.x, z: q.z };
+  }
+  return null;
+}
