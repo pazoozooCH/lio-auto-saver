@@ -227,7 +227,24 @@ export function makeHighwayTraffic(scene, kinds, n = 48) {
     mesh.visible = false; scene.add(mesh);
     cars.push({ mesh, type: 'cop', state: 'idle', t: 25 + Math.random() * 20, dir: 0, lane: 3, lat: 0, s: 0, speed: 0, want: 60, len: mesh.userData.length,
       radius: mesh.userData.radius, gapT: 0.5, laneT: 0, flashT: 0, honkT: 0, x: 0, z: 0, target: null });
+    cars.cop = cars[cars.length - 1];
   }
+  cars.rescue = []; // Krankenwagen und Feuerwehr für Unfälle (warten unsichtbar)
+  for (const kind of ['ambulance', 'firetruck']) {
+    if (!kinds[kind]) continue;
+    const mesh = buildCar({ kind, color: kinds[kind].color, special: null }, kinds);
+    mesh.visible = false; scene.add(mesh);
+    const c = { mesh, type: 'rescue', state: 'idle', t: 0, dir: 0, lane: 2, lat: 0, s: 0, speed: 0, want: 30, len: mesh.userData.length,
+      radius: mesh.userData.radius, gapT: 0.4, laneT: 0, flashT: 0, honkT: 0, x: 0, z: 0, k: 0 };
+    cars.push(c); cars.rescue.push(c);
+  }
+  // Unfallstelle: Rauch und ein Warndreieck
+  const smoke = new THREE.Group(), smokeMat = new THREE.MeshBasicMaterial({ color: 0x4b4b4b, transparent: true, opacity: 0.4, depthWrite: false });
+  for (let k = 0; k < 7; k++) smoke.add(new THREE.Mesh(new THREE.SphereGeometry(1, 8, 6), smokeMat));
+  const tri = new THREE.Mesh(new THREE.CircleGeometry(0.5, 3).rotateZ(Math.PI / 2), new THREE.MeshBasicMaterial({ color: 0xdc2626, side: THREE.DoubleSide }));
+  smoke.visible = tri.visible = false; scene.add(smoke, tri);
+  cars.props = { smoke, tri };
+  cars.acc = null; cars.accT = 50 + Math.random() * 30; // der erste Unfall nach knapp einer Minute auf der Autobahn
   return cars;
 }
 const wrapDs = d => { d %= HW_LEN; if (d < -HW_LEN / 2) d += HW_LEN; if (d > HW_LEN / 2) d -= HW_LEN; return d; };
@@ -279,7 +296,65 @@ function stepCop(c, dt, cars, P, ahead, hooks) {
   return 42;
 }
 
-// Ein Schritt: me = { x, z, heading, speed, len, radius, on } (on: steht auf der Autobahn), hooks = { honk, msg, bump }
+// ---------- Unfall mit Stau und Rettungsgasse ----------
+// Ab und zu krachen weit vor dir zwei Autos zusammen (die zwei rechten Spuren sind zu). Davor staut es sich (Stop-and-go),
+// und alle bilden eine Rettungsgasse: ganz links an die Mitte, alle anderen nach rechts. Kurz nachdem du im Stau stehst,
+// kommen Krankenwagen und Feuerwehr mit Blaulicht durch die Gasse; wer sie blockiert, bekommt eine Busse (hooks.gasse).
+const JAM = 330;     // so lang ist der Stau vor der Unfallstelle (m)
+const GASSE = 4.75;  // dort fahren die Retter durch (zwischen Überholspur und den anderen)
+const accDist = (A, c) => wrapDs((A.s - c.s) * A.dir); // > 0: der Unfall liegt vor c
+const inJam = (A, c) => A && c.dir === A.dir && A.phase !== 'clear' && accDist(A, c) > -12 && accDist(A, c) < JAM;
+const gasseOff = c => c.lane === 3 ? -1.0 : 1.15; // in der Gasse: Überholspur zur Mitte, die anderen nach rechts
+
+function startAccident(cars, P) {
+  const dir = P.dir, s = ((P.s + dir * 760) % HW_LEN + HW_LEN) % HW_LEN;
+  if (dir === 1) { const d = wrapDs(RW.s0 - RW.taper - s); if (d > -(RW.s1 - RW.s0 + RW.taper + 80) && d < JAM + 400) return false; } // nicht bei der Baustelle
+  const far = cars.filter(c => c.dir === dir && ['normal', 'slow', 'tail', 'racer'].includes(c.type) && !c.shoulder && !c.wreck
+    && c !== (cars.cop && cars.cop.target) && Math.abs(wrapDs(c.s - P.s)) > 430); // nur Autos, die du gerade nicht siehst
+  if (far.length < 8) return false;
+  for (let i = far.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [far[i], far[j]] = [far[j], far[i]]; }
+  const A = { s, dir, phase: 'jam', t: 0, wrecks: [], rescue: [], called: false, block: 0, warnT: 0, told: 0 };
+  for (let k = 0; k < 2; k++) { // die zwei Unfallautos, schräg auf den rechten Spuren
+    const c = far.pop();
+    Object.assign(c, { wreck: { yaw: k ? -0.55 : 0.7 }, lane: k, lat: dir * LANES[k], s: ((s - dir * k * 5) % HW_LEN + HW_LEN) % HW_LEN, speed: 0 });
+    A.wrecks.push(c);
+  }
+  far.slice(0, 16).forEach((c, i) => { // dahinter schon ein Stau
+    const lane = i % 4, row = Math.floor(i / 4);
+    Object.assign(c, { lane, lat: dir * (LANES[lane] + gasseOff({ lane })), s: ((s - dir * (16 + row * 11 + Math.random() * 4)) % HW_LEN + HW_LEN) % HW_LEN, speed: 0 });
+  });
+  cars.acc = A;
+  return true;
+}
+function endAccident(cars) {
+  const A = cars.acc;
+  for (const c of A.wrecks) { c.wreck = null; c.laneT = 1 + Math.random() * 3; }
+  for (const c of A.rescue) { c.state = 'leave'; c.t = 0; }
+  cars.props.smoke.visible = cars.props.tri.visible = false;
+  cars.acc = null; cars.accT = 150 + Math.random() * 100;
+}
+function callRescue(cars, A, from) {
+  A.called = true;
+  cars.rescue.forEach((c, k) => {
+    Object.assign(c, { state: 'go', dir: A.dir, s: ((from - A.dir * k * 22) % HW_LEN + HW_LEN) % HW_LEN, lat: A.dir * GASSE, speed: 16, t: 0, k, passed: false });
+    A.rescue.push(c);
+  });
+}
+// Retter: fahren durch die Gasse bis zur Unfallstelle, stehen dort eine Weile, fahren dann weg und verschwinden
+function stepRescue(c, dt, A, P) {
+  c.t += dt;
+  if (c.state === 'go') {
+    const d = A ? accDist(A, c) - (6 + c.k * 12) : 0;
+    if (d <= 0.5) c.state = 'park';
+    return Math.min(17, Math.sqrt(2 * 5 * Math.max(0, d)) + 0.3);
+  }
+  if (c.state === 'park') return 0;
+  if (c.t > 60 || !P || Math.abs(wrapDs(c.s - P.s)) > 450) { c.state = 'idle'; c.dir = 0; c.mesh.visible = false; return null; }
+  return 30;
+}
+
+// Ein Schritt: me = { x, z, heading, speed, len, radius, on } (on: steht auf der Autobahn),
+// hooks = { honk, msg, bump, nearMiss, siren, gasse }
 export function stepHighway(cars, dt, t, me, cam, hooks) {
   let P = null;
   if (me.on) { // du als Hindernis (auf welcher Seite, welcher Spur, wie schnell in Fahrtrichtung)
@@ -297,48 +372,91 @@ export function stepHighway(cars, dt, t, me, cam, hooks) {
     }
     return best ? { o: best, gap: bd - (c.len + best.len) / 2 } : null;
   };
+  // Unfall: starten, Retter rufen, aufräumen
+  let A = cars.acc;
+  if (!A && P && (cars.accT -= dt) <= 0) { if (startAccident(cars, P)) A = cars.acc; else cars.accT = 5; }
+  if (A) {
+    A.t += dt; A.warnT -= dt;
+    const dP = P && P.dir === A.dir ? accDist(A, P) : null;
+    if (dP !== null && dP > 0 && dP < JAM + 300 && !A.told) { A.told = 1; hooks.msg('⚠️ Unfall! Gleich Stau – Rettungsgasse bilden!', true); }
+    if (dP !== null && dP > 0 && dP < JAM && A.told < 2) { A.told = 2; hooks.msg('🚧 Stau! Ganz links: nach links. Alle anderen: nach rechts.', true); }
+    if (!A.called && cars.rescue.length) {
+      if (dP !== null && dP > 0 && dP < JAM) { A.callT = (A.callT || 0) + dt; if (A.callT > 6) { callRescue(cars, A, P.s - A.dir * 230); hooks.msg('🚑 Blaulicht von hinten!', true); } }
+      else if (A.t > 90) callRescue(cars, A, A.s - A.dir * (JAM + 200)); // du kommst nicht: sie kommen trotzdem
+    }
+    if (A.phase === 'jam' && A.called && A.rescue.every(c => c.state === 'park')) { A.phase = 'work'; A.t = 0; }
+    if (A.phase === 'work' && A.t > 20) { endAccident(cars); A = null; if (dP !== null && dP > -50 && dP < JAM + 100) hooks.msg('✅ Die Unfallstelle ist geräumt.', true); }
+    else if (!cars.rescue.length && A.t > 120) { endAccident(cars); A = null; }
+  }
+  if (A) { // Rauch und Warndreieck
+    const w = A.wrecks[0], { smoke, tri } = cars.props;
+    smoke.visible = tri.visible = true;
+    smoke.position.set(w.x, 0, w.z);
+    smoke.children.forEach((b, k) => { const ph = (t * 0.35 + k / smoke.children.length) % 1; b.position.set(Math.sin(k * 2.4) * 0.9, 1 + ph * 8, Math.cos(k * 2.4) * 0.9); b.scale.setScalar(0.5 + ph * 2.4); });
+    const p = at(A.s - A.dir * 90, A.dir * 16.9);
+    tri.position.set(p.x, 0.45, p.z); tri.rotation.y = -Math.atan2(p.tz, p.tx) + Math.PI / 2;
+  }
   let siren = 0;
-  const cop = cars[cars.length - 1].type === 'cop' && cars[cars.length - 1].state === 'chase' ? cars[cars.length - 1] : null;
+  const cop = cars.cop && cars.cop.state === 'chase' ? cars.cop : null;
   for (const c of cars) {
     let want = c.want;
-    if (c.type === 'cop') {
-      want = stepCop(c, dt, cars, P, ahead, hooks);
+    if (c.type === 'cop' || c.type === 'rescue') {
+      want = c.type === 'cop' ? stepCop(c, dt, cars, P, ahead, hooks) : stepRescue(c, dt, A, P);
       if (want === null) { c.mesh.visible = false; continue; }
-      if (P) siren = Math.max(0, 1 - Math.hypot(me.x - c.x, me.z - c.z) / 260);
+      if (P && c.state !== 'leave' && c.state !== 'stop') siren = Math.max(siren, 1 - Math.hypot(me.x - c.x, me.z - c.z) / 260);
     }
     if (c.shoulder && c.type === 'racer') want = 0; // angehalten
-    const lead = c.shoulder ? null : ahead(c, c.lat), safe = Math.max(3, c.speed * c.gapT);
+    if (c.wreck) want = 0;
+    const jam = inJam(A, c) && c.type !== 'rescue';
+    let lead = c.shoulder || c.wreck ? null : ahead(c, c.lat);
+    if (lead && lead.o.me && c.type === 'rescue' && A && A.block > 12) lead = null; // nach der Busse drängelt er sich vorbei
+    const safe = Math.max(c.type === 'rescue' ? 2 : 3, c.speed * c.gapT);
     let v = want;
     if (lead && lead.gap < safe + 25 && !(c.type === 'cop' && lead.o === c.target)) v = Math.min(v, Math.max(0, lead.o.speed + (lead.gap - safe) * 0.7));
-    // Baustelle: wer noch rechts ist, muss hinüber und notfalls vor den Kegeln anhalten
-    const minL = rwZone(c) ? 2 : 0;
-    if (c.lane < minL) {
-      if (c.s > RW.s0 - RW.taper && c.s < RW.s1) c.lane = minL; // steckt schon drin (z.B. beim Start)
-      else v = Math.min(v, Math.sqrt(2 * 6 * Math.max(0, ((RW.s0 - RW.taper - 6 - c.s) % HW_LEN + HW_LEN) % HW_LEN)));
+    // Stau vor dem Unfall: Stop-and-go, vorne am Unfall nur im Schritttempo vorbei; hinten rechtzeitig bremsen; Gaffer drüben
+    if (A && c.type !== 'rescue') {
+      const d = accDist(A, c);
+      if (c.dir === A.dir) {
+        if (jam) v = Math.min(v, d < 40 ? 5 : 0.8 + 3.6 * Math.max(0, Math.sin(t * 0.5 - d * 0.035)));
+        else if (d >= JAM && d < JAM + 160) v = Math.min(v, 3 + Math.sqrt(2 * 6 * (d - JAM)));
+      } else if (Math.abs(d) < 80) v = Math.min(v, 18);
+    }
+    // Gesperrte Spuren (Baustelle, Unfall): wer noch rechts ist, muss hinüber und notfalls davor anhalten
+    let minL = 0, blockD = Infinity;
+    if (rwZone(c)) { minL = 2; blockD = c.s > RW.s0 - RW.taper && c.s < RW.s1 ? -1 : ((RW.s0 - RW.taper - 6 - c.s) % HW_LEN + HW_LEN) % HW_LEN; }
+    if (A && c.dir === A.dir && !c.wreck && c.type !== 'rescue') { const d = accDist(A, c); if (d > -12 && d < JAM + 160) { minL = 2; blockD = Math.min(blockD, d < 3 ? -1 : d - 9); } }
+    if (c.lane < minL && c.type !== 'rescue') {
+      if (blockD < 0) c.lane = minL; // steckt schon drin (z.B. beim Start)
+      else v = Math.min(v, Math.sqrt(2 * 6 * Math.max(0, blockD)));
       if (c.laneT > 0.3) c.laneT = 0.3;
     }
     if (cop && cop.dir === c.dir && c.laneT > 0.4) { const d = wrapDs((c.s - cop.s) * c.dir); if (d > 0 && d < 90) c.laneT = 0.4; } // Polizei hinten
     // Spurwechsel: überholen, wenn vorne einer bummelt; normale Autos gehen danach wieder nach rechts
-    if (c.type !== 'cop' && !c.shoulder && (c.laneT -= dt) <= 0) {
+    if (c.type !== 'cop' && c.type !== 'rescue' && !c.shoulder && !c.wreck && (c.laneT -= dt) <= 0) {
       c.laneT = c.type === 'racer' ? 0.6 : 1.5;
-      const free = l => l >= minL && l < LANES.length && !ahead(c, c.dir * LANES[l], -22, 45);
-      const slowLead = lead && lead.gap < 70 && lead.o.speed < c.want - 3, top = Math.max(minL, c.type === 'slow' ? 1 : LANES.length - 1);
+      const back = -Math.max(7, c.speed * 0.7), fwd = Math.max(10, c.speed * 1.3); // im Stau reicht eine kleine Lücke
+      const free = l => l >= minL && l < LANES.length && !ahead(c, c.dir * LANES[l], back, fwd);
+      const slowLead = !jam && lead && lead.gap < 70 && lead.o.speed < c.want - 3, top = Math.max(minL, c.type === 'slow' ? 1 : LANES.length - 1);
       const copDs = cop && cop.dir === c.dir && Math.abs(cop.lat - c.lat) < 2.3 ? wrapDs((c.s - cop.s) * c.dir) : -1;
       if (c.lane < minL) { if (free(c.lane + 1)) c.lane++; } // einfädeln
+      else if (jam) {} // im Stau bleibt man in der Spur
       else if (copDs > 0 && copDs < 90) { if (free(c.lane - 1)) c.lane--; else if (free(c.lane + 1)) c.lane++; } // Platz machen für die Polizei
       else if (slowLead && c.lane < top && free(c.lane + 1)) c.lane++; // links überholen
       else if (slowLead && c.type === 'racer' && free(c.lane - 1)) c.lane--; // Raser: auch rechts vorbei
       else if (!slowLead && (c.type === 'normal' || c.type === 'slow') && c.lane > 0 && free(c.lane - 1)
         && !ahead(c, c.dir * LANES[c.lane - 1], -10, 80)) c.lane--; // Rechtsfahrgebot
     }
-    const lat = c.dir * (c.shoulder ? SHOULDER : LANES[c.lane]);
-    c.speed += Math.max(-9 * dt, Math.min((c.type === 'racer' || c.type === 'cop' ? 5 : 3) * dt, v - c.speed));
+    const lat = c.wreck ? c.lat : c.dir * (c.shoulder ? SHOULDER : c.type === 'rescue' && c.state !== 'leave' ? GASSE
+      : LANES[c.lane] + (jam ? gasseOff(c) : 0));
+    const quick = c.type === 'racer' || c.type === 'cop' || c.type === 'rescue';
+    c.speed += Math.max(-9 * dt, Math.min((quick ? 5 : 3) * dt, v - c.speed));
+    if (c.wreck) c.speed = 0;
     c.s = ((c.s + c.dir * c.speed * dt) % HW_LEN + HW_LEN) % HW_LEN;
-    const dl = (lat - c.lat) * Math.min(1, dt * (c.type === 'racer' || c.type === 'cop' ? 2.2 : 1.2));
+    const dl = (lat - c.lat) * Math.min(1, dt * (quick ? 2.2 : 1.2));
     c.lat += dl;
-    // Drängler: klebt hinten dran, blinkt mit dem Licht und hupt (bei dir besonders)
+    // Drängler: klebt hinten dran, blinkt mit dem Licht und hupt (bei dir besonders; im Stau nicht)
     c.flashT -= dt; c.honkT -= dt;
-    if (c.type === 'tail' && lead && lead.gap < 14 && lead.o.speed < c.want - 2) {
+    if (c.type === 'tail' && !jam && lead && lead.gap < 14 && lead.o.speed < c.want - 2) {
       c.flashT = 0.25 + (Math.floor(t * 4) % 2) * 0.2;
       if (lead.o.me && c.honkT <= 0) { hooks.honk(c); c.honkT = 3 + Math.random() * 2; hooks.msg('😠 Ein Drängler klebt an dir!'); }
     }
@@ -346,21 +464,31 @@ export function stepHighway(cars, dt, t, me, cam, hooks) {
     const p = at(c.s, c.lat);
     c.x = p.x; c.z = p.z;
     if (c.type === 'racer' && P && c.dir === P.dir && c.speed > P.speed + 15 && Math.hypot(me.x - c.x, me.z - c.z) < 9) hooks.msg('💨 Achtung, ein Raser!');
+    // Retter hinter dir: stehst du in der Gasse? (kurz geht, zu lange gibt eine Busse); sind sie vorbei, gibt es ein Lob
+    if (c.type === 'rescue' && c.state === 'go' && P && P.dir === c.dir && A) {
+      const ds = wrapDs((P.s - c.s) * c.dir);
+      if (ds > 0 && ds < 45 && Math.abs(P.lat - c.dir * GASSE) < 2.3) {
+        A.block += dt;
+        if (A.block > 1 && A.warnT <= 0) { A.warnT = 3; hooks.msg('🚑 Mach Platz! Fahr zur Seite – Rettungsgasse!', true); }
+        if (A.block > 8 && !A.fined) { A.fined = true; hooks.gasse('block'); }
+      }
+      if (ds < -3 && !c.passed) { c.passed = true; if (!A.fined && !A.praised && accDist(A, P) > 0 && accDist(A, P) < JAM + 50) { A.praised = true; hooks.gasse('ok'); } }
+    }
     // du wirst angefahren oder fährst auf
     const hit = P && Math.hypot(me.x - c.x, me.z - c.z) < (me.radius + c.radius) * 0.75;
-    if (hit) { hooks.bump(c); c.speed *= 0.5; c.nmBad = 3; }
+    if (hit) { hooks.bump(c); if (!c.wreck) c.speed *= 0.5; c.nmBad = 3; }
     // knapp überholt (auf der Nebenspur, du deutlich schneller): Bonus
     c.nmBad = (c.nmBad || 0) - dt;
     if (P && c.dir === P.dir) {
       const ds = wrapDs((c.s - P.s) * c.dir), side = Math.abs(c.lat - P.lat);
-      if (c.nmDs > 0 && ds <= 0 && side > 1.4 && side < 4.4 && P.speed > 24 && P.speed > c.speed + 5 && c.nmBad <= 0 && c.type !== 'cop') hooks.nearMiss(c, side);
+      if (c.nmDs > 0 && ds <= 0 && side > 1.4 && side < 4.4 && P.speed > 24 && P.speed > c.speed + 5 && c.nmBad <= 0 && c.type !== 'cop' && c.type !== 'rescue') hooks.nearMiss(c, side);
       c.nmDs = ds;
     } else c.nmDs = undefined;
     const m = c.mesh, seen = Math.hypot(c.x - cam.x, c.z - cam.z) < (me.see || 240);
     m.visible = seen;
     if (!seen) continue;
     m.position.set(c.x, 0, c.z);
-    m.rotation.y = -(Math.atan2(p.tz, p.tx) + (c.dir < 0 ? Math.PI : 0)) - dl * c.dir * 3;
+    m.rotation.y = -(Math.atan2(p.tz, p.tx) + (c.dir < 0 ? Math.PI : 0)) - dl * c.dir * 3 + (c.wreck ? c.wreck.yaw : 0);
     for (const w of m.userData.wheels) w.rotation.z -= c.speed * dt / 0.35;
     animateCar(m, t, null);
   }

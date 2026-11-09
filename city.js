@@ -1081,6 +1081,13 @@ const hwHooks = {
     if (coins) city.earn(coins);
     showMsg('😎 Knapp vorbei!' + (city.nmN > 1 ? ' ×' + city.nmN : '') + (coins ? '  +' + coins + ' 🪙' : ''), 1.2);
   },
+  // Rettungsgasse: blockiert = Strafzettel (50), gut gemacht = Lob und 10 Münzen (online ohne Münzen)
+  gasse: kind => {
+    if (kind === 'ok') { const c = city.net ? 0 : 10; if (c) city.earn(c); showMsg('👍 Super Rettungsgasse!' + (c ? '  +' + c + ' 🪙' : ''), 2.2); city.hwMsgT = 4; return; }
+    if (city.ticket || city.police) return;
+    city.reason = { kind: 'gasse', text: '🚑 Rettungsgasse blockiert' };
+    giveTicket();
+  },
   siren: v => { // Sirene der Autobahnpolizei (erst gebaut, wenn sie zum ersten Mal unterwegs ist)
     if (v > 0 && city.hwSiren === undefined) city.hwSiren = createSiren();
     if (city.hwSiren) city.hwSiren.set(v);
@@ -2531,7 +2538,7 @@ function stepPolice(dt) {
 const speedFine = kmh => Math.max(10, (Math.floor(kmh / 10) - 8) * 10);
 function giveTicket() {
   city.fines++;
-  const R = city.reason || {}, amount = R.kind === 'speed' ? speedFine(R.kmh) : Math.min(50, 10 * city.fines), paid = city.pay(amount);
+  const R = city.reason || {}, amount = R.kind === 'speed' ? speedFine(R.kmh) : R.kind === 'gasse' ? 50 : Math.min(50, 10 * city.fines), paid = city.pay(amount);
   city.ticket = true;
   const T = S.ui.ticket;
   T.querySelector('.amount').textContent = paid ? paid + ' 🪙' : 'Verwarnung';
@@ -2551,7 +2558,9 @@ function closeTicket() {
   const P = city.police;
   if (P) { P.state = 'leave'; P.t = 0; P.siren.set(0); }
   if ((city.reason || {}).jail) { city.reason = null; goToJail(); return; }
-  showMsg((city.reason || {}).kind === 'speed' ? 'Gute Fahrt! Und nicht zu schnell 😉' : 'Gute Fahrt! Und bei Rot anhalten 😉', 2);
+  const kind = (city.reason || {}).kind;
+  showMsg(kind === 'speed' ? 'Gute Fahrt! Und nicht zu schnell 😉' : kind === 'gasse' ? 'Bei Blaulicht immer Platz machen 🚑' : 'Gute Fahrt! Und bei Rot anhalten 😉', 2);
+  if (kind === 'gasse') city.reason = null;
 }
 function removePolice() {
   const P = city.police;
