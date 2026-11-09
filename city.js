@@ -1177,7 +1177,8 @@ function hurt(intensity, fromX, fromZ) {
   const o = side ? new THREE.Vector3(Math.max(-L * 0.18, Math.min(L * 0.18, p.x)), y, s * 4) : new THREE.Vector3(s * (L / 2 + 3), y, (Math.random() - 0.5) * 1.2);
   const d = side ? new THREE.Vector3(0, 0, -s) : new THREE.Vector3(-s, 0, 0);
   ray.set(o.applyMatrix4(m.matrixWorld), d.transformDirection(m.matrixWorld));
-  const hit = ray.intersectObject(m, true).find(h => h.face && h.object.visible && !h.object.material.transparent && !h.object.material.side
+  ray.camera = S.camera; // schwebende Schilder (Sprites, z.B. „ADMIN“) brauchen die Kamera
+  const hit = ray.intersectObject(m, true).find(h => h.face && !h.object.isSprite && h.object.visible && !h.object.material.transparent && !h.object.material.side
     && h.object.name !== 'caliper' && !(h.object.parent && h.object.parent.name === 'wheel'));
   if (!hit) return;
   const n = hit.face.normal.clone().transformDirection(hit.object.matrixWorld);
@@ -2948,8 +2949,13 @@ export function startCity({ player, kinds, topSpeed, onExit, pay = () => 0, earn
   requestAnimationFrame(loop);
 }
 
+// Ein Fehler in einem einzelnen Bild soll das Spiel nicht einfrieren: melden und weitermachen
 function loop(now) {
   if (!city) return;
+  try { step(now); } catch (err) { console.error(err); city && (city.last = now); }
+  if (city) requestAnimationFrame(loop);
+}
+function step(now) {
   const dt = Math.min(0.05, (now - city.last) / 1000);
   S.quality((now - city.last) / 1000);
   city.last = now;
@@ -2999,7 +3005,6 @@ function loop(now) {
   }
   updateHud(dt);
   render(dt);
-  requestAnimationFrame(loop);
 }
 
 // ---------- Tag und Nacht ----------
