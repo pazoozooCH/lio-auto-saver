@@ -8,7 +8,7 @@ import { makeNoise, rng, smoothstep, surface, terrain, cloudDome } from './world
 import { createCarSound, crash, gearbox, horn, createSiren } from './sound.js';
 import { makeNetCars } from './netcars.js';
 import { makeChat } from './chat.js';
-import { buildHighway, outskirtsDist, hwDrivable, onHighway, makeHighwayTraffic, stepHighway, hwProject, hwPoint, HW, HW_LEN,
+import { buildHighway, outskirtsDist, hwDrivable, onHighway, makeHighwayTraffic, stepHighway, hwProject, hwPoint, HW, HW_LEN, HW_LIMIT,
   AREAS, buildAreas, stepAreas, groundShape, areaDrivable, inArea, lockedGate,
   PASS_AREA, buildPass, passGround, passDrivable, onPass, passTerrain, passNearest, inPassRegion, passPoints, SUMMIT, slideInside } from './outskirts.js';
 import { makeEffects, camView, cockpit, COCKPIT, CAM_NAMES, FLY_HTML, FLY_KEYS, flyCss, flyHelp, flyToggle, flyStep } from './fx.js';
@@ -2281,12 +2281,12 @@ function limitAt(x, z) {
   if (alongX === alongZ) return 0; // Kreuzung oder neben der Strasse: bleibt wie vorher
   return streetLimit(alongX ? j : i);
 }
+function showLimit(n) { S.ui.limit.textContent = n; S.ui.limit.style.fontSize = n > 99 ? '15px' : ''; } // dreistellig etwas kleiner
 function stepRules(dt) {
   const me = city.me, kmh = Math.round(Math.abs(me.speed) * 3.6);
   const lim = limitAt(me.pos.x, me.pos.z), hw = onHighway(me.pos.x, me.pos.z) && Math.abs(me.pos.z) > HALF + ROAD / 2;
-  if (hw !== city.onHw) { city.onHw = hw; if (hw) { city.limit = 0; S.ui.limit.textContent = '∞'; } } // Autobahn: kein Tempolimit
-  if (lim && lim !== city.limit && !hw) { city.limit = lim; S.ui.limit.textContent = lim; }
-  S.ui.limit.classList.toggle('free', hw);
+  if (hw !== city.onHw) { city.onHw = hw; if (hw) { city.limit = HW_LIMIT; showLimit(HW_LIMIT); } } // Autobahn: 140
+  if (lim && lim !== city.limit && !hw) { city.limit = lim; showLimit(lim); }
   const outside = Math.max(Math.abs(me.pos.x), Math.abs(me.pos.z)) > LIMIT; // Hafen, Flughafen: keine Tafel, kein Limit
   if (outside && !hw) city.limit = 0;
   S.ui.limit.hidden = (!city.limit && !hw) || (outside && !hw) || me.alt > 2 || !!city.walk;
@@ -2554,9 +2554,8 @@ const CSS = `
 #city .speed small { display: block; font-size: 13px; font-weight: 600; opacity: .8; }
 #city .speed.over { background: rgba(185,28,28,.85); }
 #city .limit { position: absolute; bottom: 18px; left: calc(50% - 128px); width: 46px; height: 46px; border-radius: 50%; background: #fff;
-  border: 7px solid #d61f1f; color: #111; font: 900 20px system-ui, sans-serif; display: flex; align-items: center; justify-content: center; }
+  border: 7px solid #d61f1f; color: #111; font: 900 20px system-ui, sans-serif; letter-spacing: -1px; display: flex; align-items: center; justify-content: center; }
 #city .limit[hidden], #city .jailbar[hidden], #city .fuel[hidden] { display: none; }
-#city .limit.free { border-color: #111; font-size: 26px; background: repeating-linear-gradient(-45deg, #fff 0 7px, #9ca3af 7px 9px); }
 #city .fuel { position: absolute; bottom: 20px; left: calc(50% + 92px); display: flex; align-items: center; gap: 5px; background: rgba(0,0,0,.55);
   border-radius: 10px; padding: 5px 8px; font-size: 18px; }
 #city .fuel span { display: block; width: 64px; height: 12px; border-radius: 6px; background: rgba(255,255,255,.2); overflow: hidden; }

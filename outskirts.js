@@ -1,5 +1,6 @@
 // Gebiete ausserhalb des Stadtgitters (für city.js). Die Autobahn: ein Oval südlich der Stadt (etwa 3,7 km) mit zwei
-// Spuren je Richtung, Mittelleitplanke und Leitplanken aussen, Zufahrt vom Südrand der Stadt. Kein Tempolimit.
+// Spuren je Richtung, Mittelleitplanke und Leitplanken aussen, Zufahrt vom Südrand der Stadt. Tempolimit 140 (HW_LIMIT) –
+// an das sich Raser und Drängler aber nicht halten (die fahren gegen 200).
 // Auf der Autobahn fährt jeder anders: gemütliche Lastwagen rechts, normale Autos (überholen und gehen wieder rechts),
 // Drängler (kleben am Vordermann, blinken mit dem Licht, hupen) und Raser (sehr schnell, wechseln dauernd die Spur).
 // Koordinaten wie in city.js: x nach Osten, z nach Süden, s = Strecke entlang des Ovals, lat = seitlich (positiv =
@@ -8,6 +9,7 @@ import * as THREE from 'three';
 import { buildCar, animateCar } from './cars3d.js';
 
 export const HW = { cz: 650, half: 600, R: 200 };
+export const HW_LIMIT = 140;
 export const HW_LEN = 4 * HW.half + 2 * Math.PI * HW.R;
 const TOP = HW.cz - HW.R; // die obere Gerade liegt bei z = 450
 const RAMP = { x0: -7, x1: 7, z0: 250, z1: TOP - 6 }; // Zufahrt von der Strasse am Südrand der Stadt (z = 256)
@@ -109,7 +111,7 @@ export function buildHighway({ group, asphaltMat, lineMat, sign }) {
   const postM = new THREE.InstancedMesh(new THREE.BoxGeometry(0.12, 0.8, 0.12), rail, posts.length), m4 = new THREE.Matrix4();
   posts.forEach((p, k) => postM.setMatrixAt(k, m4.makeTranslation(p.x, 0.4, p.z)));
   group.add(postM);
-  // Schilder: Autobahn (blau) am Anfang der Zufahrt, „Ende aller Beschränkungen“ vor der Einfahrt
+  // Schilder: Autobahn (blau) am Anfang der Zufahrt, Tempo 140 vor der Einfahrt
   for (const side of [0, 1]) {
     const s1 = sign('🛣️ AUTOBAHN', '#1d4ed8', '#ffffff', 8, 1.6);
     s1.position.set(9.5, 4, RAMP.z0 + 22 + side * 0.05); s1.rotation.y = side * Math.PI; group.add(s1);
@@ -117,11 +119,8 @@ export function buildHighway({ group, asphaltMat, lineMat, sign }) {
   const c = document.createElement('canvas'); c.width = c.height = 128;
   const g = c.getContext('2d');
   g.fillStyle = '#fff'; g.beginPath(); g.arc(64, 64, 60, 0, Math.PI * 2); g.fill();
-  g.strokeStyle = '#111'; g.lineWidth = 4; g.stroke();
-  g.save(); g.beginPath(); g.arc(64, 64, 56, 0, Math.PI * 2); g.clip();
-  g.translate(64, 64); g.rotate(-Math.PI / 4);
-  for (const o of [-14, -5, 4, 13]) g.fillRect(-70, o, 140, 4);
-  g.restore();
+  g.strokeStyle = '#d61f1f'; g.lineWidth = 14; g.beginPath(); g.arc(64, 64, 52, 0, Math.PI * 2); g.stroke();
+  g.fillStyle = '#111'; g.font = 'bold 44px system-ui, sans-serif'; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText(String(HW_LIMIT), 64, 67);
   const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace;
   const end = new THREE.Mesh(new THREE.CircleGeometry(0.6, 24), new THREE.MeshStandardMaterial({ map: t, side: THREE.DoubleSide }));
   end.position.set(8.4, 2.4, RAMP.z1 - 30); end.rotation.y = Math.PI; group.add(end);
@@ -151,7 +150,8 @@ export function makeHighwayTraffic(scene, kinds, n = 28) {
       for (const z of [-0.6, 0.6]) { const b = new THREE.Mesh(new THREE.SphereGeometry(0.16, 8, 6), m); b.position.set(mesh.userData.length / 2, 0.7, z); fl.add(b); }
       fl.visible = false; mesh.add(fl); mesh.userData.flash = fl;
     }
-    const want = { slow: 22, normal: 31, tail: 38, racer: 50 }[type] + (Math.random() - 0.5) * 6;
+    // m/s: Lastwagen ~80 km/h, Normale ~125 (knapp unter dem Limit), Drängler ~190, Raser ~200 und mehr
+    const want = { slow: 22, normal: 35, tail: 53, racer: 56 }[type] + (Math.random() - 0.5) * 6;
     const dir = k % 2 ? -1 : 1, lane = type === 'tail' || type === 'racer' ? 1 : 0;
     cars.push({ v, mesh, type, dir, lane, lat: dir * LANES[lane], s: Math.random() * HW_LEN, speed: want * 0.8, want, len: mesh.userData.length,
       radius: mesh.userData.radius, gapT: { slow: 1.8, normal: 1.4, tail: 0.35, racer: 0.8 }[type], laneT: Math.random() * 2, flashT: 0, honkT: 0, x: 0, z: 0 });
