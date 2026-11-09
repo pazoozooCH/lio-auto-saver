@@ -8,7 +8,8 @@ import { makeNoise, rng, smoothstep, surface, terrain, cloudDome } from './world
 import { createCarSound, crash, gearbox, horn, createSiren } from './sound.js';
 import { makeNetCars } from './netcars.js';
 import { makeChat } from './chat.js';
-import { buildHighway, outskirtsDist, hwDrivable, onHighway, makeHighwayTraffic, stepHighway, hwProject, hwPoint, HW, HW_LEN } from './outskirts.js';
+import { buildHighway, outskirtsDist, hwDrivable, onHighway, makeHighwayTraffic, stepHighway, hwProject, hwPoint, HW, HW_LEN,
+  AREAS, buildAreas, stepAreas, groundShape, areaDrivable, inArea, lockedGate } from './outskirts.js';
 import { makeEffects, camView, cockpit, COCKPIT, CAM_NAMES, FLY_HTML, FLY_KEYS, flyCss, flyHelp, flyToggle, flyStep } from './fx.js';
 
 const N = 8;                    // Blöcke pro Seite
@@ -188,8 +189,9 @@ function buildWorld() {
   // Gelände rundherum: in der Stadt flach, draussen Hügel
   const height = (x, z) => {
     const rr = Math.max(Math.abs(x), Math.abs(z));
-    const flat = rr > HALF + 60 ? smoothstep(6, 80, outskirtsDist(x, z)) : 1; // unter der Autobahn eben
-    return smoothstep(HALF + 90, HALF + 500, rr) * NZ.fbm(x / 260, z / 260, 4) * 190 * flat - 0.06;
+    if (rr <= HALF + 60) return -0.06;
+    const gs = groundShape(x, z), f = smoothstep(6, 80, gs.d); // unter Autobahn, Hafen und Flughafen eben (Hafenbecken tiefer)
+    return smoothstep(HALF + 90, HALF + 500, rr) * NZ.fbm(x / 260, z / 260, 4) * 190 * f + gs.y * (1 - f) - 0.06;
   };
   const C = h => new THREE.Color(h), gA = C(0x5e9142), gB = C(0x4a7c35), rock = C(0x857b70);
   const land = terrain({ size: 2200, segments: 110, height, detail: grassDetail, detailRepeat: 260,
@@ -512,7 +514,7 @@ function buildWorld() {
   for (let k = 0; k < 360;) {
     const a = r() * Math.PI * 2, rr = HALF + 30 + r() * 150;
     const tx = Math.cos(a) * rr * 1.1, tz = Math.sin(a) * rr * 1.1;
-    if (Math.max(Math.abs(tx), Math.abs(tz)) < HALF + ROAD / 2 + 12 || outskirtsDist(tx, tz) < 14) continue; // nicht auf Strassen
+    if (Math.max(Math.abs(tx), Math.abs(tz)) < HALF + ROAD / 2 + 12 || groundShape(tx, tz).d < 14) continue; // nicht auf Strassen und Plätzen
     trees.push([tx, height(tx, tz), tz, 0.9 + r() * 0.9]);
     k++;
   }
@@ -642,6 +644,8 @@ function buildWorld() {
   }
 
   buildHighway({ group: decor, asphaltMat, lineMat, sign }); // Autobahn im Süden (outskirts.js)
+  const areas = buildAreas({ group: decor, scene, asphaltMat, lineMat, sign }); // Hafen und Flughafen
+  solid.push(...areas.solids);
   scene.add(decor);
   mergeStatic(decor);
   const clouds = cloudDome({ radius: 2600, coverage: 0.52, shade: '#aebccd', seed: 9 });
@@ -651,7 +655,7 @@ function buildWorld() {
   const flash = new THREE.Mesh(new THREE.SphereGeometry(0.6, 12, 8), new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0, depthWrite: false }));
   flash.visible = false;
   scene.add(flash);
-  return { renderer, scene, camera, sun, clouds, lamps, solid, round, parks, places, redCams, speedCams, flash, ground: { asphalt: asphaltMat, grass: grassMat, pave: paveMat, land: land.material },
+  return { renderer, scene, camera, sun, clouds, lamps, solid, round, parks, places, redCams, speedCams, flash, areas, ground: { asphalt: asphaltMat, grass: grassMat, pave: paveMat, land: land.material },
     night: { sky: su, hemi, envs: { ...envs, day: dayEnv }, walls: [...walls, ...homeWalls], heads: headM.material, pools, stars, headlight, fog: scene.fog } };
 }
 
@@ -998,7 +1002,9 @@ function stepMe(dt) {
     me.pos.x = city.okPos.x; me.pos.z = city.okPos.z;
     if (fast && city.crashT <= 0) { crash(Math.min(1, Math.abs(me.speed) / 30), 'car'); hurt(Math.abs(me.speed) / 40); city.crashT = 0.5; }
     me.speed *= fast ? -0.25 : 0.3; me.vl *= 0.2;
-    if (city.msgT <= 0 && !onHighway(me.pos.x, me.pos.z)) showMsg('🌲 Hier ist die Stadt zu Ende', 1.5);
+    const lg = lockedGate(me.pos.x, me.pos.z, city.keys.size);
+    if (lg && city.msgT <= 0) showMsg('🔒 ' + lg.name + ' öffnet ab ' + lg.need + ' goldenen Schlüsseln (du hast ' + city.keys.size + ')', 2.4);
+    else if (city.msgT <= 0 && !onHighway(me.pos.x, me.pos.z)) showMsg('🌲 Hier ist die Stadt zu Ende', 1.5);
   } else city.okPos = { x: me.pos.x, z: me.pos.z };
   // Über eine rote Ampel gefahren?
   const ni = Math.round(me.pos.x / BLOCK + N / 2), nj = Math.round(me.pos.z / BLOCK + N / 2);
@@ -1040,7 +1046,7 @@ function stepHw(dt) {
   });
 }
 // Wo man fahren (und gehen) darf: in der Stadt bis zum Waldrand, draussen nur auf der Autobahn
-const allowedAt = (x, z, r) => (Math.abs(x) <= LIMIT && Math.abs(z) <= LIMIT) || hwDrivable(x, z, r);
+const allowedAt = (x, z, r) => (Math.abs(x) <= LIMIT && Math.abs(z) <= LIMIT) || hwDrivable(x, z, r) || areaDrivable(x, z, r, city.keys ? city.keys.size : 0);
 
 // ---------- Reifenrauch und Bremsspuren ----------
 // Rauch, Spuren und Drift-Punkte nach jedem Schritt
@@ -2260,7 +2266,9 @@ function stepRules(dt) {
   if (hw !== city.onHw) { city.onHw = hw; if (hw) { city.limit = 0; S.ui.limit.textContent = '∞'; } } // Autobahn: kein Tempolimit
   if (lim && lim !== city.limit && !hw) { city.limit = lim; S.ui.limit.textContent = lim; }
   S.ui.limit.classList.toggle('free', hw);
-  S.ui.limit.hidden = (!city.limit && !hw) || me.alt > 2 || !!city.walk;
+  const outside = Math.max(Math.abs(me.pos.x), Math.abs(me.pos.z)) > LIMIT; // Hafen, Flughafen: keine Tafel, kein Limit
+  if (outside && !hw) city.limit = 0;
+  S.ui.limit.hidden = (!city.limit && !hw) || (outside && !hw) || me.alt > 2 || !!city.walk;
   S.ui.speed.classList.toggle('over', !!city.limit && kmh > city.limit + 5 && me.alt < 2);
   const F = S.flash; // Blitz verglüht
   if (F.visible && (F.material.opacity -= dt * 4) <= 0) F.visible = false;
@@ -2496,7 +2504,7 @@ function removePolice() {
 }
 
 function surfaceAt(x, z) {
-  if (Math.abs(x) > HALF + ROAD / 2 || Math.abs(z) > HALF + ROAD / 2) return onHighway(x, z) ? 'asphalt' : 'grass';
+  if (Math.abs(x) > HALF + ROAD / 2 || Math.abs(z) > HALF + ROAD / 2) return onHighway(x, z) || inArea(x, z) ? 'asphalt' : 'grass';
   const bi = Math.floor(x / BLOCK + N / 2), bj = Math.floor(z / BLOCK + N / 2);
   const nx = node(Math.round(x / BLOCK + N / 2)), nz = node(Math.round(z / BLOCK + N / 2));
   if (Math.abs(x - nx) < ROAD / 2 || Math.abs(z - nz) < ROAD / 2) return 'asphalt';
@@ -2801,8 +2809,12 @@ function drawMinimapBase() {
 }
 // Draussen: Übersicht mit Stadt, Zufahrt und Autobahn
 function drawWideMap(g) {
-  const sc = (MAP - 16) / 1700, wx = x => MAP / 2 + x * sc, wz = z => MAP / 2 + (z - 297) * sc, me = city.me;
+  const sc = (MAP - 12) / 2150, wx = x => MAP / 2 + (x + 50) * sc, wz = z => MAP / 2 + (z - 297) * sc, me = city.me;
   g.fillStyle = 'rgba(32,62,38,0.92)'; g.fillRect(0, 0, MAP, MAP);
+  const rect = (b, col) => { g.fillStyle = col; g.fillRect(wx(b.x0), wz(b.z0), (b.x1 - b.x0) * sc, (b.z1 - b.z0) * sc); };
+  rect({ x0: -1100, x1: -702, z0: -700, z1: 700 }, '#1e5a8a'); // Wasser
+  for (const A of Object.values(AREAS)) { rect(A.rect, city.keys.size >= A.need ? '#9ca3af' : '#4b5563'); rect(A.road, '#9ca3af'); }
+  rect({ x0: 400, x1: 980, z0: -175, z1: -125 }, '#e5e7eb'); // Piste
   g.fillStyle = '#7b8490'; g.fillRect(wx(-HALF), wz(-HALF), 2 * HALF * sc, 2 * HALF * sc);
   g.strokeStyle = '#e5e7eb'; g.lineWidth = 3; g.beginPath();
   for (let s = 0; s <= HW_LEN; s += 40) { const p = hwPoint(s); if (s) g.lineTo(wx(p.x), wz(p.z)); else g.moveTo(wx(p.x), wz(p.z)); }
@@ -2936,6 +2948,16 @@ function loop(now) {
   stepTraffic(dt);
   stepAccidents(dt);
   stepHw(dt);
+  stepAreas(S.areas, dt, city.keys.size, {
+    start: () => { if (Math.hypot(city.me.pos.x - 600, city.me.pos.z + 150) < 450) showMsg('✈️ Ein Flugzeug startet!', 1.8); },
+    danger: (x, y, z, v) => { // auf der Piste vom Flugzeug erwischt
+      const me = city.me;
+      if (y < 4 && Math.abs(me.pos.x - x) < 19 && Math.abs(me.pos.z - z) < 16 && me.alt < 4 && city.crashT <= 0) {
+        crash(0.9, 'car'); hurt(0.8, x, z); city.crashT = 1; me.speed = -8; me.pos.z += me.pos.z > z ? 6 : -6;
+        showMsg('💥 Vorsicht, die Piste ist für Flugzeuge!', 2);
+      }
+    },
+  });
   stepEvents(dt);
   stepKeys(dt);
   if (city.netCars) { // Mitspieler: zeigen, eigene Position senden, nicht durcheinander durchfahren

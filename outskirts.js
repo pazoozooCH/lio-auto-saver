@@ -215,3 +215,169 @@ export function stepHighway(cars, dt, t, me, cam, hooks) {
     animateCar(m, t, null);
   }
 }
+
+// ---------- Hafen und Flughafen ----------
+// Neue Gebiete hinter einer Schranke: sie öffnet sich erst mit genug goldenen Schlüsseln (need). Je eine Strasse
+// führt von der Stadt hin (road), das Gebiet selbst ist eben (rect). Der Hafen liegt im Westen am Wasser, der
+// Flughafen im Osten mit Piste, Terminal, Tower und Flugzeugen (eines startet immer wieder).
+export const AREAS = {
+  harbor: { need: 5, name: '⚓ Hafen', rect: { x0: -700, x1: -340, z0: -150, z1: 110 }, road: { x0: -350, x1: -256, z0: -7, z1: 7 }, gate: { x: -334, z: 0 } },
+  airport: { need: 12, name: '✈️ Flughafen', rect: { x0: 340, x1: 1000, z0: -260, z1: 60 }, road: { x0: 256, x1: 350, z0: -7, z1: 7 }, gate: { x: 334, z: 0 } },
+};
+const WATER = { x0: -1100, x1: -702, z0: -700, z1: 700, y: -4 }; // Hafenbecken (der Boden liegt tiefer)
+const RUNWAY = { x0: 400, x1: 980, z: -150, w: 50 };
+const inBox = (x, z, b, m = 0) => x > b.x0 + m && x < b.x1 - m && z > b.z0 + m && z < b.z1 - m;
+
+// Gelände: wie weit weg ist das nächste ebene Gebiet (d < 0: drin) und auf welche Höhe soll es (y)
+export function groundShape(x, z) {
+  let d = outskirtsDist(x, z), y = 0;
+  for (const A of Object.values(AREAS)) d = Math.min(d, boxDist(x, z, A.rect) - 4, boxDist(x, z, A.road) - 4);
+  const dw = boxDist(x, z, WATER);
+  if (dw < d) { d = dw; y = WATER.y; }
+  return { d, y };
+}
+export function areaDrivable(x, z, r, keys) {
+  for (const A of Object.values(AREAS)) {
+    if (keys < A.need) continue;
+    if (inBox(x, z, A.rect, r * 0.6) || inBox(x, z, A.road, r * 0.6 - 1)) return true;
+  }
+  return false;
+}
+export const inArea = (x, z) => Object.values(AREAS).some(A => inBox(x, z, A.rect) || inBox(x, z, A.road));
+export function lockedGate(x, z, keys) { // Schranke in der Nähe, die noch zu ist?
+  return Object.values(AREAS).find(A => keys < A.need && Math.hypot(x - A.gate.x, z - A.gate.z) < 30) || null;
+}
+
+const M = (color, o = {}) => new THREE.MeshStandardMaterial({ color, roughness: 0.7, ...o });
+function boxAt(group, solids, w, h, d, mat, x, y, z, solid = true) {
+  const b = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat);
+  b.position.set(x, y, z); b.castShadow = true; b.receiveShadow = true;
+  group.add(b);
+  if (solid) solids.push({ x0: x - w / 2, x1: x + w / 2, z0: z - d / 2, z1: z + d / 2, h: y + h / 2 });
+  return b;
+}
+function flat(group, mat, b, y = 0.03) {
+  const m = new THREE.Mesh(new THREE.PlaneGeometry(b.x1 - b.x0, b.z1 - b.z0).rotateX(-Math.PI / 2), mat);
+  m.position.set((b.x0 + b.x1) / 2, y, (b.z0 + b.z1) / 2); m.receiveShadow = true;
+  group.add(m);
+  return m;
+}
+// Schranke: Pfosten und rot-weisser Arm (offen = hochgeklappt)
+function gate(scene, A, sign) {
+  const g = new THREE.Group(), stripes = document.createElement('canvas');
+  stripes.width = 128; stripes.height = 8;
+  const sg = stripes.getContext('2d');
+  for (let k = 0; k < 8; k++) { sg.fillStyle = k % 2 ? '#ffffff' : '#dc2626'; sg.fillRect(k * 16, 0, 16, 8); }
+  const tex = new THREE.CanvasTexture(stripes); tex.colorSpace = THREE.SRGBColorSpace;
+  const post = new THREE.Mesh(new THREE.BoxGeometry(0.6, 1.4, 0.6), M(0x374151)); post.position.set(0, 0.7, -8);
+  const arm = new THREE.Group(); arm.position.set(0, 1.25, -8);
+  const bar = new THREE.Mesh(new THREE.BoxGeometry(0.25, 0.25, 16), new THREE.MeshStandardMaterial({ map: tex })); bar.position.z = 8;
+  arm.add(bar);
+  g.add(post, arm);
+  g.position.set(A.gate.x, 0, A.gate.z);
+  scene.add(g);
+  const s = sign('🔒 ' + A.name + ': ab ' + A.need + ' 🔑', '#1f2937', '#facc15', 9, 1.4);
+  s.position.set(A.gate.x, 3.6, A.gate.z); s.rotation.y = A.gate.x < 0 ? Math.PI / 2 : -Math.PI / 2; // lesbar von der Stadt her
+  scene.add(s);
+  return { A, arm, sign: s, open: 0 };
+}
+function plane(color = 0xffffff, stripe = 0x1d4ed8) {
+  const g = new THREE.Group(), body = M(color, { metalness: 0.3, roughness: 0.4 }), blue = M(stripe), dark = M(0x111827, { metalness: 0.4 }), glass = M(0x1e293b, { metalness: 0.8, roughness: 0.1 });
+  const add = (geo, m, x, y, z) => { const o = new THREE.Mesh(geo, m); o.position.set(x, y, z); o.castShadow = true; g.add(o); return o; };
+  add(new THREE.CylinderGeometry(2, 2, 30, 20).rotateZ(Math.PI / 2), body, 0, 3.4, 0); // Rumpf
+  add(new THREE.SphereGeometry(2, 20, 14), body, 15, 3.4, 0).scale.set(2, 1, 1); // Nase
+  add(new THREE.ConeGeometry(2, 7, 20).rotateZ(Math.PI / 2), body, -18.5, 3.9, 0).scale.set(1, 0.8, 1); // Heck
+  add(new THREE.BoxGeometry(30, 0.35, 0.25), blue, 0, 3.4, 2.02); add(new THREE.BoxGeometry(30, 0.35, 0.25), blue, 0, 3.4, -2.02); // Streifen
+  add(new THREE.BoxGeometry(1.2, 0.5, 3.2), glass, 17.6, 4.3, 0); // Cockpitfenster
+  add(new THREE.BoxGeometry(6, 0.4, 32), body, 1, 2.6, 0); // Flügel
+  add(new THREE.BoxGeometry(3, 0.3, 11), body, -17, 4.4, 0); // Höhenleitwerk
+  add(new THREE.BoxGeometry(4, 6, 0.4), blue, -18, 7.2, 0); // Seitenleitwerk
+  for (const z of [-7, 7]) add(new THREE.CylinderGeometry(1.1, 1.1, 4.5, 14).rotateZ(Math.PI / 2), dark, 2, 1.6, z); // Triebwerke
+  for (const [x, z] of [[11, 0], [-1, -2.6], [-1, 2.6]]) add(new THREE.CylinderGeometry(0.6, 0.6, 0.5, 12).rotateX(Math.PI / 2), dark, x, 0.6, z); // Räder
+  return g;
+}
+
+export function buildAreas({ group, scene, asphaltMat, lineMat, sign }) {
+  const solids = [], out = { solids, gates: [] };
+  for (const A of Object.values(AREAS)) { flat(group, asphaltMat, A.road); out.gates.push(gate(scene, A, sign)); }
+  // Hafen: Kai, Wasser, Containerstapel, zwei Kräne, Lagerhallen, ein Schiff
+  const H = AREAS.harbor.rect;
+  flat(group, asphaltMat, H);
+  const water = new THREE.Mesh(new THREE.PlaneGeometry(WATER.x1 - WATER.x0, WATER.z1 - WATER.z0).rotateX(-Math.PI / 2),
+    M(0x1e5a8a, { metalness: 0.4, roughness: 0.12, transparent: true, opacity: 0.88 }));
+  water.position.set((WATER.x0 + WATER.x1) / 2, -1.2, 0); scene.add(water);
+  boxAt(group, solids, 2, 1.4, H.z1 - H.z0, M(0x4b5563), H.x0 + 1, 0.7, (H.z0 + H.z1) / 2, false); // Kaimauer
+  for (let z = H.z0 + 6; z < H.z1; z += 12) boxAt(group, solids, 0.6, 0.7, 0.6, M(0x111827), H.x0 + 3, 0.35, z); // Poller
+  const boxCols = [0xdc2626, 0x2563eb, 0x16a34a, 0xf59e0b, 0x9ca3af, 0x7c3aed, 0xea580c];
+  let k = 0;
+  for (let x = -640; x <= -440; x += 40) for (let z = -120; z <= -30; z += 30) {
+    const hgt = 1 + (k * 7 % 3), w = 12.2, d = 2.6;
+    for (let lv = 0; lv < hgt; lv++) for (const dz of [-1.4, 1.4]) boxAt(group, solids, w, 2.6, d, M(boxCols[(k + lv * 3 + (dz > 0 ? 1 : 0)) % boxCols.length], { roughness: 0.6 }), x, 1.3 + lv * 2.6, z + dz, lv === 0);
+    k++;
+  }
+  for (const cz of [-70, 40]) { // Containerkran am Kai
+    const yel = M(0xfacc15, { metalness: 0.4 });
+    for (const [dx, dz] of [[-6, -9], [-6, 9], [14, -9], [14, 9]]) boxAt(group, solids, 1, 24, 1, yel, H.x0 + 10 + dx, 12, cz + dz);
+    boxAt(group, solids, 50, 2, 3, yel, H.x0 - 2, 25, cz, false); // Ausleger übers Wasser
+    boxAt(group, solids, 4, 3, 4, M(0x1f2937), H.x0 + 4, 22.5, cz, false); // Laufkatze
+  }
+  for (const [x, z] of [[-430, 75], [-560, 75]]) { // Lagerhallen
+    boxAt(group, solids, 60, 12, 30, M(0x94a3b8), x, 6, z);
+    boxAt(group, solids, 61, 1, 31, M(0x475569), x, 12.5, z, false);
+  }
+  const ship = new THREE.Group(); // Frachtschiff am Kai
+  const hull = new THREE.Mesh(new THREE.BoxGeometry(110, 10, 20), M(0x7f1d1d)); hull.position.y = 2;
+  const deck = new THREE.Mesh(new THREE.BoxGeometry(110, 1, 20), M(0x111827)); deck.position.y = 7.4;
+  const bridge = new THREE.Mesh(new THREE.BoxGeometry(14, 12, 18), M(0xf8fafc)); bridge.position.set(-44, 13.5, 0);
+  ship.add(hull, deck, bridge);
+  for (let x = -30; x <= 40; x += 13) for (const z of [-5, 0, 5]) { const c = new THREE.Mesh(new THREE.BoxGeometry(12, 2.6, 2.5), M(boxCols[(x + z + 100) % boxCols.length])); c.position.set(x, 9.2, z * 1.1); ship.add(c); }
+  ship.position.set(H.x0 - 14, 0, -10); scene.add(ship);
+  for (const side of [0, 1]) {
+    const s1 = sign('⚓ HAFEN', '#0e7490', '#ffffff', 8, 1.6); s1.position.set(H.x1 - 2 - side * 0.05, 5, 22); s1.rotation.y = Math.PI / 2 + side * Math.PI; group.add(s1);
+  }
+  // Flughafen: Piste mit Markierungen, Rollweg, Vorfeld, Terminal, Tower, zwei Flugzeuge am Gate, eines startet
+  const F = AREAS.airport.rect;
+  flat(group, M(0x5f9a45, { roughness: 1 }), F, 0.01);
+  flat(group, asphaltMat, { x0: RUNWAY.x0, x1: RUNWAY.x1, z0: RUNWAY.z - RUNWAY.w / 2, z1: RUNWAY.z + RUNWAY.w / 2 }, 0.04);
+  flat(group, asphaltMat, { x0: 350, x1: 640, z0: -70, z1: 25 }, 0.035); // Vorfeld
+  flat(group, asphaltMat, { x0: 480, x1: 510, z0: RUNWAY.z + 20, z1: -65 }, 0.035); // Rollweg
+  for (let x = RUNWAY.x0 + 40; x < RUNWAY.x1 - 40; x += 30) flat(group, lineMat, { x0: x, x1: x + 15, z0: RUNWAY.z - 0.5, z1: RUNWAY.z + 0.5 }, 0.06);
+  for (const x0 of [RUNWAY.x0 + 4, RUNWAY.x1 - 24]) for (let z = -20; z <= 20; z += 5) flat(group, lineMat, { x0, x1: x0 + 20, z0: RUNWAY.z + z - 1, z1: RUNWAY.z + z + 1 }, 0.06);
+  boxAt(group, solids, 150, 14, 26, M(0x93c5fd, { metalness: 0.4, roughness: 0.1 }), 480, 7, 45); // Terminal (Glas)
+  boxAt(group, solids, 152, 1, 28, M(0xf1f5f9), 480, 14.5, 45, false);
+  const tower = new THREE.Mesh(new THREE.CylinderGeometry(2.5, 3, 34, 16), M(0xe5e7eb)); tower.position.set(600, 17, 40); group.add(tower);
+  solids.push({ x0: 597, x1: 603, z0: 37, z1: 43, h: 40 });
+  const cab = new THREE.Mesh(new THREE.CylinderGeometry(6, 4.5, 6, 16), M(0x1e293b, { metalness: 0.7, roughness: 0.1 })); cab.position.set(600, 37, 40); group.add(cab);
+  for (const side of [0, 1]) {
+    const s1 = sign('✈️ FLUGHAFEN', '#1d4ed8', '#ffffff', 16, 2.4); s1.position.set(480, 17, 31.9 - side * 0.05); s1.rotation.y = side * Math.PI; group.add(s1);
+  }
+  for (const [x, col] of [[420, 0x1d4ed8], [540, 0xdc2626]]) {
+    const p = plane(0xffffff, col); p.rotation.y = Math.PI / 2; p.position.set(x, 0, -30); scene.add(p);
+    solids.push({ x0: x - 2.5, x1: x + 2.5, z0: -48, z1: -10, h: 6 }); // nur der Rumpf ist fest (unter den Flügeln kann man durch)
+  }
+  out.jet = { mesh: plane(0xf8fafc, 0x16a34a), t: -10, x: RUNWAY.x0 + 20, y: 0, v: 0 };
+  scene.add(out.jet.mesh);
+  return out;
+}
+
+// Schranken öffnen sich mit genug Schlüsseln; das Flugzeug startet immer wieder (Anlauf auf der Piste, dann steigen)
+export function stepAreas(A, dt, keys, hooks) {
+  for (const G of A.gates) {
+    const want = keys >= G.A.need ? 1 : 0;
+    G.open += Math.sign(want - G.open) * Math.min(Math.abs(want - G.open), dt * 0.8);
+    G.arm.rotation.x = -G.open * 1.4;
+    G.sign.visible = !want;
+  }
+  const J = A.jet;
+  J.t += dt;
+  if (J.t < 0) { J.mesh.visible = false; return; }
+  J.mesh.visible = true;
+  if (J.t < dt * 1.5) { J.x = RUNWAY.x0 + 20; J.y = 0; J.v = 0; hooks.start(J); }
+  J.v = Math.min(80, J.v + dt * 6);
+  J.x += J.v * dt;
+  if (J.x > RUNWAY.x0 + 330) J.y += J.v * dt * 0.22; // abheben
+  J.mesh.position.set(J.x, J.y, RUNWAY.z);
+  J.mesh.rotation.z = J.y > 0 ? 0.18 : 0;
+  if (J.y > 260) J.t = -40 - Math.random() * 30; // weg – das nächste kommt später
+  hooks.danger(J.x, J.y, RUNWAY.z, J.v);
+}
