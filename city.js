@@ -1943,6 +1943,83 @@ function stepSchool(M, dt) {
   M.text = '🎓 Prüfung: Punkt ' + (M.step + 1) + ' von ' + M.points.length + (city.limit ? ' · max. ' + city.limit : '');
 }
 
+// ---------- Goldene Schlüssel ----------
+// 30 Schlüssel, immer an denselben Orten: auf Dächern (nur fliegend erreichbar), in Parks, an der Autobahn und an
+// besonderen Orten. Jeder gibt 5 Münzen; mit genug Schlüsseln öffnen sich neue Gebiete (KEY_GOALS).
+// Gefundene stehen im Spielstand autoRetterKeys.
+const KEYS_KEY = 'autoRetterKeys', KEY_COUNT = 30;
+const KEY_GOALS = [[5, '⚓ Der Hafen ist offen!'], [12, '✈️ Der Flughafen ist offen!'], [20, '⛰️ Die Passstrasse ist offen!'], [30, '👑 Alle Schlüssel! Du bist der Schatzmeister der Stadt!']];
+function loadKeys() { try { return new Set(JSON.parse(localStorage.getItem(KEYS_KEY)) || []); } catch (err) { return new Set(); } }
+function saveKeys() { try { localStorage.setItem(KEYS_KEY, JSON.stringify([...city.keys])); } catch (err) { /* ohne Speicher */ } }
+function keySpots() {
+  const r = rng(2026), P = S.places, spots = [];
+  const roofs = S.solid.filter(b => b.h > 9 && b.h < 60 && b.x1 - b.x0 > 8 && b.z1 - b.z0 > 8 && b.x0 < 1e8);
+  for (let k = 0; k < 10 && roofs.length; k++) { // Dächer
+    const b = roofs.splice(Math.floor(r() * roofs.length), 1)[0];
+    spots.push({ x: (b.x0 + b.x1) / 2, y: b.h + 1.3, z: (b.z0 + b.z1) / 2, roof: true });
+  }
+  const parks = [...S.parks];
+  for (let k = 0; k < 6; k++) { // Parks: in einer Ecke der Wiese
+    const [bi, bj] = parks[k % parks.length].split(',').map(Number), cx = (node(bi) + node(bi + 1)) / 2, cz = (node(bj) + node(bj + 1)) / 2;
+    spots.push({ x: cx + (k % 2 ? 14 : -14), y: 1.2, z: cz + (k % 3 ? 14 : -14) });
+  }
+  for (const [s, lat] of [[300, 8.4], [1500, -8.4], [2100, 8.4], [2900, -8.4], [3500, 8.4]]) { // Autobahn: am Rand
+    const p = hwPoint(s);
+    spots.push({ x: p.x - p.tz * lat, y: 1.2, z: p.z + p.tx * lat });
+  }
+  spots.push({ x: P.gas.x, y: 7.2, z: P.gas.z }); // auf dem Tankstellendach
+  spots.push({ x: P.repair.x, y: 1.2, z: P.repair.z + 4 }); // in der Werkstatt
+  spots.push({ x: P.dealer.desk.x + 3, y: 1.2, z: P.dealer.desk.z }); // im Autohaus
+  spots.push({ x: P.wash.x, y: 1.2, z: P.wash.z }); // in der Waschanlage
+  spots.push({ x: P.jail.x, y: 1.2, z: P.jail.z - P.jail.half - 12 }); // vor dem Gefängnis
+  spots.push({ x: P.hospital.x + 14, y: 1.2, z: P.hospital.z }); // beim Spital
+  for (let k = 0; spots.length < KEY_COUNT && k < 200; k++) { // Rest: irgendwo auf dem Trottoir
+    const i = Math.floor(r() * N), j = Math.floor(r() * N), x = node(i) + 9.5, z = node(j) + 14 + r() * 30;
+    if (!S.solid.some(b => x > b.x0 - 1 && x < b.x1 + 1 && z > b.z0 - 1 && z < b.z1 + 1)) spots.push({ x, y: 1.2, z });
+  }
+  return spots.slice(0, KEY_COUNT).map((p, id) => ({ ...p, id }));
+}
+function keyMesh() {
+  const g = new THREE.Group(), gold = new THREE.MeshStandardMaterial({ color: 0xffd34d, metalness: 1, roughness: 0.2, emissive: 0x6b4d00, emissiveIntensity: 0.8 });
+  const ring = new THREE.Mesh(new THREE.TorusGeometry(0.32, 0.09, 10, 24), gold); ring.position.y = 0.45;
+  const shaft = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.85, 0.08), gold); shaft.position.y = -0.2;
+  const t1 = new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.1, 0.08), gold); t1.position.set(0.15, -0.5, 0);
+  const t2 = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.1, 0.08), gold); t2.position.set(0.12, -0.3, 0);
+  const glow = new THREE.Mesh(new THREE.SphereGeometry(0.9, 12, 8), new THREE.MeshBasicMaterial({ color: 0xffe066, transparent: true, opacity: 0.18, blending: THREE.AdditiveBlending, depthWrite: false }));
+  g.add(ring, shaft, t1, t2, glow);
+  g.scale.setScalar(1.3);
+  return g;
+}
+function setupKeys() {
+  if (!S.keySpots) S.keySpots = keySpots();
+  if (S.keyMeshes) for (const m of S.keyMeshes) S.scene.remove(m);
+  city.keys = loadKeys();
+  S.keyMeshes = S.keySpots.map(p => {
+    const m = keyMesh();
+    m.position.set(p.x, p.y, p.z);
+    m.visible = !city.keys.has(p.id);
+    S.scene.add(m);
+    return m;
+  });
+}
+function stepKeys(dt) {
+  const me = city.me, w = city.walk, x = w ? w.x : me.pos.x, z = w ? w.z : me.pos.z, y = w ? 1 : me.alt + 1;
+  S.keySpots.forEach((p, k) => {
+    const m = S.keyMeshes[k];
+    if (!m.visible) return;
+    m.rotation.y += dt * 2;
+    m.position.y = p.y + Math.sin(city.t * 2 + k) * 0.2;
+    if (Math.hypot(p.x - x, p.z - z) > 2.8 || Math.abs(p.y - y) > 3.2) return;
+    m.visible = false;
+    city.keys.add(p.id); saveKeys();
+    const n = city.keys.size, goal = KEY_GOALS.find(([c]) => c === n);
+    if (!city.net) city.earn(goal && n === KEY_COUNT ? 100 : 5);
+    for (let i = 0; i < 10; i++) S.fx.puff(p.x, p.y, p.z, (Math.random() - 0.5) * 6, (Math.random() - 0.5) * 6);
+    showMsg(goal ? goal[1] : '🔑 Goldener Schlüssel! (' + n + ' / ' + KEY_COUNT + ')' + (city.net ? '' : '  +5 🪙'), goal ? 3.2 : 2.2);
+    window.beep && window.beep(1319, 0.1, 'triangle', 0.07); window.beep && window.beep(1760, 0.2, 'triangle', 0.07, 0.1);
+  });
+}
+
 // ---------- Überraschungen ----------
 // Ab und zu passiert etwas in der Stadt und wird zum Auftrag: ein Haus brennt (mit dem Feuerwehrauto löschen, mit
 // einem anderen Auto wenigstens die Feuerwehr rufen), ein Banküberfall (Räuber verfolgen, wie beim Dieb) oder jemand
@@ -2818,6 +2895,7 @@ export function startCity({ player, kinds, topSpeed, onExit, pay = () => 0, earn
   S.ui.jail.hidden = true;
   if (jailUntil() > Date.now()) { goToJail(jailUntil()); showMsg('🔒 Du sitzt noch im Gefängnis!', 2.4); } // Zeit läuft weiter
   parkLotCars();
+  setupKeys();
   city.hw = makeHighwayTraffic(S.scene, kinds);
   setupDealer();
   window.addEventListener('keydown', onKey);
@@ -2859,6 +2937,7 @@ function loop(now) {
   stepAccidents(dt);
   stepHw(dt);
   stepEvents(dt);
+  stepKeys(dt);
   if (city.netCars) { // Mitspieler: zeigen, eigene Position senden, nicht durcheinander durchfahren
     const me = city.me, o = { x: me.pos.x, y: me.alt, z: me.pos.z };
     if (city.netCars.bump(o, me.radius)) {
@@ -2904,7 +2983,7 @@ function stepDayNight(dt) {
   n.headlight.target.position.set(me.pos.x + fx * 25, 0, me.pos.z + fz * 25);
   // Uhr: Mittag = höchster Sonnenstand
   const mins = Math.floor(((city.tod - 0.25 + 1) % 1) * 24 * 60 + 12 * 60) % (24 * 60);
-  const clock = (city.wx.kind !== 'sun' && city.wx.i > 0.3 ? WX[city.wx.kind].icon + ' ' : night > 0.5 ? '🌙 ' : '☀️ ') + String(Math.floor(mins / 60)).padStart(2, '0') + ':' + String(mins % 60).padStart(2, '0');
+  const clock = '🔑 ' + city.keys.size + '/' + KEY_COUNT + '  ' + (city.wx.kind !== 'sun' && city.wx.i > 0.3 ? WX[city.wx.kind].icon + ' ' : night > 0.5 ? '🌙 ' : '☀️ ') + String(Math.floor(mins / 60)).padStart(2, '0') + ':' + String(mins % 60).padStart(2, '0');
   if (S.ui.clock.textContent !== clock) S.ui.clock.textContent = clock;
 }
 
