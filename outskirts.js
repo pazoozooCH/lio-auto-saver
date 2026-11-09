@@ -1,4 +1,4 @@
-// Gebiete ausserhalb des Stadtgitters (für city.js). Die Autobahn: ein Oval südlich der Stadt (etwa 3,7 km) mit zwei
+// Gebiete ausserhalb des Stadtgitters (für city.js). Die Autobahn: ein Oval südlich der Stadt (etwa 4,8 km) mit vier
 // Spuren je Richtung, Mittelleitplanke und Leitplanken aussen, Zufahrt vom Südrand der Stadt. Tempolimit 140 (HW_LIMIT) –
 // an das sich Raser und Drängler aber nicht halten (die fahren gegen 200).
 // Auf der Autobahn fährt jeder anders: gemütliche Lastwagen rechts, normale Autos (überholen und gehen wieder rechts),
@@ -8,14 +8,15 @@
 import * as THREE from 'three';
 import { buildCar, animateCar } from './cars3d.js';
 
-export const HW = { cz: 650, half: 600, R: 200 };
+export const HW = { cz: 710, half: 790, R: 260 }; // reicht fast bis zum Rand des Geländes (±1100 m)
 export const HW_LIMIT = 140;
 export const HW_LEN = 4 * HW.half + 2 * Math.PI * HW.R;
 const TOP = HW.cz - HW.R; // die obere Gerade liegt bei z = 450
 const RAMP = { x0: -7, x1: 7, z0: 250, z1: TOP - 6 }; // Zufahrt von der Strasse am Südrand der Stadt (z = 256)
 const GAP = { s0: HW.half - 16, s1: HW.half + 16 }; // Einfahrt: dort fehlen Mittel- und Aussenleitplanke
-const EDGE = 9.9, MEDIAN = 0.4; // Leitplanken: aussen und in der Mitte
-const LANES = [7, 2.9]; // Spurmitte: rechte Spur, Überholspur
+const EDGE = 17.6, MEDIAN = 0.4; // Leitplanken: aussen und in der Mitte
+const LANES = [14.1, 10.4, 6.6, 2.9]; // Spurmitte: ganz rechts … ganz links (Überholspur)
+const WIDE = EDGE + 1.2; // so weit reicht die Autobahn seitlich
 const inGap = s => s > GAP.s0 && s < GAP.s1;
 
 export function hwPoint(s) {
@@ -45,16 +46,16 @@ const boxDist = (x, z, b) => {
   const dx = Math.max(b.x0 - x, 0, x - b.x1), dz = Math.max(b.z0 - z, 0, z - b.z1);
   return dx || dz ? Math.hypot(dx, dz) : -Math.min(x - b.x0, b.x1 - x, z - b.z0, b.z1 - z);
 };
-export function outskirtsDist(x, z) { return Math.min(Math.abs(hwProject(x, z).lat) - 11, boxDist(x, z, RAMP)); }
+export function outskirtsDist(x, z) { return Math.min(Math.abs(hwProject(x, z).lat) - WIDE, boxDist(x, z, RAMP)); }
 
 // Darf ein Fahrzeug (Radius r) hier draussen stehen? Leitplanken aussen und in der Mitte, Zufahrt mit Leitplanken
 export function hwDrivable(x, z, r = 1) {
   const p = hwProject(x, z), gap = inGap(p.s) && p.s < 2 * HW.half;
   if (Math.abs(p.lat) <= EDGE - r * 0.8 && (Math.abs(p.lat) >= MEDIAN + r * 0.6 || gap)) return true;
-  if (gap && p.lat < 0 && p.lat > -14) return true; // Einfahrt von der Zufahrt her
+  if (gap && p.lat < 0 && p.lat > -WIDE - 3) return true; // Einfahrt von der Zufahrt her
   return x > RAMP.x0 + r * 0.6 && x < RAMP.x1 - r * 0.6 && z > RAMP.z0 && z < RAMP.z1 + 8;
 }
-export const onHighway = (x, z) => Math.abs(hwProject(x, z).lat) < 11 || boxDist(x, z, RAMP) < 0;
+export const onHighway = (x, z) => Math.abs(hwProject(x, z).lat) < WIDE || boxDist(x, z, RAMP) < 0;
 
 // ---------- Bauen ----------
 function strip(points, mat) { // points: Reihen von [x, y, z, u, v] (zwei je Reihe) → Band
@@ -89,9 +90,9 @@ export function buildHighway({ group, asphaltMat, lineMat, sign }) {
   const concrete = new THREE.MeshStandardMaterial({ color: 0xb9bcc2, roughness: 0.9, side: THREE.DoubleSide });
   const rail = new THREE.MeshStandardMaterial({ color: 0xc9ced6, metalness: 0.7, roughness: 0.35, side: THREE.DoubleSide });
   const add = list => { for (const m of list) group.add(m); };
-  add(ribbon(-10.6, 10.6, 0.03, 0.03, asphaltMat)); // Fahrbahn
-  for (const l of [-9.3, -0.8, 0.8, 9.3]) add(ribbon(l - 0.12, l + 0.12, 0.05, 0.05, lineMat)); // Randlinien
-  for (const l of [-4.95, 4.95]) add(ribbon(l - 0.1, l + 0.1, 0.05, 0.05, lineMat, s => s % 18 < 6)); // gestrichelt
+  add(ribbon(-WIDE + 0.5, WIDE - 0.5, 0.03, 0.03, asphaltMat)); // Fahrbahn
+  for (const l of [-EDGE + 0.7, -0.8, 0.8, EDGE - 0.7]) add(ribbon(l - 0.12, l + 0.12, 0.05, 0.05, lineMat)); // Randlinien
+  for (const b of [4.75, 8.5, 12.25]) for (const l of [-b, b]) add(ribbon(l - 0.1, l + 0.1, 0.05, 0.05, lineMat, s => s % 18 < 6)); // gestrichelt
   const noGap = s => !(inGap(s) && s < 2 * HW.half);
   for (const l of [-MEDIAN, MEDIAN]) add(ribbon(l, l, 0, 0.85, concrete, noGap)); // Mittelleitplanke (Beton)
   add(ribbon(-MEDIAN, MEDIAN, 0.85, 0.85, concrete, noGap));
@@ -138,7 +139,7 @@ const TYPES = [['slow', 0.2], ['normal', 0.45], ['tail', 0.18], ['racer', 0.17]]
 const COLORS = ['#c0392b', '#2563eb', '#f4f4f4', '#22232b', '#9aa0aa', '#16a34a', '#f59e0b', '#7c3aed', '#0e7490', '#b45309'];
 const pick = a => a[Math.floor(Math.random() * a.length)];
 
-export function makeHighwayTraffic(scene, kinds, n = 28) {
+export function makeHighwayTraffic(scene, kinds, n = 48) {
   const cars = [];
   for (let k = 0; k < n; k++) {
     let r = Math.random(), type = 'normal';
@@ -152,7 +153,7 @@ export function makeHighwayTraffic(scene, kinds, n = 28) {
     }
     // m/s: Lastwagen ~80 km/h, Normale ~125 (knapp unter dem Limit), Drängler ~190, Raser ~200 und mehr
     const want = { slow: 22, normal: 35, tail: 53, racer: 56 }[type] + (Math.random() - 0.5) * 6;
-    const dir = k % 2 ? -1 : 1, lane = type === 'tail' || type === 'racer' ? 1 : 0;
+    const dir = k % 2 ? -1 : 1, lane = { slow: 0, normal: k % 3 === 0 ? 1 : 0, tail: 3, racer: 2 + (k % 2) }[type];
     cars.push({ v, mesh, type, dir, lane, lat: dir * LANES[lane], s: Math.random() * HW_LEN, speed: want * 0.8, want, len: mesh.userData.length,
       radius: mesh.userData.radius, gapT: { slow: 1.8, normal: 1.4, tail: 0.35, racer: 0.8 }[type], laneT: Math.random() * 2, flashT: 0, honkT: 0, x: 0, z: 0 });
     scene.add(mesh);
@@ -184,11 +185,12 @@ export function stepHighway(cars, dt, t, me, cam, hooks) {
     // Spurwechsel: überholen, wenn vorne einer bummelt; normale Autos gehen danach wieder nach rechts
     if ((c.laneT -= dt) <= 0) {
       c.laneT = c.type === 'racer' ? 0.6 : 1.5;
-      const other = 1 - c.lane, oLat = c.dir * LANES[other], free = !ahead(c, oLat, -22, 45);
-      const slowLead = lead && lead.gap < 70 && lead.o.speed < c.want - 3;
-      if (c.type === 'racer' && slowLead && free) c.lane = other; // Raser: immer dorthin, wo es frei ist
-      else if (c.type !== 'slow' && c.lane === 0 && slowLead && free) c.lane = 1;
-      else if (c.type === 'normal' && c.lane === 1 && free && !ahead(c, oLat, -10, 80)) c.lane = 0; // Rechtsfahrgebot
+      const free = l => l >= 0 && l < LANES.length && !ahead(c, c.dir * LANES[l], -22, 45);
+      const slowLead = lead && lead.gap < 70 && lead.o.speed < c.want - 3, top = c.type === 'slow' ? 1 : LANES.length - 1;
+      if (slowLead && c.lane < top && free(c.lane + 1)) c.lane++; // links überholen
+      else if (slowLead && c.type === 'racer' && free(c.lane - 1)) c.lane--; // Raser: auch rechts vorbei
+      else if (!slowLead && (c.type === 'normal' || c.type === 'slow') && c.lane > 0 && free(c.lane - 1)
+        && !ahead(c, c.dir * LANES[c.lane - 1], -10, 80)) c.lane--; // Rechtsfahrgebot
     }
     const lat = c.dir * LANES[c.lane];
     c.speed += Math.max(-9 * dt, Math.min((c.type === 'racer' ? 5 : 3) * dt, v - c.speed));
@@ -225,7 +227,7 @@ export const AREAS = {
   harbor: { need: 5, name: '⚓ Hafen', rect: { x0: -700, x1: -340, z0: -150, z1: 110 }, road: { x0: -350, x1: -256, z0: -7, z1: 7 }, gate: { x: -334, z: 0 } },
   airport: { need: 12, name: '✈️ Flughafen', rect: { x0: 340, x1: 1000, z0: -260, z1: 60 }, road: { x0: 256, x1: 350, z0: -7, z1: 7 }, gate: { x: 334, z: 0 } },
 };
-const WATER = { x0: -1100, x1: -702, z0: -700, z1: 700, y: -4 }; // Hafenbecken (der Boden liegt tiefer)
+const WATER = { x0: -1100, x1: -702, z0: -700, z1: 380, y: -4 }; // Hafenbecken (der Boden liegt tiefer), nicht bis zur Autobahn
 const RUNWAY = { x0: 400, x1: 980, z: -150, w: 50 };
 const inBox = (x, z, b, m = 0) => x > b.x0 + m && x < b.x1 - m && z > b.z0 + m && z < b.z1 - m;
 
@@ -508,7 +510,7 @@ export function slideInside(x, z, r, keys) {
   }
   if (z > RAMP.z0 && z < RAMP.z1 && Math.abs(x) < RAMP.x1 + 4) return { x: Math.max(RAMP.x0 + r * 0.6 + 0.05, Math.min(RAMP.x1 - r * 0.6 - 0.05, x)), z };
   const p = hwProject(x, z);
-  if (Math.abs(p.lat) < 13) {
+  if (Math.abs(p.lat) < WIDE + 2) {
     const lo = MEDIAN + r * 0.6 + 0.05, hi = EDGE - r * 0.8 - 0.05, lat = (p.lat >= 0 ? 1 : -1) * Math.min(hi, Math.max(lo, Math.abs(p.lat)));
     const q = at(p.s, lat);
     return { x: q.x, z: q.z };

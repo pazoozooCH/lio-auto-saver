@@ -2016,7 +2016,7 @@ function keySpots() {
     const [bi, bj] = parks[k % parks.length].split(',').map(Number), cx = (node(bi) + node(bi + 1)) / 2, cz = (node(bj) + node(bj + 1)) / 2;
     spots.push({ x: cx + (k % 2 ? 14 : -14), y: 1.2, z: cz + (k % 3 ? 14 : -14) });
   }
-  for (const [s, lat] of [[300, 8.4], [1500, -8.4], [2100, 8.4], [2900, -8.4], [3500, 8.4]]) { // Autobahn: am Rand
+  for (const [s, lat] of [[300, 16], [1500, -16], [2600, 16], [3500, -16], [4400, 16]]) { // Autobahn: auf dem Pannenstreifen
     const p = hwPoint(s);
     spots.push({ x: p.x - p.tz * lat, y: 1.2, z: p.z + p.tx * lat });
   }
