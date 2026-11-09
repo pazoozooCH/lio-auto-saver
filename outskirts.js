@@ -167,9 +167,10 @@ export function stepHighway(cars, dt, t, me, cam, hooks) {
     const p = hwProject(me.x, me.z), d = p.lat >= 0 ? 1 : -1, tp = hwPoint(p.s);
     P = { s: p.s, lat: p.lat, dir: d, speed: me.speed * (Math.cos(me.heading) * tp.tx + Math.sin(me.heading) * tp.tz) * d, len: me.len, me: true };
   }
+  const all = P ? cars.concat(P) : cars; // einmal pro Bild (nicht bei jeder Suche neu)
   const ahead = (c, lat, from = 0, range = 140) => { // nächstes Fahrzeug vor c auf der Spur lat (from < 0: auch knapp dahinter)
     let best = null, bd = Infinity;
-    for (const o of P ? [...cars, P] : cars) {
+    for (const o of all) {
       if (o === c || o.dir !== c.dir || Math.abs(o.lat - lat) > 2.3) continue;
       let ds = ((o.s - c.s) * c.dir) % HW_LEN; if (ds < -HW_LEN / 2) ds += HW_LEN; if (ds > HW_LEN / 2) ds -= HW_LEN;
       if (ds > from && ds < range && ds < bd) { bd = ds; best = o; }
@@ -206,7 +207,7 @@ export function stepHighway(cars, dt, t, me, cam, hooks) {
     if (c.type === 'racer' && P && c.dir === P.dir && c.speed > P.speed + 15 && Math.hypot(me.x - c.x, me.z - c.z) < 9) hooks.msg('💨 Achtung, ein Raser!');
     // du wirst angefahren oder fährst auf
     if (P && Math.hypot(me.x - c.x, me.z - c.z) < (me.radius + c.radius) * 0.75) { hooks.bump(c); c.speed *= 0.5; }
-    const m = c.mesh, seen = Math.hypot(c.x - cam.x, c.z - cam.z) < 240;
+    const m = c.mesh, seen = Math.hypot(c.x - cam.x, c.z - cam.z) < (me.see || 240);
     m.visible = seen;
     if (!seen) continue;
     m.position.set(c.x, 0, c.z);

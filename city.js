@@ -773,7 +773,7 @@ function stepTraffic(dt) {
   for (const c of city.cars) {
     if (c.wreck > 0) { // Unfallauto steht schräg da
       const m = c.mesh;
-      m.visible = Math.hypot(c.x - S.camera.position.x, c.z - S.camera.position.z) < SEE;
+      m.visible = Math.hypot(c.x - S.camera.position.x, c.z - S.camera.position.z) < city.see;
       m.position.set(c.x, 0, c.z); m.rotation.y = -c.h - c.wreckYaw;
       continue;
     }
@@ -821,7 +821,7 @@ function stepTraffic(dt) {
       c.x = p[0]; c.z = p[1];
       if (T.t >= 1) { c.i = T.bi; c.j = T.bj; c.d = T.d2; c.s = 7; c.turn = null; c.reckless = c.rush = false; placeOnSegment(c); }
     }
-    const m = c.mesh, seen = Math.hypot(c.x - S.camera.position.x, c.z - S.camera.position.z) < SEE;
+    const m = c.mesh, seen = Math.hypot(c.x - S.camera.position.x, c.z - S.camera.position.z) < city.see;
     m.visible = seen;
     if (seen) {
       m.position.set(c.x, 0, c.z);
@@ -1069,20 +1069,23 @@ function stepMe(dt) {
 }
 
 // Autobahn-Verkehr (outskirts.js): du bist dort ein Hindernis, Drängler hupen, Zusammenstösse schieben dich weg
+const hwMe = {}; // wird jedes Bild neu befüllt (kein neues Objekt pro Bild)
+const hwHooks = {
+  honk: c => horn(Math.max(0.15, 1 - Math.hypot(c.x - city.me.pos.x, c.z - city.me.pos.z) / 60), 0.4, 1.1),
+  msg: text => { if (city.hwMsgT <= 0) { showMsg(text, 1.8); city.hwMsgT = 10; } },
+  bump: c => {
+    const me = city.me, dx = me.pos.x - c.x, dz = me.pos.z - c.z, d = Math.hypot(dx, dz) || 1, min = (me.radius + c.radius) * 0.75;
+    me.pos.x += dx / d * (min - d); me.pos.z += dz / d * (min - d);
+    if (city.crashT <= 0) { const rel = Math.abs(me.speed - c.speed); crash(0.2 + rel / 25, 'car'); hurt(rel / 20, c.x, c.z); city.crashT = 0.6; }
+    me.speed *= 0.7;
+  },
+};
 function stepHw(dt) {
   const me = city.me;
   city.hwMsgT -= dt;
-  const on = !city.walk && me.alt < 2 && onHighway(me.pos.x, me.pos.z);
-  stepHighway(city.hw, dt, city.t, { x: me.pos.x, z: me.pos.z, heading: me.heading, speed: me.speed, len: me.len, radius: me.radius, on }, S.camera.position, {
-    honk: c => horn(Math.max(0.15, 1 - Math.hypot(c.x - me.pos.x, c.z - me.pos.z) / 60), 0.4, 1.1),
-    msg: text => { if (city.hwMsgT <= 0) { showMsg(text, 1.8); city.hwMsgT = 10; } },
-    bump: c => {
-      const dx = me.pos.x - c.x, dz = me.pos.z - c.z, d = Math.hypot(dx, dz) || 1, min = (me.radius + c.radius) * 0.75;
-      me.pos.x += dx / d * (min - d); me.pos.z += dz / d * (min - d);
-      if (city.crashT <= 0) { const rel = Math.abs(me.speed - c.speed); crash(0.2 + rel / 25, 'car'); hurt(rel / 20, c.x, c.z); city.crashT = 0.6; }
-      me.speed *= 0.7;
-    },
-  });
+  Object.assign(hwMe, { x: me.pos.x, z: me.pos.z, heading: me.heading, speed: me.speed, len: me.len, radius: me.radius, see: city.see * 1.7,
+    on: !city.walk && me.alt < 2 && onHighway(me.pos.x, me.pos.z) });
+  stepHighway(city.hw, dt, city.t, hwMe, S.camera.position, hwHooks);
 }
 // Wo man fahren (und gehen) darf: in der Stadt bis zum Waldrand, draussen nur auf der Autobahn
 const allowedAt = (x, z, r) => (Math.abs(x) <= LIMIT && Math.abs(z) <= LIMIT) || hwDrivable(x, z, r) || areaDrivable(x, z, r, city.keys ? city.keys.size : 0)
@@ -2934,7 +2937,7 @@ export function startCity({ player, kinds, topSpeed, onExit, pay = () => 0, earn
   // online starten alle auf einer anderen Strasse am Stadtrand
   const me = { v: player, mesh, pos: new THREE.Vector3(node(1 + (net ? net.mySlot : 0)) + 20, 0, node(0) + LANE), heading: 0, speed: 0, vl: 0, steer: 0,
     ...carStats(player, mesh, kinds, topSpeed), slip: 0, surface: 'asphalt', alt: 0, fly: false, landing: false };
-  city = { me, cars: spawnTraffic(kinds), input: {}, t: Math.random() * CYCLE, msgT: 0, crashT: 0, hornT: 0, inCross: false, tod: 0.02, turbo: 0, fuelT: 0, washT: 0, mission: null, accT: 25 + Math.random() * 30, fuel: 1, damage: 0, scratches: [], repairT: 0, wx: { kind: 'sun', t: 60 + Math.random() * 60, i: 0 }, wGrip: 1, dealT: 0, dealOpen: false, dealer, customers: [], custT: 4, custMsgT: 0, talk: null, okPos: { x: me.pos.x, z: me.pos.z }, hw: [], hwMsgT: 0, onHw: false, eventT: 50 + Math.random() * 40, gy: 0,
+  city = { me, cars: spawnTraffic(kinds), input: {}, t: Math.random() * CYCLE, msgT: 0, crashT: 0, hornT: 0, inCross: false, tod: 0.02, turbo: 0, fuelT: 0, washT: 0, mission: null, accT: 25 + Math.random() * 30, fuel: 1, damage: 0, scratches: [], repairT: 0, wx: { kind: 'sun', t: 60 + Math.random() * 60, i: 0 }, wGrip: 1, dealT: 0, dealOpen: false, dealer, customers: [], custT: 4, custMsgT: 0, talk: null, okPos: { x: me.pos.x, z: me.pos.z }, hw: [], hwMsgT: 0, onHw: false, eventT: 50 + Math.random() * 40, gy: 0, see: SEE, perfT: 0, perfN: 0,
     gears: gearbox(player.kind), onExit, last: performance.now(), kinds, pay, gripBoost: (kinds[player.kind] && kinds[player.kind].grip) || 1, canFly: !!(kinds[player.kind] && kinds[player.kind].fly), fines: 0, police: null, pulled: 0, ticket: false,
     earn, net, topSpeed, garage, baseSlot: net ? net.mySlot : 0, baseT: 0, atBase: -1, baseEdit: false, netCars: net ? makeNetCars({ scene: S.scene, kinds, net }) : null, drift: 0, driftT: 0, driftBest: (() => { try { return +localStorage.getItem('autoRetterDriftBest') || 0; } catch (e) { return 0; } })() };
   S.fx.clear();
@@ -2959,6 +2962,9 @@ export function startCity({ player, kinds, topSpeed, onExit, pay = () => 0, earn
   city.hw = makeHighwayTraffic(S.scene, kinds);
   for (const h of city.hw) noShadow(h.mesh);
   setupDealer();
+  // Fahrzeuge, die erst später auftauchen, schon jetzt einmal bauen (danach nur noch kopieren – sonst ruckelt es dann)
+  for (const v of [...city.base, { kind: 'police', color: kinds.police.color }, { kind: 'sports', color: '#18181b' }, { kind: 'muscle', color: '#18181b' },
+    { kind: 'carrier', color: '#f59e0b' }]) if (kinds[v.kind]) buildCar({ special: null, ...v }, kinds);
   prewarm();
   window.addEventListener('keydown', onKey);
   window.addEventListener('keyup', onKey);
@@ -2971,6 +2977,18 @@ export function startCity({ player, kinds, topSpeed, onExit, pay = () => 0, earn
   requestAnimationFrame(loop);
 }
 
+// Spar-Modus für langsame Geräte: ist es auch mit wenig Pixeln (makeQuality) noch unter 40 Bildern pro Sekunde,
+// zuerst die Schatten aus, danach die Autos nur noch in der Nähe zeichnen
+function saveGpu(frame) {
+  if (frame > 0.1) return; // Tab im Hintergrund o. ä.
+  city.perfT += frame; city.perfN++;
+  if (city.perfT < 3) return;
+  const slow = city.perfT / city.perfN > 1 / 40;
+  city.perfT = city.perfN = 0;
+  if (!slow || S.renderer.getPixelRatio() > 0.61) return;
+  if (S.sun.castShadow) { S.sun.castShadow = false; return; }
+  city.see = Math.max(80, city.see - 30);
+}
 // Ein Fehler in einem einzelnen Bild soll das Spiel nicht einfrieren: melden und weitermachen
 function loop(now) {
   if (!city) return;
@@ -2980,6 +2998,7 @@ function loop(now) {
 function step(now) {
   const dt = Math.min(0.05, (now - city.last) / 1000);
   S.quality((now - city.last) / 1000);
+  saveGpu((now - city.last) / 1000);
   city.last = now;
   city.t += dt;
   if (city.msgT > 0 && (city.msgT -= dt) <= 0) S.ui.msg.textContent = '';
