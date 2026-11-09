@@ -23,7 +23,7 @@ const CYCLE = 22;               // Ampelzyklus in Sekunden
 const TRAFFIC = 46;             // so viele Autos fahren herum
 const SEE = 140;                // weiter weg werden Autos nicht gezeichnet
 const DIRS = [[1, 0], [0, 1], [-1, 0], [0, -1]]; // +x, +z, −x, −z
-const SPECIAL = { '2,5': 'gas', '5,2': 'wash', '5,5': 'pizza', '2,2': 'jail', '6,3': 'workshop', '1,3': 'dealer' }; // Blöcke mit Tankstelle, Waschanlage, Pizzeria, Gefängnis, Werkstatt, Autohändler
+const SPECIAL = { '2,5': 'gas', '5,2': 'wash', '5,5': 'pizza', '2,2': 'jail', '6,3': 'workshop', '1,3': 'dealer', '6,6': 'hospital' }; // Blöcke mit Tankstelle, Waschanlage, Pizzeria, Gefängnis, Werkstatt, Autohändler, Spital
 // Basen: sechs Blöcke nebeneinander am oberen Stadtrand, Platz s im Block (s + 1, 0); Einfahrt von der Strasse, an der man startet
 const BASES = 6, BASE_CARS = 10, BASE_COLORS = ['#ef4444', '#3b82f6', '#22c55e', '#f59e0b', '#a855f7', '#ec4899'];
 const baseOf = key => { const [i, j] = key.split(',').map(Number); return j === 0 && i >= 1 && i <= BASES ? i - 1 : -1; };
@@ -371,6 +371,20 @@ function buildWorld() {
     box(0.9, 0.55, 0.05, mat({ color: 0x0b1a2e, emissive: 0x3b82f6, emissiveIntensity: 0.8 }), cx, 1.5, cz + 18.6);
     places.dealer = { x: cx, z: cz - 12, w: 14, d: 10, pods, inside, door: { x: cx, z: cz + 8 }, desk: { x: cx, z: cz + 16.8, w: 6, d: 3 } };
   }
+  function buildHospital(cx, cz) { // Spital: weisses Haus mit rotem Kreuz, Vordach und Notfall-Einfahrt
+    box(46, 0.04, 46, tarmac, cx, 0.18, cz);
+    const house = wallBox(32, 12, 14, walls[3], 8); house.position.set(cx, 6.16, cz + 12); decor.add(house);
+    solid.push({ x0: cx - 16, x1: cx + 16, z0: cz + 5, z1: cz + 19, h: 12.5 });
+    box(14, 0.4, 6, mat({ color: 0xf8fafc }), cx, 4.2, cz + 2); // Vordach
+    for (const dx of [-6.5, 6.5]) box(0.4, 4, 0.4, mat({ color: 0x9ca3af }), cx + dx, 2.2, cz - 0.6, true);
+    const red = mat({ color: 0xdc2626, emissive: 0xdc2626, emissiveIntensity: 0.5 });
+    box(1.2, 4, 0.3, red, cx, 9, cz + 4.8); box(4, 1.2, 0.3, red, cx, 9, cz + 4.8); // rotes Kreuz
+    for (const side of [0, 1]) {
+      const s1 = sign('🏥 SPITAL', '#dc2626', '#ffffff', 10, 1.8); s1.position.set(cx, 5.5, cz - 1.05 - side * 0.05); s1.rotation.y = side * Math.PI; decor.add(s1);
+    }
+    const marks = quads(); marks.rect(cx, cz - 6, 10, 0.2, 0.2); marks.rect(cx, cz - 12, 10, 0.2, 0.2); decor.add(marks.mesh(lineMat));
+    places.hospital = { x: cx, z: cz - 9 };
+  }
   // Base: ummauerter Parkplatz mit Einfahrt und Torbogen, je fünf Parkfelder links und rechts der Fahrgasse.
   // Die Autos und das Schild kommen erst beim Spielen dazu (stepBases); bay.solid ist weit weg, solange das Feld leer ist.
   // Eine Base steht nur, wenn sie jemandem gehört (setBaseOn), sonst ist hier eine Wiese
@@ -435,7 +449,7 @@ function buildWorld() {
     const key = bi + ',' + bj;
     if (key === plaza) { buildPlaza(decor, cx, cz, round); continue; }
     if (baseOf(key) >= 0) { buildBase(cx, cz, baseOf(key)); continue; }
-    if (SPECIAL[key]) { ({ gas: buildGas, wash: buildWash, pizza: buildPizza, jail: buildJail, workshop: buildWorkshop, dealer: buildDealer })[SPECIAL[key]](cx, cz); continue; }
+    if (SPECIAL[key]) { ({ gas: buildGas, wash: buildWash, pizza: buildPizza, jail: buildJail, workshop: buildWorkshop, dealer: buildDealer, hospital: buildHospital })[SPECIAL[key]](cx, cz); continue; }
     if (parks.has(key)) { // Park: Wiese mit Wegkreuz und Bäumen
       const g = quads(1 / 4), h = inner / 2, p = 1.6;
       g.add(cx - h, cz - h, cx - p, cz - p, 0.17); g.add(cx + p, cz - h, cx + h, cz - p, 0.17);
@@ -1929,6 +1943,52 @@ function stepSchool(M, dt) {
   M.text = '🎓 Prüfung: Punkt ' + (M.step + 1) + ' von ' + M.points.length + (city.limit ? ' · max. ' + city.limit : '');
 }
 
+// ---------- Überraschungen ----------
+// Ab und zu passiert etwas in der Stadt und wird zum Auftrag: ein Haus brennt (mit dem Feuerwehrauto löschen, mit
+// einem anderen Auto wenigstens die Feuerwehr rufen), ein Banküberfall (Räuber verfolgen, wie beim Dieb) oder jemand
+// liegt verletzt am Strassenrand (abholen und ins Spital bringen). Mit dem passenden Fahrzeug gibt es mehr Münzen.
+const FIRE_KINDS = ['firetruck', 'watercannon'], AMBU_KINDS = ['ambulance', 'rescue'];
+function stepEvents(dt) {
+  if (city.mission || city.jail || city.walk || city.ticket || city.police) return;
+  if ((city.eventT -= dt) > 0) return;
+  city.eventT = 90 + Math.random() * 90;
+  startMission(['fire', 'robbery', 'ambu'][Math.floor(Math.random() * 3)]);
+  window.beep && window.beep(988, 0.12, 'square', 0.05); window.beep && window.beep(740, 0.18, 'square', 0.05, 0.14);
+}
+function makeFire(x, y, z) {
+  const g = new THREE.Group(), m = new THREE.MeshBasicMaterial({ color: 0xff7a1a, transparent: true, opacity: 0.85, blending: THREE.AdditiveBlending, depthWrite: false });
+  for (let k = 0; k < 7; k++) {
+    const f = new THREE.Mesh(new THREE.ConeGeometry(0.9 + Math.random() * 0.8, 3 + Math.random() * 2.5, 7), m);
+    f.position.set((Math.random() - 0.5) * 6, 1.5, (Math.random() - 0.5) * 6);
+    f.userData.ph = Math.random() * 6;
+    g.add(f);
+  }
+  g.position.set(x, y, z);
+  S.scene.add(g);
+  return g;
+}
+function stepFire(M, dt) {
+  const me = city.me, b = M.b, F = M.fire;
+  for (const f of F.children) f.scale.set(1, 0.7 + 0.45 * Math.abs(Math.sin(city.t * 7 + f.userData.ph)), 1);
+  F.visible = true;
+  if (Math.random() < dt * 14) S.fx.puff(F.position.x + (Math.random() - 0.5) * 5, F.position.y + 3, F.position.z + (Math.random() - 0.5) * 5, (Math.random() - 0.5) * 2, (Math.random() - 0.5) * 2);
+  const qx = Math.max(b.x0, Math.min(me.pos.x, b.x1)), qz = Math.max(b.z0, Math.min(me.pos.z, b.z1));
+  const near = Math.hypot(me.pos.x - qx, me.pos.z - qz) < 18 && Math.abs(me.speed) < 2 && me.alt < 2 && !city.walk;
+  const truck = FIRE_KINDS.includes(me.v.kind);
+  M.spray = near ? M.spray + dt : Math.max(0, M.spray - dt);
+  if (near && truck && Math.random() < dt * 25) { // Wasser spritzt zum Feuer
+    const k = Math.random(), tx = me.pos.x + (F.position.x - me.pos.x) * k, tz = me.pos.z + (F.position.z - me.pos.z) * k;
+    S.fx.puff(tx, 2 + (F.position.y - 2) * k + Math.sin(k * Math.PI) * 4, tz, 0, 0);
+  }
+  if (truck) {
+    M.text = near ? '💦 Löschen … ' + '█'.repeat(Math.ceil(M.spray)) + '░'.repeat(Math.max(0, 4 - Math.ceil(M.spray))) : '🔥 Feuer! Fahr mit dem Feuerwehrauto hin und halte an';
+    if (M.spray > 4) endMission(true, '🚒 Feuer gelöscht! Du bist ein Held!', 25);
+  } else {
+    M.text = near ? '📞 Feuerwehr rufen …' : '🔥 Feuer! Fahr hin (mit dem Feuerwehrauto kannst du löschen)';
+    if (M.spray > 2) endMission(true, '📞 Feuerwehr gerufen – gut aufgepasst!', 5);
+  }
+}
+
 // ---------- Aufträge: Taxi, Pizza, Dieb jagen ----------
 const POLICE_KINDS = ['police', 'policebike', 'policebus'];
 // Tank: Elektroautos laden an der Ladesäule; Zauber-, Tier- und Muskelkraft-Fahrzeuge brauchen gar nichts
@@ -1977,13 +2037,24 @@ function startMission(type) {
   const me = city.me, from = { x: me.pos.x, z: me.pos.z };
   if (type === 'taxi') city.mission = { type, step: 'pick', color: '#facc15', target: roadPoint(120, 320, from), text: '🚕 Hol den Fahrgast ab' };
   else if (type === 'pizza') city.mission = { type, step: 'pick', color: '#ef4444', target: { ...S.places.pizza.front }, text: '🍕 Hol die Pizza bei der Pizzeria' };
-  else if (type === 'thief') {
-    const p = roadPoint(90, 160, from);
-    const mesh = buildCar({ kind: 'sports', color: '#18181b', special: null }, city.kinds);
+  else if (type === 'ambu') {
+    const p = roadPoint(100, 260, from), patient = makePerson(0x22c55e, 0x6b4423);
+    patient.rotation.z = Math.PI / 2; patient.position.set(p.x + 4, 0.25, p.z); say({ mesh: patient }, '🆘 Hilfe!');
+    S.scene.add(patient);
+    city.mission = { type, step: 'pick', color: '#ef4444', target: p, text: '🚑 Notfall! Hol die verletzte Person ab', patient };
+  } else if (type === 'fire') {
+    const cands = S.solid.filter(b => b.h > 5 && b.x1 - b.x0 > 6 && b.z1 - b.z0 > 6 && b.x0 < 1e8 && !b.lot)
+      .filter(b => { const d = Math.hypot((b.x0 + b.x1) / 2 - from.x, (b.z0 + b.z1) / 2 - from.z); return d > 70 && d < 280; });
+    const b = cands[Math.floor(Math.random() * cands.length)] || S.solid[0], fx = (b.x0 + b.x1) / 2, fz = (b.z0 + b.z1) / 2;
+    city.mission = { type, color: '#f97316', target: { x: fx, z: fz }, text: '🔥 Feuer!', timer: 150, b, spray: 0, fire: makeFire(fx, b.h, fz) };
+    showMsg('🔥 Ein Haus brennt!' + (FIRE_KINDS.includes(me.v.kind) ? ' Schnell hin zum Löschen!' : ' Hol ein Feuerwehrauto oder ruf die Feuerwehr!'), 3);
+  } else if (type === 'thief' || type === 'robbery') {
+    const p = roadPoint(90, 160, from), rob = type === 'robbery';
+    const mesh = buildCar({ kind: rob ? 'muscle' : 'sports', color: '#18181b', special: null }, city.kinds);
     S.scene.add(mesh);
-    city.mission = { type, step: 'chase', color: '#a855f7', target: p, text: '🚓 Fang den Dieb!', close: 0, far: 0,
+    city.mission = { type: 'thief', robbery: rob, step: 'chase', color: '#a855f7', target: p, text: rob ? '🏦 Fang den Bankräuber!' : '🚓 Fang den Dieb!', close: 0, far: 0,
       thief: { mesh, pos: new THREE.Vector3(p.x, 0, p.z), heading: 0, speed: 6, path: [], pathT: 0, maxV: Math.max(18, Math.min(34, me.maxV * 0.78)), radius: Math.max(1.3, mesh.userData.radius * 0.8) } };
-    showMsg('🚨 Ein Dieb flüchtet! Bleib dicht hinter ihm.', 2.4);
+    showMsg(rob ? '🏦 Banküberfall! Der Räuber flüchtet im schwarzen Wagen – bleib dran!' : '🚨 Ein Dieb flüchtet! Bleib dicht hinter ihm.', 2.6);
   } else if (type === 'park') {
     const free = S.places.lot.bays.filter((b, k) => !LOT_TAKEN.includes(k)), bay = free[Math.floor(Math.random() * free.length)];
     city.mission = { type, bay, color: '#facc15', target: { x: bay.x, z: bay.z }, text: '🅿️ Park im gelben Feld', timer: 75, hold: 0 };
@@ -1996,7 +2067,7 @@ function startMission(type) {
     showMsg('🎓 Prüfung! Halte das Tempo ein, bei Rot anhalten, kein Unfall.', 3);
   }
   const M = city.mission;
-  if (type !== 'thief' && type !== 'school') showMsg(M.text + '!', 2);
+  if (!['thief', 'robbery', 'school', 'fire'].includes(type)) showMsg(M.text + '!', 2);
   marker().set(M.target.x, M.target.z, M.color);
   S.ui.goal.hidden = false;
 }
@@ -2006,6 +2077,8 @@ function endMission(ok, text, coins = 0) {
   if (M.thief) S.scene.remove(M.thief.mesh);
   if (M.pizzaBox) city.me.mesh.remove(M.pizzaBox);
   if (M.type === 'park' && S.parkSpot) S.parkSpot.visible = false;
+  if (M.fire) S.scene.remove(M.fire);
+  if (M.patient) S.scene.remove(M.patient);
   city.mission = null;
   marker().hide();
   S.ui.goal.hidden = true;
@@ -2023,24 +2096,26 @@ function stepMission(dt) {
   if (M.timer !== undefined && (M.timer -= dt) <= 0) { endMission(false, '⏰ Zu spät! Der Auftrag ist vorbei.'); return; }
   if (M.type === 'park') stepPark(M, dt);
   else if (M.type === 'school') stepSchool(M, dt);
+  else if (M.type === 'fire') stepFire(M, dt);
   if (!city.mission) return;
-  if (M.type !== 'thief' && M.type !== 'park' && M.type !== 'school' && d < 7 && stopped && me.alt < 2) {
+  if (['taxi', 'pizza', 'ambu'].includes(M.type) && d < 7 && stopped && me.alt < 2) {
     if (M.step === 'pick') {
       M.step = 'drop';
-      M.target = M.type === 'taxi' ? roadPoint(220, 420, M.target) : roadPoint(180, 380, M.target);
+      M.target = M.type === 'taxi' ? roadPoint(220, 420, M.target) : M.type === 'ambu' ? { ...S.places.hospital } : roadPoint(180, 380, M.target);
       M.timer = Math.round(Math.hypot(M.target.x - x, M.target.z - z) / 10 + 25);
-      M.text = M.type === 'taxi' ? '🚕 Bring den Fahrgast ans Ziel' : '🍕 Liefere die Pizza aus';
+      M.text = M.type === 'taxi' ? '🚕 Bring den Fahrgast ans Ziel' : M.type === 'ambu' ? '🚑 Schnell ins Spital!' : '🍕 Liefere die Pizza aus';
+      if (M.patient) { S.scene.remove(M.patient); M.patient = null; }
       if (M.type === 'pizza') { // Pizzaschachtel aufs Dach
         const b = new THREE.Box3().setFromObject(me.mesh);
         M.pizzaBox = new THREE.Mesh(new THREE.BoxGeometry(0.7, 0.12, 0.7), new THREE.MeshStandardMaterial({ color: 0xf5deb3 }));
         M.pizzaBox.position.set(0, b.max.y - me.mesh.position.y + 0.06, 0);
         me.mesh.add(M.pizzaBox);
       }
-      showMsg(M.type === 'taxi' ? '🧍 Eingestiegen! Bring ihn hin.' : '🍕 Pizza eingepackt! Schnell ausliefern.', 2.2);
+      showMsg(M.type === 'taxi' ? '🧍 Eingestiegen! Bring ihn hin.' : M.type === 'ambu' ? '🚑 Eingeladen! Ab ins Spital 🏥' : '🍕 Pizza eingepackt! Schnell ausliefern.', 2.2);
       marker().set(M.target.x, M.target.z, M.color);
     } else {
-      const coins = Math.min(12, (M.type === 'taxi' ? 5 : 6) + Math.floor(M.timer / 10));
-      endMission(true, M.type === 'taxi' ? '🚕 Angekommen! Danke fürs Fahren.' : '🍕 Pizza geliefert! Mmmh.', coins);
+      const ambu = M.type === 'ambu', coins = ambu ? (AMBU_KINDS.includes(me.v.kind) ? 20 : 12) : Math.min(12, (M.type === 'taxi' ? 5 : 6) + Math.floor(M.timer / 10));
+      endMission(true, M.type === 'taxi' ? '🚕 Angekommen! Danke fürs Fahren.' : ambu ? '🏥 Gerettet! Die Ärzte kümmern sich um alles.' : '🍕 Pizza geliefert! Mmmh.', coins);
       return;
     }
   }
@@ -2049,9 +2124,9 @@ function stepMission(dt) {
     marker().set(M.target.x, M.target.z, M.color);
     M.close = d < 10 ? M.close + dt : Math.max(0, M.close - dt * 0.5);
     M.far = d > 380 ? M.far + dt : 0;
-    M.text = M.close > 0.2 ? '🚓 Dranbleiben! ' + '█'.repeat(Math.ceil(M.close / 0.5)) + '░'.repeat(Math.max(0, 5 - Math.ceil(M.close / 0.5))) : '🚓 Fang den Dieb!';
-    if (M.close > 2.5) { endMission(true, '🚓 Erwischt! Der Dieb ist gefasst.', 12); return; }
-    if (M.far > 8) { endMission(false, '💨 Der Dieb ist entkommen …'); return; }
+    M.text = M.close > 0.2 ? '🚓 Dranbleiben! ' + '█'.repeat(Math.ceil(M.close / 0.5)) + '░'.repeat(Math.max(0, 5 - Math.ceil(M.close / 0.5))) : M.robbery ? '🏦 Fang den Bankräuber!' : '🚓 Fang den Dieb!';
+    if (M.close > 2.5) { endMission(true, M.robbery ? '🏦 Bankräuber gefasst! Das Geld ist zurück.' : '🚓 Erwischt! Der Dieb ist gefasst.', M.robbery ? (POLICE_KINDS.includes(me.v.kind) ? 25 : 15) : 12); return; }
+    if (M.far > 8) { endMission(false, M.robbery ? '💨 Der Bankräuber ist entkommen …' : '💨 Der Dieb ist entkommen …'); return; }
   }
   // Anzeige: Pfeil zum Ziel (relativ zur Fahrtrichtung), Text, Entfernung, Zeit
   const ang = Math.atan2(M.target.z - z, M.target.x - x) - me.heading;
@@ -2639,7 +2714,7 @@ function drawMinimapBase() {
   g.fillStyle = '#4aa3ff';
   g.beginPath(); g.arc(mx(0), mx(0), 3, 0, Math.PI * 2); g.fill();
   g.font = '13px system-ui, sans-serif'; g.textAlign = 'center'; g.textBaseline = 'middle';
-  for (const [k, icon] of [['gas', '⛽'], ['wash', '🫧'], ['pizza', '🍕'], ['jail', '🔒'], ['repair', '🔧'], ['dealer', '🚗']]) { const p = S.places[k]; if (p) g.fillText(icon, mx(p.x), mx(p.z)); }
+  for (const [k, icon] of [['gas', '⛽'], ['wash', '🫧'], ['pizza', '🍕'], ['jail', '🔒'], ['repair', '🔧'], ['dealer', '🚗'], ['hospital', '🏥']]) { const p = S.places[k]; if (p) g.fillText(icon, mx(p.x), mx(p.z)); }
   g.strokeStyle = 'rgba(220,225,235,0.85)'; g.lineWidth = Math.max(2, ROAD * mapScale);
   for (let i = 0; i <= N; i++) {
     g.beginPath(); g.moveTo(mx(node(i)), mx(-HALF)); g.lineTo(mx(node(i)), mx(HALF)); g.stroke();
@@ -2722,7 +2797,7 @@ export function startCity({ player, kinds, topSpeed, onExit, pay = () => 0, earn
   // online starten alle auf einer anderen Strasse am Stadtrand
   const me = { v: player, mesh, pos: new THREE.Vector3(node(1 + (net ? net.mySlot : 0)) + 20, 0, node(0) + LANE), heading: 0, speed: 0, vl: 0, steer: 0,
     ...carStats(player, mesh, kinds, topSpeed), slip: 0, surface: 'asphalt', alt: 0, fly: false, landing: false };
-  city = { me, cars: spawnTraffic(kinds), input: {}, t: Math.random() * CYCLE, msgT: 0, crashT: 0, hornT: 0, inCross: false, tod: 0.02, turbo: 0, fuelT: 0, washT: 0, mission: null, accT: 25 + Math.random() * 30, fuel: 1, damage: 0, scratches: [], repairT: 0, wx: { kind: 'sun', t: 60 + Math.random() * 60, i: 0 }, wGrip: 1, dealT: 0, dealOpen: false, dealer, customers: [], custT: 4, custMsgT: 0, talk: null, okPos: { x: me.pos.x, z: me.pos.z }, hw: [], hwMsgT: 0, onHw: false,
+  city = { me, cars: spawnTraffic(kinds), input: {}, t: Math.random() * CYCLE, msgT: 0, crashT: 0, hornT: 0, inCross: false, tod: 0.02, turbo: 0, fuelT: 0, washT: 0, mission: null, accT: 25 + Math.random() * 30, fuel: 1, damage: 0, scratches: [], repairT: 0, wx: { kind: 'sun', t: 60 + Math.random() * 60, i: 0 }, wGrip: 1, dealT: 0, dealOpen: false, dealer, customers: [], custT: 4, custMsgT: 0, talk: null, okPos: { x: me.pos.x, z: me.pos.z }, hw: [], hwMsgT: 0, onHw: false, eventT: 50 + Math.random() * 40,
     gears: gearbox(player.kind), onExit, last: performance.now(), kinds, pay, gripBoost: (kinds[player.kind] && kinds[player.kind].grip) || 1, canFly: !!(kinds[player.kind] && kinds[player.kind].fly), fines: 0, police: null, pulled: 0, ticket: false,
     earn, net, topSpeed, garage, baseSlot: net ? net.mySlot : 0, baseT: 0, atBase: -1, baseEdit: false, netCars: net ? makeNetCars({ scene: S.scene, kinds, net }) : null, drift: 0, driftT: 0, driftBest: (() => { try { return +localStorage.getItem('autoRetterDriftBest') || 0; } catch (e) { return 0; } })() };
   S.fx.clear();
@@ -2752,6 +2827,7 @@ export function startCity({ player, kinds, topSpeed, onExit, pay = () => 0, earn
   camLook.set(me.pos.x, 1.2, me.pos.z);
   window.__city = () => city; // für Tests im Browser
   window.__cityS = () => S;
+  window.__cityMission = type => startMission(type); // Aufträge und Überraschungen direkt starten
   requestAnimationFrame(loop);
 }
 
@@ -2782,6 +2858,7 @@ function loop(now) {
   stepTraffic(dt);
   stepAccidents(dt);
   stepHw(dt);
+  stepEvents(dt);
   if (city.netCars) { // Mitspieler: zeigen, eigene Position senden, nicht durcheinander durchfahren
     const me = city.me, o = { x: me.pos.x, y: me.alt, z: me.pos.z };
     if (city.netCars.bump(o, me.radius)) {
