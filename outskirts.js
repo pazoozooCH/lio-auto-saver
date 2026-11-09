@@ -245,7 +245,7 @@ export function areaDrivable(x, z, r, keys) {
 }
 export const inArea = (x, z) => Object.values(AREAS).some(A => inBox(x, z, A.rect) || inBox(x, z, A.road));
 export function lockedGate(x, z, keys) { // Schranke in der Nähe, die noch zu ist?
-  return Object.values(AREAS).find(A => keys < A.need && Math.hypot(x - A.gate.x, z - A.gate.z) < 30) || null;
+  return [...Object.values(AREAS), PASS_AREA].find(A => keys < A.need && Math.hypot(x - A.gate.x, z - A.gate.z) < 30) || null;
 }
 
 const M = (color, o = {}) => new THREE.MeshStandardMaterial({ color, roughness: 0.7, ...o });
@@ -275,9 +275,10 @@ function gate(scene, A, sign) {
   arm.add(bar);
   g.add(post, arm);
   g.position.set(A.gate.x, 0, A.gate.z);
+  g.rotation.y = A.gate.rot || 0;
   scene.add(g);
   const s = sign('🔒 ' + A.name + ': ab ' + A.need + ' 🔑', '#1f2937', '#facc15', 9, 1.4);
-  s.position.set(A.gate.x, 3.6, A.gate.z); s.rotation.y = A.gate.x < 0 ? Math.PI / 2 : -Math.PI / 2; // lesbar von der Stadt her
+  s.position.set(A.gate.x, 3.6, A.gate.z); s.rotation.y = A.gate.rot ? 0 : A.gate.x < 0 ? Math.PI / 2 : -Math.PI / 2; // lesbar von der Stadt her
   scene.add(s);
   return { A, arm, sign: s, open: 0 };
 }
@@ -300,6 +301,7 @@ function plane(color = 0xffffff, stripe = 0x1d4ed8) {
 export function buildAreas({ group, scene, asphaltMat, lineMat, sign }) {
   const solids = [], out = { solids, gates: [] };
   for (const A of Object.values(AREAS)) { flat(group, asphaltMat, A.road); out.gates.push(gate(scene, A, sign)); }
+  out.gates.push(gate(scene, PASS_AREA, sign));
   // Hafen: Kai, Wasser, Containerstapel, zwei Kräne, Lagerhallen, ein Schiff
   const H = AREAS.harbor.rect;
   flat(group, asphaltMat, H);
@@ -380,4 +382,118 @@ export function stepAreas(A, dt, keys, hooks) {
   J.mesh.rotation.z = J.y > 0 ? 0.18 : 0;
   if (J.y > 260) J.t = -40 - Math.random() * 30; // weg – das nächste kommt später
   hooks.danger(J.x, J.y, RUNWAY.z, J.v);
+}
+
+// ---------- Passstrasse ----------
+// Im Norden führt eine Bergstrasse mit Haarnadelkurven auf einen Gipfel (ab 20 Schlüsseln). Die Strasse hat eine Höhe
+// (passGround); das Gelände wird um sie herum geformt (passTerrain): flach unter der Fahrbahn, dazwischen Hänge,
+// am Rand geht es ins normale Gelände über. Ein eigenes, feineres Geländestück liegt über dem groben.
+export const PASS_AREA = { need: 20, name: '⛰️ Passstrasse', gate: { x: 0, z: -334, rot: Math.PI / 2 } };
+const PASS_CTRL = [[0, -262], [0, -340], [0, -400], [-120, -430], [-200, -450], [-232, -472], [-210, -500], [-100, -525], [100, -560],
+  [200, -580], [232, -602], [210, -630], [100, -655], [-100, -690], [-200, -710], [-232, -732], [-210, -760], [-100, -785], [60, -815],
+  [150, -840], [170, -870], [120, -900], [40, -915]];
+const PASS_TOP = 110, PASS_FLAT = 140, PASS_W = 4.6; // Gipfelhöhe, ebene Anfahrt, halbe Fahrbahnbreite
+export const SUMMIT = { x: 25, z: -925, r: 28 };
+const REGION = { x0: -420, x1: 420, z0: -1120, z1: -290 };
+let PASS = null;
+function passPath() {
+  if (PASS) return PASS;
+  const pts = [], P = PASS_CTRL, n = P.length;
+  for (let i = 0; i < n - 1; i++) { // Catmull-Rom durch die Punkte, etwa alle 2 m
+    const p0 = P[Math.max(0, i - 1)], p1 = P[i], p2 = P[i + 1], p3 = P[Math.min(n - 1, i + 2)];
+    const steps = Math.max(2, Math.ceil(Math.hypot(p2[0] - p1[0], p2[1] - p1[1]) / 2));
+    for (let k = 0; k < steps; k++) {
+      const t = k / steps, t2 = t * t, t3 = t2 * t;
+      const f = (a, b, c, d) => 0.5 * (2 * b + (-a + c) * t + (2 * a - 5 * b + 4 * c - d) * t2 + (-a + 3 * b - 3 * c + d) * t3);
+      pts.push({ x: f(p0[0], p1[0], p2[0], p3[0]), z: f(p0[1], p1[1], p2[1], p3[1]) });
+    }
+  }
+  pts.push({ x: P[n - 1][0], z: P[n - 1][1] });
+  let s = 0;
+  pts.forEach((p, i) => { if (i) s += Math.hypot(p.x - pts[i - 1].x, p.z - pts[i - 1].z); p.s = s; });
+  for (const p of pts) { const t = Math.min(1, Math.max(0, (p.s - PASS_FLAT) / (s - PASS_FLAT - 20))); p.y = PASS_TOP * t * t * (3 - 2 * t); }
+  const grid = new Map(), cell = 16, key = (x, z) => Math.floor(x / cell) + ',' + Math.floor(z / cell);
+  pts.forEach((p, i) => { const k = key(p.x, p.z); if (!grid.has(k)) grid.set(k, []); grid.get(k).push(i); });
+  PASS = { pts, len: s, grid, cell, key, coarse: pts.filter((p, i) => i % 8 === 0) };
+  return PASS;
+}
+// Nächster Punkt der Strasse (d: Abstand, y: Höhe dort); weiter als ~24 m weg: nur ungefähr
+export function passNearest(x, z) {
+  const P = passPath();
+  let best = null, bd = Infinity;
+  const cx = Math.floor(x / P.cell), cz = Math.floor(z / P.cell);
+  for (let a = -1; a <= 1; a++) for (let b = -1; b <= 1; b++) for (const i of P.grid.get((cx + a) + ',' + (cz + b)) || []) {
+    const p = P.pts[i], d = Math.hypot(p.x - x, p.z - z);
+    if (d < bd) { bd = d; best = p; }
+  }
+  if (!best) for (const p of P.coarse) { const d = Math.hypot(p.x - x, p.z - z); if (d < bd) { bd = d; best = p; } }
+  return { d: bd, y: best.y, p: best };
+}
+const inRegion = (x, z) => x > REGION.x0 && x < REGION.x1 && z > REGION.z0 && z < REGION.z1;
+export const inPassRegion = inRegion;
+export const passPoints = () => passPath().pts;
+// Höhe des Bodens am Berg (für die Fahrzeuge): auf der Strasse und dem Gipfelplatz, sonst 0
+export function passGround(x, z) {
+  if (!inRegion(x, z)) return 0;
+  if (Math.hypot(x - SUMMIT.x, z - SUMMIT.z) < SUMMIT.r + 4) return PASS_TOP;
+  const q = passNearest(x, z);
+  return q.d < 9 ? q.y : 0;
+}
+export function passDrivable(x, z, r, keys) {
+  if (keys < PASS_AREA.need || !inRegion(x, z)) return false;
+  return passNearest(x, z).d < PASS_W - r * 0.5 || Math.hypot(x - SUMMIT.x, z - SUMMIT.z) < SUMMIT.r - r;
+}
+export const onPass = (x, z) => inRegion(x, z) && (passNearest(x, z).d < 9 || Math.hypot(x - SUMMIT.x, z - SUMMIT.z) < SUMMIT.r);
+// Gelände am Berg: natural = normales Gelände (von city.js), lower = so viel tiefer (für das grobe Gelände darunter)
+export function passTerrain(x, z, natural, lower = 0) {
+  const P = passPath(), q = passNearest(x, z);
+  let wsum = 0, ysum = 0;
+  for (const p of P.coarse) { const w = 1 / (60 + (p.x - x) ** 2 + (p.z - z) ** 2); wsum += w; ysum += w * p.y; }
+  const ds = Math.hypot(x - SUMMIT.x, z - SUMMIT.z);
+  let base = ysum / wsum + 30 * Math.exp(-((ds / 160) ** 2)) + 6 * Math.sin(x / 37) * Math.cos(z / 41); // Berg mit Buckeln
+  base = Math.max(base, (Math.abs(x) - 250) * 0.6 + 40 * smooth01((-z - 380) / 400)); // seitlich steigt es an
+  const shelf = ds < SUMMIT.r + 6 ? PASS_TOP - 0.3 : q.y - 0.35, t = Math.min(smooth01((q.d - 7) / 20), smooth01((ds - SUMMIT.r - 6) / 20));
+  const h = shelf * (1 - t) + base * t;
+  const edge = Math.min(x - REGION.x0, REGION.x1 - x, z - REGION.z0, REGION.z1 - z), wr = smooth01(edge / 70);
+  return natural * (1 - wr) + h * wr - lower * smooth01(edge / 30);
+}
+const smooth01 = v => { const t = Math.min(1, Math.max(0, v)); return t * t * (3 - 2 * t); };
+
+export function buildPass({ scene, group, asphaltMat, lineMat, sign, natural, terrainMesh }) {
+  const P = passPath();
+  // feines Geländestück über dem groben (Fels an steilen Stellen, oben Schnee)
+  const rock = new THREE.Color(0x857b70), gA = new THREE.Color(0x5e9142), gB = new THREE.Color(0x4a7c35), snow = new THREE.Color(0xf1f5f9);
+  const land = terrainMesh({ size: 840, segments: 140, center: [0, -705], height: (x, z) => passTerrain(x, z, natural(x, z)),
+    color: (x, z, y, steep, c) => { c.lerpColors(gA, gB, 0.5 + 0.5 * Math.sin(x / 23 + z / 31)); c.lerp(rock, smooth01((steep - 0.2) / 0.25)); c.lerp(snow, smooth01((y - 85) / 30) * 0.85); } });
+  scene.add(land);
+  // Fahrbahn, Linien, Leitplanken
+  const rows = (off0, off1, dy0, dy1) => P.pts.map((p, i) => {
+    const q = P.pts[Math.min(P.pts.length - 1, i + 1)], o = P.pts[Math.max(0, i - 1)], tx = q.x - o.x, tz = q.z - o.z, l = Math.hypot(tx, tz) || 1;
+    const nx = -tz / l, nz = tx / l;
+    return [[p.x + nx * off0, p.y + dy0, p.z + nz * off0, off0 / 8, p.s / 8], [p.x + nx * off1, p.y + dy1, p.z + nz * off1, off1 / 8, p.s / 8]];
+  });
+  const rail = new THREE.MeshStandardMaterial({ color: 0xc9ced6, metalness: 0.7, roughness: 0.35, side: THREE.DoubleSide });
+  group.add(strip(rows(-PASS_W - 0.4, PASS_W + 0.4, 0.06, 0.06), asphaltMat));
+  for (const o of [-PASS_W + 0.3, PASS_W - 0.3]) group.add(strip(rows(o - 0.1, o + 0.1, 0.09, 0.09), lineMat));
+  let run = []; // Mittellinie gestrichelt
+  rows(-0.1, 0.1, 0.09, 0.09).forEach((r, i) => { if (P.pts[i].s % 12 < 6) run.push(r); else { if (run.length > 1) group.add(strip(run, lineMat)); run = []; } });
+  for (const o of [-PASS_W - 0.6, PASS_W + 0.6]) {
+    const rr = rows(o, o, 0.45, 0.8).filter((r, i) => P.pts[i].s > PASS_FLAT - 40);
+    group.add(strip(rr, rail));
+  }
+  // Gipfelplatz mit Aussicht: Platz, Fahne, Bank, Kiosk, Schild
+  const plat = new THREE.Mesh(new THREE.CircleGeometry(SUMMIT.r, 40).rotateX(-Math.PI / 2), asphaltMat);
+  plat.position.set(SUMMIT.x, PASS_TOP + 0.05, SUMMIT.z); plat.receiveShadow = true; group.add(plat);
+  const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.12, 9, 8), rail); pole.position.set(SUMMIT.x + 12, PASS_TOP + 4.5, SUMMIT.z - 14); group.add(pole);
+  const flag = new THREE.Mesh(new THREE.PlaneGeometry(3, 2), new THREE.MeshStandardMaterial({ color: 0xd52b1e, side: THREE.DoubleSide }));
+  flag.position.set(SUMMIT.x + 13.5, PASS_TOP + 8, SUMMIT.z - 14); scene.add(flag);
+  const cross = new THREE.Mesh(new THREE.BoxGeometry(0.02, 0.4, 1.2), new THREE.MeshBasicMaterial({ color: 0xffffff })); cross.position.set(SUMMIT.x + 13.5, PASS_TOP + 8, SUMMIT.z - 13.99);
+  const cross2 = new THREE.Mesh(new THREE.BoxGeometry(0.02, 1.2, 0.4), cross.material); cross2.position.copy(cross.position); scene.add(cross, cross2);
+  const kiosk = new THREE.Mesh(new THREE.BoxGeometry(6, 3.5, 4), new THREE.MeshStandardMaterial({ color: 0x92400e })); kiosk.position.set(SUMMIT.x - 14, PASS_TOP + 1.75, SUMMIT.z - 10); group.add(kiosk);
+  const roof = new THREE.Mesh(new THREE.BoxGeometry(7, 0.4, 5), new THREE.MeshStandardMaterial({ color: 0x7f1d1d })); roof.position.set(SUMMIT.x - 14, PASS_TOP + 3.7, SUMMIT.z - 10); group.add(roof);
+  for (const side of [0, 1]) {
+    const s1 = sign('🏔️ GIPFEL · 1240 m', '#f8fafc', '#111827', 9, 1.6); s1.position.set(SUMMIT.x, PASS_TOP + 3, SUMMIT.z - SUMMIT.r + 2 - side * 0.05); s1.rotation.y = side * Math.PI; group.add(s1);
+    const s2 = sign('⛰️ PASSSTRASSE', '#166534', '#ffffff', 8, 1.5); s2.position.set(9, 3.2, -300 - side * 0.05); s2.rotation.y = side * Math.PI; group.add(s2);
+  }
+  return { flag, land };
 }

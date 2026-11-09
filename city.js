@@ -9,7 +9,8 @@ import { createCarSound, crash, gearbox, horn, createSiren } from './sound.js';
 import { makeNetCars } from './netcars.js';
 import { makeChat } from './chat.js';
 import { buildHighway, outskirtsDist, hwDrivable, onHighway, makeHighwayTraffic, stepHighway, hwProject, hwPoint, HW, HW_LEN,
-  AREAS, buildAreas, stepAreas, groundShape, areaDrivable, inArea, lockedGate } from './outskirts.js';
+  AREAS, buildAreas, stepAreas, groundShape, areaDrivable, inArea, lockedGate,
+  PASS_AREA, buildPass, passGround, passDrivable, onPass, passTerrain, passNearest, inPassRegion, passPoints, SUMMIT } from './outskirts.js';
 import { makeEffects, camView, cockpit, COCKPIT, CAM_NAMES, FLY_HTML, FLY_KEYS, flyCss, flyHelp, flyToggle, flyStep } from './fx.js';
 
 const N = 8;                    // Blöcke pro Seite
@@ -187,9 +188,11 @@ function buildWorld() {
   grassDetail.map.repeat.set(8, 8);
 
   // Gelände rundherum: in der Stadt flach, draussen Hügel
+  const natural = (x, z) => smoothstep(HALF + 90, HALF + 500, Math.max(Math.abs(x), Math.abs(z))) * NZ.fbm(x / 260, z / 260, 4) * 190 - 0.06;
   const height = (x, z) => {
     const rr = Math.max(Math.abs(x), Math.abs(z));
     if (rr <= HALF + 60) return -0.06;
+    if (inPassRegion(x, z)) return passTerrain(x, z, natural(x, z), 15); // am Berg: das feinere Gelände liegt darüber
     const gs = groundShape(x, z), f = smoothstep(6, 80, gs.d); // unter Autobahn, Hafen und Flughafen eben (Hafenbecken tiefer)
     return smoothstep(HALF + 90, HALF + 500, rr) * NZ.fbm(x / 260, z / 260, 4) * 190 * f + gs.y * (1 - f) - 0.06;
   };
@@ -514,7 +517,7 @@ function buildWorld() {
   for (let k = 0; k < 360;) {
     const a = r() * Math.PI * 2, rr = HALF + 30 + r() * 150;
     const tx = Math.cos(a) * rr * 1.1, tz = Math.sin(a) * rr * 1.1;
-    if (Math.max(Math.abs(tx), Math.abs(tz)) < HALF + ROAD / 2 + 12 || groundShape(tx, tz).d < 14) continue; // nicht auf Strassen und Plätzen
+    if (Math.max(Math.abs(tx), Math.abs(tz)) < HALF + ROAD / 2 + 12 || groundShape(tx, tz).d < 14 || (inPassRegion(tx, tz) && passNearest(tx, tz).d < 16)) continue; // nicht auf Strassen und Plätzen
     trees.push([tx, height(tx, tz), tz, 0.9 + r() * 0.9]);
     k++;
   }
@@ -646,6 +649,8 @@ function buildWorld() {
   buildHighway({ group: decor, asphaltMat, lineMat, sign }); // Autobahn im Süden (outskirts.js)
   const areas = buildAreas({ group: decor, scene, asphaltMat, lineMat, sign }); // Hafen und Flughafen
   solid.push(...areas.solids);
+  areas.pass = buildPass({ scene, group: decor, asphaltMat, lineMat, sign, natural, // Passstrasse im Norden
+    terrainMesh: o => terrain({ ...o, detail: grassDetail, detailRepeat: 100 }) });
   scene.add(decor);
   mergeStatic(decor);
   const clouds = cloudDome({ radius: 2600, coverage: 0.52, shade: '#aebccd', seed: 9 });
@@ -1019,9 +1024,17 @@ function stepMe(dt) {
     }
   }
   city.inCross = inX;
+  // Am Berg: Boden unter dem Auto, Neigung vorne/hinten, bergab rollt es schneller
+  city.gy = passGround(me.pos.x, me.pos.z);
+  let slope = 0;
+  if (city.gy || Math.abs(me.pos.z) > LIMIT) {
+    const hx = Math.cos(me.heading) * me.len * 0.4, hz = Math.sin(me.heading) * me.len * 0.4;
+    slope = (passGround(me.pos.x + hx, me.pos.z + hz) - passGround(me.pos.x - hx, me.pos.z - hz)) / (me.len * 0.8 || 1);
+    if (!me.fly) me.speed -= 9.81 * slope * 0.7 * dt;
+  }
   const m = me.mesh;
-  m.position.set(me.pos.x, me.alt, me.pos.z);
-  m.rotation.set(me.fly ? me.flyRoll : 0, -me.heading, me.fly ? me.flyPitch : 0);
+  m.position.set(me.pos.x, me.alt + city.gy, me.pos.z);
+  m.rotation.set(me.fly ? me.flyRoll : 0, -me.heading, me.fly ? me.flyPitch : Math.atan(slope));
   for (const w of m.userData.wheels) {
     w.rotation.z -= me.speed * dt / 0.35;
     if (w.position.x > 0) w.rotation.y = -me.steer * 0.4;
@@ -1046,7 +1059,8 @@ function stepHw(dt) {
   });
 }
 // Wo man fahren (und gehen) darf: in der Stadt bis zum Waldrand, draussen nur auf der Autobahn
-const allowedAt = (x, z, r) => (Math.abs(x) <= LIMIT && Math.abs(z) <= LIMIT) || hwDrivable(x, z, r) || areaDrivable(x, z, r, city.keys ? city.keys.size : 0);
+const allowedAt = (x, z, r) => (Math.abs(x) <= LIMIT && Math.abs(z) <= LIMIT) || hwDrivable(x, z, r) || areaDrivable(x, z, r, city.keys ? city.keys.size : 0)
+  || passDrivable(x, z, r, city.keys ? city.keys.size : 0);
 
 // ---------- Reifenrauch und Bremsspuren ----------
 // Rauch, Spuren und Drift-Punkte nach jedem Schritt
@@ -1383,7 +1397,7 @@ function animatePerson(p, dt) {
   const { legs, arms } = p.mesh.userData;
   legs.forEach((l, i) => { l.rotation.z = Math.sin(p.phase + i * Math.PI) * amp; });
   arms.forEach((a, i) => { a.rotation.z = -Math.sin(p.phase + i * Math.PI) * amp * 0.8; });
-  p.mesh.position.set(p.x, Math.abs(Math.sin(p.phase)) * 0.04 * amp, p.z);
+  p.mesh.position.set(p.x, (p.gy || 0) + Math.abs(Math.sin(p.phase)) * 0.04 * amp, p.z);
   p.mesh.rotation.y = -p.h;
 }
 // Ins Auto oder hinaus
@@ -1442,6 +1456,7 @@ function stepWalk(dt) {
   push(me.pos.x, me.pos.z, R + me.radius * 0.6);
   if (!allowedAt(w.x, w.z, 0.5)) { w.x = w.okX ?? w.x; w.z = w.okZ ?? w.z; } else { w.okX = w.x; w.okZ = w.z; }
   // Laufen: Beine und Arme schwingen
+  w.gy = passGround(w.x, w.z);
   animatePerson(w, dt);
   // Welches Auto ist nah genug zum Einsteigen? Das eigene oder eines in der eigenen Base
   let best = null, bd = Infinity;
@@ -2009,7 +2024,7 @@ function setupKeys() {
   });
 }
 function stepKeys(dt) {
-  const me = city.me, w = city.walk, x = w ? w.x : me.pos.x, z = w ? w.z : me.pos.z, y = w ? 1 : me.alt + 1;
+  const me = city.me, w = city.walk, x = w ? w.x : me.pos.x, z = w ? w.z : me.pos.z, y = (w ? (w.gy || 0) + 1 : me.alt + city.gy + 1);
   S.keySpots.forEach((p, k) => {
     const m = S.keyMeshes[k];
     if (!m.visible) return;
@@ -2504,7 +2519,7 @@ function removePolice() {
 }
 
 function surfaceAt(x, z) {
-  if (Math.abs(x) > HALF + ROAD / 2 || Math.abs(z) > HALF + ROAD / 2) return onHighway(x, z) || inArea(x, z) ? 'asphalt' : 'grass';
+  if (Math.abs(x) > HALF + ROAD / 2 || Math.abs(z) > HALF + ROAD / 2) return onHighway(x, z) || inArea(x, z) || onPass(x, z) ? 'asphalt' : 'grass';
   const bi = Math.floor(x / BLOCK + N / 2), bj = Math.floor(z / BLOCK + N / 2);
   const nx = node(Math.round(x / BLOCK + N / 2)), nz = node(Math.round(z / BLOCK + N / 2));
   if (Math.abs(x - nx) < ROAD / 2 || Math.abs(z - nz) < ROAD / 2) return 'asphalt';
@@ -2809,12 +2824,15 @@ function drawMinimapBase() {
 }
 // Draussen: Übersicht mit Stadt, Zufahrt und Autobahn
 function drawWideMap(g) {
-  const sc = (MAP - 12) / 2150, wx = x => MAP / 2 + (x + 50) * sc, wz = z => MAP / 2 + (z - 297) * sc, me = city.me;
+  const sc = (MAP - 12) / 2150, wx = x => MAP / 2 + (x + 50) * sc, wz = z => MAP / 2 + (z + 40) * sc, me = city.me;
   g.fillStyle = 'rgba(32,62,38,0.92)'; g.fillRect(0, 0, MAP, MAP);
   const rect = (b, col) => { g.fillStyle = col; g.fillRect(wx(b.x0), wz(b.z0), (b.x1 - b.x0) * sc, (b.z1 - b.z0) * sc); };
   rect({ x0: -1100, x1: -702, z0: -700, z1: 700 }, '#1e5a8a'); // Wasser
   for (const A of Object.values(AREAS)) { rect(A.rect, city.keys.size >= A.need ? '#9ca3af' : '#4b5563'); rect(A.road, '#9ca3af'); }
   rect({ x0: 400, x1: 980, z0: -175, z1: -125 }, '#e5e7eb'); // Piste
+  g.strokeStyle = city.keys.size >= PASS_AREA.need ? '#e5e7eb' : '#6b7280'; g.lineWidth = 2; g.beginPath(); // Passstrasse
+  passPoints().forEach((p, i) => (i % 6 ? 0 : i ? g.lineTo(wx(p.x), wz(p.z)) : g.moveTo(wx(p.x), wz(p.z))));
+  g.stroke();
   g.fillStyle = '#7b8490'; g.fillRect(wx(-HALF), wz(-HALF), 2 * HALF * sc, 2 * HALF * sc);
   g.strokeStyle = '#e5e7eb'; g.lineWidth = 3; g.beginPath();
   for (let s = 0; s <= HW_LEN; s += 40) { const p = hwPoint(s); if (s) g.lineTo(wx(p.x), wz(p.z)); else g.moveTo(wx(p.x), wz(p.z)); }
@@ -2886,7 +2904,7 @@ export function startCity({ player, kinds, topSpeed, onExit, pay = () => 0, earn
   // online starten alle auf einer anderen Strasse am Stadtrand
   const me = { v: player, mesh, pos: new THREE.Vector3(node(1 + (net ? net.mySlot : 0)) + 20, 0, node(0) + LANE), heading: 0, speed: 0, vl: 0, steer: 0,
     ...carStats(player, mesh, kinds, topSpeed), slip: 0, surface: 'asphalt', alt: 0, fly: false, landing: false };
-  city = { me, cars: spawnTraffic(kinds), input: {}, t: Math.random() * CYCLE, msgT: 0, crashT: 0, hornT: 0, inCross: false, tod: 0.02, turbo: 0, fuelT: 0, washT: 0, mission: null, accT: 25 + Math.random() * 30, fuel: 1, damage: 0, scratches: [], repairT: 0, wx: { kind: 'sun', t: 60 + Math.random() * 60, i: 0 }, wGrip: 1, dealT: 0, dealOpen: false, dealer, customers: [], custT: 4, custMsgT: 0, talk: null, okPos: { x: me.pos.x, z: me.pos.z }, hw: [], hwMsgT: 0, onHw: false, eventT: 50 + Math.random() * 40,
+  city = { me, cars: spawnTraffic(kinds), input: {}, t: Math.random() * CYCLE, msgT: 0, crashT: 0, hornT: 0, inCross: false, tod: 0.02, turbo: 0, fuelT: 0, washT: 0, mission: null, accT: 25 + Math.random() * 30, fuel: 1, damage: 0, scratches: [], repairT: 0, wx: { kind: 'sun', t: 60 + Math.random() * 60, i: 0 }, wGrip: 1, dealT: 0, dealOpen: false, dealer, customers: [], custT: 4, custMsgT: 0, talk: null, okPos: { x: me.pos.x, z: me.pos.z }, hw: [], hwMsgT: 0, onHw: false, eventT: 50 + Math.random() * 40, gy: 0,
     gears: gearbox(player.kind), onExit, last: performance.now(), kinds, pay, gripBoost: (kinds[player.kind] && kinds[player.kind].grip) || 1, canFly: !!(kinds[player.kind] && kinds[player.kind].fly), fines: 0, police: null, pulled: 0, ticket: false,
     earn, net, topSpeed, garage, baseSlot: net ? net.mySlot : 0, baseT: 0, atBase: -1, baseEdit: false, netCars: net ? makeNetCars({ scene: S.scene, kinds, net }) : null, drift: 0, driftT: 0, driftBest: (() => { try { return +localStorage.getItem('autoRetterDriftBest') || 0; } catch (e) { return 0; } })() };
   S.fx.clear();
@@ -2966,7 +2984,7 @@ function loop(now) {
       me.pos.x = o.x; me.pos.z = o.z; me.speed *= 0.95;
       if (Math.abs(me.speed) > 5 && city.crashT <= 0) { crash(0.25, 'car'); hurt(0.25); city.crashT = 0.5; }
     }
-    city.netCars.update(dt, city.t, { x: me.pos.x, y: me.alt, z: me.pos.z, h: me.heading, v: me.speed, a: me.fly ? me.flyPitch : 0, b: me.fly ? me.flyRoll : 0 });
+    city.netCars.update(dt, city.t, { x: me.pos.x, y: me.alt + city.gy, z: me.pos.z, h: me.heading, v: me.speed, a: me.fly ? me.flyPitch : 0, b: me.fly ? me.flyRoll : 0 });
     city.chat.update(dt);
     stepTag(dt);
   }
@@ -3110,11 +3128,13 @@ function render(dt) {
   const back = 8.5 + Math.abs(me.speed) * 0.03;
   if (w) { // zu Fuss: Kamera hinter dem Kopf
     const wx = Math.cos(w.h), wz = Math.sin(w.h);
-    camWant.set(w.x - wx * 4.2, 2.4, w.z - wz * 4.2);
-    camAhead.set(w.x + wx * 3, 1.3, w.z + wz * 3);
-  } else if (!camView(camMode, me.pos.x, me.alt, me.pos.z, me.heading, camWant, camAhead)) {
-    camWant.set(me.pos.x - fx * back, me.alt + 3.3 + Math.abs(me.speed) * 0.01, me.pos.z - fz * back);
-    camAhead.set(me.pos.x + fx * 6, me.alt + 1.2, me.pos.z + fz * 6);
+    const gy = w.gy || 0;
+    camWant.set(w.x - wx * 4.2, gy + 2.4, w.z - wz * 4.2);
+    camAhead.set(w.x + wx * 3, gy + 1.3, w.z + wz * 3);
+  } else if (!camView(camMode, me.pos.x, me.alt + city.gy, me.pos.z, me.heading, camWant, camAhead)) {
+    const y = me.alt + city.gy, hy = (passGround(me.pos.x - fx * back, me.pos.z - fz * back) || y) ; // hinter dir am Berg nicht in den Hang
+    camWant.set(me.pos.x - fx * back, Math.max(y, hy) + 3.3 + Math.abs(me.speed) * 0.01, me.pos.z - fz * back);
+    camAhead.set(me.pos.x + fx * 6, y + 1.2, me.pos.z + fz * 6);
   }
   if (!cockpit(me.mesh, cam, camMode === COCKPIT && !w)) {
     if (w && me.mesh.userData.driver) me.mesh.userData.driver.visible = false; // ausgestiegen: Sitz bleibt leer
@@ -3125,7 +3145,8 @@ function render(dt) {
   cam.fov = 62 + Math.min(16, Math.abs(me.speed) * 0.15);
   cam.updateProjectionMatrix();
   S.sun.position.set(me.pos.x + 70, 110, me.pos.z - 40);
-  S.sun.target.position.set(me.pos.x, 0, me.pos.z);
+  S.sun.position.y = 110 + city.gy;
+  S.sun.target.position.set(me.pos.x, city.gy, me.pos.z);
   S.clouds.position.set(cam.position.x, 0, cam.position.z);
   S.fx.update(dt, cam, S.renderer);
   S.renderer.render(S.scene, cam);
