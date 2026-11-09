@@ -4347,7 +4347,12 @@ const ADMIN_CAR_PREV = { x: 40, y: 214, w: 56, h: 50 };
 const ADMIN_CAR_NEXT = { x: 532, y: 214, w: 56, h: 50 };
 const ADMIN_PS_BTNS = [10, 50, 100].map((n, i) => ({ n, x: 604 + i * 108, y: 214, w: 100, h: 50 }));
 const ADMIN_ALL_PS_BTN = { x: W / 2 - 170, y: 276, w: 340, h: 44 };
-const ADMIN_RESET_BTN = { x: W / 2 - 230, y: 376, w: 460, h: 56 };
+const ADMIN_RESET_BTN = { x: W / 2 - 230, y: 410, w: 460, h: 50 };
+// Sonderfahrzeug zurückholen und goldene Schlüssel der Stadt (Spielstand autoRetterKeys, Nummern 0–29)
+const ADMIN_LIONEL_BTN = { x: 40, y: 334, w: 250, h: 44 };
+const ADMIN_KEY_BTNS = [['+5', 5], ['Alle 30', 30], ['Auf 0', 0]].map(([t, n], i) => ({ t, n, x: 330 + i * 200, y: 334, w: 186, h: 44 }));
+const KEY_TOTAL = 30;
+const cityKeys = () => loadJSON('autoRetterKeys', []);
 const MAX_PS = 999;
 let adminTaps = [], adminConfirm = false, adminCarId = null;
 
@@ -4402,16 +4407,20 @@ function drawAdmin() {
   ctx.fillText(car ? KINDS[car.kind].name + (car.special ? ' ' + specialLabel(car) : '') + '  ·  ⚡ ' + car.ps + ' PS' : '–', 314, 240);
   for (const b of ADMIN_PS_BTNS) drawButton(b, '+' + b.n + ' PS', '#b45309', 19);
   drawButton(ADMIN_ALL_PS_BTN, '⚡ Alle Fahrzeuge +10 PS', '#7c2d12', 19);
+  const hasLionel = fleet.some(v => v.kind === 'lionelx');
+  drawButton(ADMIN_LIONEL_BTN, hasLionel ? '⚡ LIONEL X ist da ✓' : '⚡ LIONEL X holen', hasLionel ? '#444b5c' : '#e10600', 19);
+  for (const b of ADMIN_KEY_BTNS) drawButton(b, '🔑 ' + b.t, '#a16207', 19);
+
   ctx.fillStyle = 'rgba(255,255,255,0.75)';
   ctx.font = '18px system-ui, sans-serif';
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
   // visitors: wie viele Geräte schon gespielt haben
-  ctx.fillText('Fahrzeugpark: ' + fleet.length + ' Fahrzeuge   ·   Rekord: ' + best
-    + (visitors ? '   ·   👀 ' + visitors + (visitors === 1 ? ' Gerät hat' : ' Geräte haben') + ' schon gespielt' : ''), W / 2, 352);
+  ctx.fillText('Fahrzeugpark: ' + fleet.length + ' Fahrzeuge   ·   Rekord: ' + best + '   ·   🔑 ' + cityKeys().length + ' / ' + KEY_TOTAL
+    + (visitors ? '   ·   👀 ' + visitors + (visitors === 1 ? ' Gerät hat' : ' Geräte haben') + ' schon gespielt' : ''), W / 2, 394);
   drawButton(ADMIN_RESET_BTN, adminConfirm ? '⚠️ Wirklich alles löschen? Nochmal tippen!' : '🗑️ Spielstand zurücksetzen',
     adminConfirm ? '#b91c1c' : '#7f1d1d', 20);
-  drawMenuMsg('Zurücksetzen löscht Münzen, Rekord und Fahrzeugpark (danach wieder die 4 Startautos).', 470);
+  drawMenuMsg('Zurücksetzen löscht Münzen, Rekord und Fahrzeugpark (danach wieder die 4 Startautos).', 486);
   drawParticles();
 }
 
@@ -4453,6 +4462,29 @@ function adminTap(px, py) {
     showMenuMsg('Alle ' + fleet.length + ' Fahrzeuge haben +10 PS ⚡');
     beep(880, 0.08, 'square', 0.04);
     beep(1320, 0.12, 'square', 0.04, 0.08);
+    return;
+  }
+  if (inRect(px, py, ADMIN_LIONEL_BTN)) {
+    adminConfirm = false;
+    if (fleet.some(v => v.kind === 'lionelx')) { showMenuMsg('LIONEL X ist schon in deinem Fahrzeugpark ⚡'); return; }
+    const v = makeVehicle('lionelx');
+    fleet.push(v);
+    if (selectedIds.size < MAX_SELECTED) selectedIds.add(v.id);
+    storeJSON('autoRetterFleet', fleet);
+    saveSelection();
+    showMenuMsg('⚡ LIONEL X ist zurück in deinem Fahrzeugpark!');
+    beep(880, 0.08, 'square', 0.04); beep(1320, 0.12, 'square', 0.04, 0.08); beep(1760, 0.16, 'square', 0.04, 0.18);
+    return;
+  }
+  for (const b of ADMIN_KEY_BTNS) {
+    if (!inRect(px, py, b)) continue;
+    adminConfirm = false;
+    const have = new Set(cityKeys());
+    if (b.n === 0) have.clear();
+    else for (let i = 0; i < KEY_TOTAL && (b.n === KEY_TOTAL || have.size < Math.min(KEY_TOTAL, cityKeys().length + b.n)); i++) have.add(i);
+    storeJSON('autoRetterKeys', [...have]);
+    showMenuMsg('🔑 Goldene Schlüssel: jetzt ' + have.size + ' / ' + KEY_TOTAL);
+    beep(1319, 0.08, 'triangle', 0.05); beep(1760, 0.14, 'triangle', 0.05, 0.08);
     return;
   }
   if (inRect(px, py, ADMIN_ZERO_BTN)) {
