@@ -27,7 +27,8 @@ Browser-Spiel ohne Build: `index.html` + `game.js` (Spiellogik, Menüs und 2D-Ze
   Fussgänger (`stepPeds`): gehen um die Blöcke, überqueren bei Rot auf dem Zebrastreifen, Autos halten an (`followLimit`).
   Baustelle (`stepWorks`): sperrt ein Strassenstück, Verkehr fährt Umleitung (`isClosed` in `planTurn`).
   Eigenes Haus (Block 7,5, `stepHouse`): am Briefkasten kaufen und Gartensachen kaufen, Garage = gratis reparieren und tanken;
-  Spielstand `autoRetterHouse`. Testen im Hintergrund-Tab: `window.__cityTick(n)` rechnet n Bilder.
+  Spielstand `autoRetterHouse`. Haus von innen (Tür geht für den Besitzer zu Fuss auf, Kamera bleibt drinnen); Bett:
+  X = schlafen bis 7 Uhr (`goSleep`/`stepSleep`, nur allein und ab 19 Uhr). Testen im Hintergrund-Tab: `window.__cityTick(n)` rechnet n Bilder.
   Freies Gelände: neben den Strassen darf man überall fahren (`allowedAt` + `offroadWhy` in outskirts.js: nicht ins Wasser,
   nicht über Autobahn-Leitplanken, nicht in gesperrte Gebiete); `groundAt` = Bodenhöhe genau wie das Gelände-Netz.
   Skifahren: zu Fuss zur Talstation (`LIFT` in country.js), X = Sessellift (`stepLift`), oben Ski an (`stepSki`).

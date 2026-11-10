@@ -388,12 +388,43 @@ function buildWorld() {
     box(3, 0.04, 9, paveMat, cx - 8, 0.2, cz - 18.5); // Weg zur Haustür
     const wall = mat({ color: 0xf5efe0, roughness: 0.85 }), roofM = mat({ color: 0xa3402f, roughness: 0.8 }), win = mat({ color: 0x7fb2d9, metalness: 0.3, roughness: 0.2, emissive: 0xffd38a, emissiveIntensity: 0 });
     const white = mat({ color: 0xffffff }), wood = mat({ color: 0x8b5a2b }), grey = mat({ color: 0x9ca3af });
-    box(24, 7, 16, wall, cx - 8, 3.66, cz, true); // Villa
+    // Villa: hohl zum Hineingehen (Wände, Boden, Decke), Tür vorne in der Mitte
+    const X0 = cx - 20, X1 = cx + 4, Z0 = cz - 8, Z1 = cz + 8, T = 0.3, HH = 7, wy = 0.16 + HH / 2, dx0 = cx - 8;
+    box(24, HH, T, wall, cx - 8, wy, Z1 - T / 2, true); // hinten
+    box(T, HH, 16, wall, X0 + T / 2, wy, cz, true); box(T, HH, 16, wall, X1 - T / 2, wy, cz, true); // Seiten
+    const dl = dx0 - 0.95 - X0, dr = X1 - (dx0 + 0.95);
+    box(dl, HH, T, wall, X0 + dl / 2, wy, Z0 + T / 2, true); box(dr, HH, T, wall, X1 - dr / 2, wy, Z0 + T / 2, true); // vorne links und rechts der Tür
+    box(1.9, HH - 2.75, T, wall, dx0, 2.91 + (HH - 2.75) / 2, Z0 + T / 2); // über der Tür
+    const imat = (color, e = 0.28) => mat({ color, emissive: color, emissiveIntensity: e, roughness: 0.8 }); // drinnen etwas aufgehellt (kein Licht nötig)
+    box(23.4, 0.15, 15.4, imat(0xfaf7f0, 0.5), cx - 8, 3.7, cz); // Decke
+    box(23.4, 0.06, 15.4, imat(0xb07d4f, 0.22), cx - 8, 0.2, cz); // Holzboden
+    for (const ddx of [-9, -4, 4, 9]) box(2.2, 1.6, 0.05, win, cx - 8 + ddx, 2.2, Z0 + T + 0.03); // Fenster auch von innen
+    for (const ddx of [-9, -3, 3, 9]) box(2.2, 1.6, 0.05, win, cx - 8 + ddx, 2.2, Z1 - T - 0.03);
+    // Einrichtung: Bett (hinten links), Wohnzimmer (Sofa, Fernseher), Esstisch, Küche (rechts)
+    const fab = imat(0x3b82f6), sheet = imat(0xf8fafc, 0.35), dark = imat(0x1f2937, 0.15), woodI = imat(0x8b5a2b), sofaM = imat(0x9a3412, 0.25), green = imat(0x16a34a);
+    const bed = { x: X0 + 3, z: Z1 - 2.6 };
+    box(2.4, 0.45, 3.4, woodI, bed.x, 0.45, bed.z, true); box(2.4, 1.3, 0.2, woodI, bed.x, 0.85, Z1 - T - 0.1);
+    box(2.2, 0.3, 3.2, sheet, bed.x, 0.82, bed.z); box(2.25, 0.14, 2, fab, bed.x, 1.0, bed.z - 0.55); box(1.6, 0.18, 0.55, sheet, bed.x, 1.05, bed.z + 1.15);
+    box(0.7, 0.6, 0.6, woodI, bed.x + 1.8, 0.5, Z1 - T - 0.5); box(0.25, 0.3, 0.25, imat(0xfde68a, 1.2), bed.x + 1.8, 0.95, Z1 - T - 0.5); // Nachttisch mit Lampe
+    box(3, 0.02, 2.2, imat(0xa21caf, 0.2), bed.x + 0.4, 0.24, bed.z - 2.8); // Teppich vor dem Bett
+    box(4, 0.5, 1.2, sofaM, cx - 1, 0.5, Z1 - 1.6, true); box(4, 0.8, 0.3, sofaM, cx - 1, 1, Z1 - T - 0.6); for (const sx of [-1, 1]) box(0.3, 0.75, 1.2, sofaM, cx - 1 + sx * 2, 0.6, Z1 - 1.6);
+    box(2, 0.4, 1, woodI, cx - 1, 0.45, Z1 - 4, true); box(5, 0.02, 3.5, imat(0x64748b, 0.2), cx - 1, 0.24, Z1 - 3.4); // Salontisch, Teppich
+    box(2.6, 0.6, 0.5, dark, cx - 1, 0.5, Z0 + T + 1.2, true); box(2.4, 1.4, 0.08, imat(0x60a5fa, 0.9), cx - 1, 1.6, Z0 + T + 1.2); // Fernseher
+    box(2.4, 0.1, 1.4, woodI, cx - 9, 0.95, cz + 0.5, true); for (const [ox, oz] of [[-0.8, -1.1], [0.8, -1.1], [-0.8, 1.1], [0.8, 1.1]]) box(0.5, 0.5, 0.5, woodI, cx - 9 + ox, 0.45, cz + 0.5 + oz); // Esstisch
+    box(0.9, 0.95, 7, imat(0xe5e7eb, 0.3), X1 - T - 0.5, 0.65, cz + 1.5, true); box(0.92, 0.05, 7, dark, X1 - T - 0.5, 1.14, cz + 1.5); // Küche
+    box(0.9, 2.2, 0.9, imat(0xf1f5f9, 0.3), X1 - T - 0.5, 1.3, Z0 + T + 1.5, true); box(0.7, 0.04, 0.7, dark, X1 - T - 0.5, 1.17, cz + 3.5); // Kühlschrank, Herd
+    box(0.6, 1.2, 0.6, green, X0 + T + 0.6, 0.8, Z0 + T + 0.6); // Pflanze
+    for (const [lx, lz] of [[cx - 15, cz], [cx - 8, cz], [cx - 1, cz]]) box(1, 0.06, 1, imat(0xfff7d6, 1.5), lx, 3.6, lz); // Deckenlampen
+    box(1.6, 1, 0.05, imat(0xf59e0b, 0.5), cx - 9, 2.2, Z1 - T - 0.03); // Bild an der Wand
+    // Haustür: dreht sich auf, wenn du davor stehst und das Haus dir gehört
+    const hinge = new THREE.Group(); hinge.position.set(dx0 - 0.9, 0.2, Z0 + 0.15); decor.add(hinge); hinge.userData.keep = true;
+    const fdoor = new THREE.Mesh(new THREE.BoxGeometry(1.8, 2.7, 0.12), wood); fdoor.position.set(0.9, 1.35, 0); fdoor.castShadow = true; hinge.add(fdoor);
+    const frontSolid = { x0: dx0 - 0.95, x1: dx0 + 0.95, z0: Z0 - 0.1, z1: Z0 + 0.4, h: 2.8 }; solid.push(frontSolid);
+    const inside = { x0: X0 + T, x1: X1 - T, z0: Z0 + T, z1: Z1 - T };
     const roof = new THREE.Mesh(new THREE.ConeGeometry(15.5, 5, 4, 1), roofM); roof.rotation.y = Math.PI / 4; roof.scale.set(1, 1, 0.68);
     roof.position.set(cx - 8, 9.6, cz); roof.castShadow = true; decor.add(roof);
     for (const fl of [2.2, 5.4]) for (const dx of [-9, -4, 4, 9]) box(2.2, 1.6, 0.15, win, cx - 8 + dx, fl, cz - 8.05); // Fenster vorne
     for (const fl of [2.2, 5.4]) for (const dx of [-9, -3, 3, 9]) box(2.2, 1.6, 0.15, win, cx - 8 + dx, fl, cz + 8.05);
-    box(1.6, 2.6, 0.2, wood, cx - 8, 1.5, cz - 8.1); // Haustür
     // Garage: Wände, Dach, Tor (nach Norden)
     const gw = mat({ color: 0xe7e1d1 });
     box(0.4, 4, 14, gw, cx + 8, 2.2, cz - 5, true); box(0.4, 4, 14, gw, cx + 20, 2.2, cz - 5, true); box(12.4, 4, 0.4, gw, cx + 14, 2.2, cz + 2, true);
@@ -431,7 +462,8 @@ function buildWorld() {
     g = G('lights'); const bulbs = [0xfde047, 0xf87171, 0x60a5fa, 0x4ade80];
     for (let k = 0; k <= 46; k += 1.5) for (const [x, z] of [[cx - 23 + k, cz + 23], [cx - 23, cz - 23 + k], [cx + 23, cz - 23 + k]])
       part(g, new THREE.SphereGeometry(0.1, 6, 5), new THREE.MeshBasicMaterial({ color: bulbs[Math.floor(k / 1.5) % 4] }), x, 1.15, z);
-    places.house = { x: cx, z: cz, box: { x: cx + 14, z: cz - 5, w: 10, d: 12 }, mailbox: { x: cx - 2, z: cz - 20, w: 6, d: 5 }, door, doorSolid, open: 0, items, forSale, mine, win };
+    places.house = { x: cx, z: cz, box: { x: cx + 14, z: cz - 5, w: 10, d: 12 }, mailbox: { x: cx - 2, z: cz - 20, w: 6, d: 5 }, door, doorSolid, open: 0, items, forSale, mine, win,
+      hinge, frontSolid, fopen: 0, inside, bed, front: { x: dx0, z: Z0 } };
   }
   function buildDealer(cx, cz) { // Autohändler: Glas-Ausstellungsraum, davor drei Drehteller mit Gebrauchtwagen
     box(46, 0.04, 46, tarmac, cx, 0.18, cz);
@@ -994,6 +1026,13 @@ function stepHouse(dt) {
   H.open = Math.max(0, Math.min(1, H.open + (near ? 1 : -1) * dt * 0.8));
   H.door.position.y = 2.1 + H.open * 3.6; H.door.scale.y = 1 - H.open * 0.9;
   const sol = H.doorSolid; if (H.open > 0.7) { sol.z0 = sol.z1 = 1e9; } else { sol.z0 = H.box.z - 7.2; sol.z1 = H.box.z - 6.8; }
+  // Haustür: geht auf, wenn das Haus dir gehört und du (zu Fuss) davor oder drinnen bist
+  const atDoor = city.house.owned && !!w && Math.abs(x - H.front.x) < 4 && Math.abs(z - H.front.z) < 4;
+  H.fopen = Math.max(0, Math.min(1, H.fopen + (atDoor ? 1 : -1) * dt * 1.6));
+  H.hinge.rotation.y = H.fopen * 1.5;
+  if (H.fopen > 0.6) { H.frontSolid.z0 = H.frontSolid.z1 = 1e9; } else { H.frontSolid.z0 = H.front.z - 0.1; H.frontSolid.z1 = H.front.z + 0.4; }
+  if (!city.house.owned && w && Math.abs(x - H.front.x) < 2.5 && Math.abs(z - H.front.z) < 2.5 && !city.doorMsg) { city.doorMsg = true; showMsg('🔒 Abgeschlossen – das Haus gehört dir noch nicht (Briefkasten)', 2); }
+  if (!w || Math.abs(x - H.front.x) > 5 || Math.abs(z - H.front.z) > 5) city.doorMsg = false;
   // in der Garage: zuhause
   const inG = !w && inZone(H.box, me.pos.x, me.pos.z) && Math.abs(me.speed) < 1;
   if (inG && !city.homeT) {
@@ -1011,6 +1050,39 @@ function stepHouse(dt) {
     else { city.houseOpen = true; drawHouse(); }
   }
   if (!inZone(H.mailbox, x, z, 3)) { city.houseT = 0; if (city.houseOpen) { city.houseOpen = false; S.ui.dealpanel.hidden = true; } }
+}
+
+// Schlafen im eigenen Bett (nur allein, nicht online): am Abend oder in der Nacht X beim Bett = bis 7 Uhr morgens
+const clockMins = () => Math.floor(((city.tod - 0.25 + 1) % 1) * 24 * 60 + 12 * 60) % (24 * 60);
+function goSleep(w) {
+  if (city.net) { showMsg('🌐 Online läuft die Zeit für alle – schlafen geht nur, wenn du allein spielst', 2.4); return; }
+  const m = clockMins();
+  if (m >= 6 * 60 && m < 19 * 60) { showMsg('☀️ Es ist noch Tag – schlafen kannst du ab 19 Uhr', 2); return; }
+  const B = S.places.house.bed;
+  city.sleep = { t: 0, w };
+  w.mesh.position.set(B.x, 1.15, B.z); w.mesh.rotation.set(Math.PI / 2, Math.PI / 2, 0, 'YXZ'); // ins Bett legen
+  if (!S.ui.sleep) {
+    const d = document.createElement('div');
+    d.style.cssText = 'position:absolute;inset:0;background:#000;opacity:0;pointer-events:none;display:flex;align-items:center;justify-content:center;font:700 44px system-ui,sans-serif;color:#fff;z-index:5';
+    S.ui.root.append(d); S.ui.sleep = d;
+  }
+  S.ui.sleep.textContent = '💤 Gute Nacht …';
+}
+function stepSleep(dt) {
+  const Z = city.sleep;
+  if (!Z) return;
+  Z.t += dt;
+  const op = Z.t < 1.4 ? Z.t / 1.4 : Z.t < 3.2 ? 1 : Math.max(0, 1 - (Z.t - 3.2) / 1.2);
+  S.ui.sleep.style.opacity = op;
+  if (Z.t > 1.4 && !Z.done) { Z.done = true; city.tod = 0.0417; S.ui.sleep.textContent = '☀️ Guten Morgen!'; } // 7 Uhr
+  const w = Z.w, B = S.places.house.bed;
+  if (Z.t < 3.2) { w.mesh.position.set(B.x, 1.15, B.z); w.speed = 0; }
+  else if (!Z.up) { // aufstehen, neben dem Bett
+    Z.up = true; w.x = B.x + 2; w.z = B.z - 1.5; w.h = -Math.PI / 2; w.mesh.rotation.set(0, -w.h, 0);
+    if (city.fuel < 1 || city.damage > 0) { city.fuel = 1; repairAll(); }
+    showMsg('☀️ Guten Morgen! Ausgeschlafen – es ist 7 Uhr', 2.4);
+  }
+  if (Z.t > 4.4) { city.sleep = null; S.ui.sleep.style.opacity = 0; }
 }
 
 // ---------- Baustelle in der Stadt ----------
@@ -2088,6 +2160,7 @@ function toggleWalk() {
 function getIn() {
   const w = city.walk, t = w.target;
   if (t && t.lift) { startLift(w); return; }
+  if (t && t.bed) { goSleep(w); return; }
   if (w.ski) { skiOff(w); return; }
   if (!t) { showMsg('🚗 Geh näher zu einem Auto', 1.4); return; }
   S.scene.remove(w.mesh);
@@ -2116,6 +2189,7 @@ function getIn() {
 }
 function stepWalk(dt) {
   const w = city.walk, input = city.input, me = city.me;
+  if (city.sleep) return; // schläft
   if (w.lift) { stepLift(w, dt); return; }
   if (w.ski) { stepSki(w, dt); return; }
   w.h += ((input.right ? 1 : 0) - (input.left ? 1 : 0)) * 2.6 * dt;
@@ -2155,8 +2229,10 @@ function stepWalk(dt) {
   }
   if (!city.boat && nearPier(w.x, w.z) && Math.hypot(w.x - BOAT_HOME.x, w.z - BOAT_HOME.z) < 12.5) { best = { boat: true }; bd = 0; } // Boot am Steg
   if (Math.hypot(w.x - LIFT.A.x, w.z - LIFT.A.z) < 14) { best = { lift: true }; bd = 0; } // Sessellift (Talstation)
-  if (best && (!w.target || w.target.v !== best.v || !!w.target.boat !== !!best.boat || !!w.target.lift !== !!best.lift))
-    showMsg(best.lift ? '🚡 Sessellift – X: einsteigen und hinauffahren' : best.boat ? '🚤 Boot – einsteigen' : best.v ? '🔑 ' + ((city.kinds[best.v.kind] || {}).name || '') + ' – 🚗 einsteigen' : '🚗 Einsteigen?', 1.2);
+  const HB = S.places.house && S.places.house.bed;
+  if (HB && city.house.owned && Math.hypot(w.x - HB.x, w.z - HB.z) < 3) { best = { bed: true }; bd = 0; } // Bett im eigenen Haus
+  if (best && (!w.target || w.target.v !== best.v || !!w.target.boat !== !!best.boat || !!w.target.lift !== !!best.lift || !!w.target.bed !== !!best.bed))
+    showMsg(best.bed ? '🛏️ Bett – X: schlafen' : best.lift ? '🚡 Sessellift – X: einsteigen und hinauffahren' : best.boat ? '🚤 Boot – einsteigen' : best.v ? '🔑 ' + ((city.kinds[best.v.kind] || {}).name || '') + ' – 🚗 einsteigen' : '🚗 Einsteigen?', 1.2);
   w.target = best;
   S.ui.walkbtn.classList.toggle('ready', !!best);
 }
@@ -3704,6 +3780,7 @@ function step(now) {
   stepPeds(dt);
   stepWorks(dt);
   stepHouse(dt);
+  stepSleep(dt);
   stepAccidents(dt);
   stepHw(dt);
   stepCountry(S.country, dt, { t: city.t, me: { x: city.me.pos.x, z: city.me.pos.z }, cam: S.camera.position, tractor: city.me.v.kind === 'tractor' && !city.walk, onBale });
@@ -3872,6 +3949,12 @@ function render(dt) {
     const gy = w.gy || 0;
     camWant.set(w.x - wx * 4.2, gy + 2.4, w.z - wz * 4.2);
     camAhead.set(w.x + wx * 3, gy + 1.3, w.z + wz * 3);
+    const HI = S.places.house && S.places.house.inside;
+    if (HI && w.x > HI.x0 && w.x < HI.x1 && w.z > HI.z0 && w.z < HI.z1) { // im Haus: Kamera bleibt drinnen, unter der Decke
+      camWant.x = Math.max(HI.x0 + 0.4, Math.min(HI.x1 - 0.4, camWant.x)); camWant.z = Math.max(HI.z0 + 0.4, Math.min(HI.z1 - 0.4, camWant.z));
+      camWant.y = Math.min(camWant.y, 3.2);
+      if (city.sleep) { const B = S.places.house.bed; camWant.set(B.x + 3, 3.1, B.z - 3.5); camAhead.set(B.x, 0.9, B.z); }
+    }
   } else if (!camView(camMode, me.pos.x, me.alt + city.gy, me.pos.z, me.heading, camWant, camAhead)) {
     const y = me.alt + city.gy, hy = (groundAt(me.pos.x - fx * back, me.pos.z - fz * back) || y) ; // hinter dir am Hang nicht in den Boden
     camWant.set(me.pos.x - fx * back, Math.max(y, hy) + 3.3 + Math.abs(me.speed) * 0.01, me.pos.z - fz * back);
