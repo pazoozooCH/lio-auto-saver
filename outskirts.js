@@ -122,9 +122,12 @@ const REST_S = S_SOUTH + HW.half; // s in der Mitte der Raststätte
 const REST_BOX = { x0: REST.x - REST.end - 10, x1: REST.x + REST.end + 10, z0: REST.z + EDGE, z1: REST.z + 135 };
 const RB = { x0: -45, x1: 45, u0: 74, u1: 98 }; // Restaurant
 export const REST_ZONES = { gas: { x: REST.x - 110, z: REST.z + 50, w: 34, d: 18 }, charge: { x: REST.x - 80, z: REST.z + 50, w: 10, d: 14 } };
-// parkierte Fahrzeuge: [Art, x, u, Drehung] – stehen fest (auch für die Kollision)
-export const REST_PARKED = [['car', -42, 48, -Math.PI / 2], ['kombi', -33, 48, -Math.PI / 2], ['kompakt', -18, 48, -Math.PI / 2], ['ecar', 3, 48, -Math.PI / 2],
-  ['minivan', 21, 48, -Math.PI / 2], ['camper', 39, 48, -Math.PI / 2], ['tanker', 108, 40, 0], ['umzug', 108, 49, 0], ['delivery', 108, 58, 0]];
+// Parkfelder: 25 für Autos (Schnauze nach Süden), 3 für Lastwagen (Schnauze nach Osten). Autos von der Autobahn fahren
+// hinein, bleiben eine Weile und fahren wieder weg (stepRestCar); die parkierten sind fest (restSolid, für dich).
+const REST_SLOTS = [];
+for (let k = 0; k < 25; k++) REST_SLOTS.push({ x: REST.x - 36 + 3 * k, u: 48, truck: false, car: null });
+for (const u of [40, 49, 58]) REST_SLOTS.push({ x: REST.x + 108, u, truck: true, car: null });
+const restSolid = [];
 const restOuter = ax => EDGE + 16 + 96 * Math.min(1, Math.max(0, (REST.half - ax) / 30));
 const restGap = s => { const d = Math.abs(s - REST_S); return d > REST.island && d < REST.end; }; // Aus- und Einfahrt
 function restDrivable(x, z, r) {
@@ -132,13 +135,91 @@ function restDrivable(x, z, r) {
   if (ax > REST.end || u < EDGE - 2 || u > restOuter(ax) - r * 0.6) return false;
   if (ax < REST.island && u < EDGE + 12 + r * 0.6) return false; // Grasinsel zwischen Autobahn und Raststätte
   if (x > REST.x + RB.x0 - r * 0.6 && x < REST.x + RB.x1 + r * 0.6 && u > RB.u0 - r * 0.6 && u < RB.u1 + r * 0.6) return false; // Restaurant
-  for (const [, px, pu, yaw] of REST_PARKED) { // parkierte Fahrzeuge
-    const hx = yaw ? 1.1 : 4.4, hu = yaw ? 2.5 : 1.3;
-    if (Math.abs(x - REST.x - px) < hx + r * 0.6 && Math.abs(u - pu) < hu + r * 0.6) return false;
-  }
+  for (const b of restSolid) if (Math.abs(x - b.x) < b.hx + r * 0.6 && Math.abs(z - b.z) < b.hz + r * 0.6) return false; // parkierte Fahrzeuge
   return true;
 }
 const inRestZone = (x, z) => Math.abs(x - REST.x) < REST.end + 5 && z - REST.z > EDGE + 0.5 && z - REST.z < 140;
+
+// Weg durch Punkte [x, z] (Catmull-Rom, alle ~0,5 m ein Punkt; d = Länge bis dorthin, L = ganze Länge)
+export function makePath(pts) {
+  const out = [], P = [pts[0], ...pts, pts[pts.length - 1]];
+  let L = 0;
+  for (let i = 1; i < P.length - 2; i++) {
+    const [a, b, c, d] = [P[i - 1], P[i], P[i + 1], P[i + 2]], n = Math.max(2, Math.ceil(Math.hypot(c[0] - b[0], c[1] - b[1]) / 0.5));
+    for (let k = i === 1 ? 0 : 1; k <= n; k++) {
+      const t = k / n, t2 = t * t, t3 = t2 * t, f = (p0, p1, p2, p3) => 0.5 * (2 * p1 + (p2 - p0) * t + (2 * p0 - 5 * p1 + 4 * p2 - p3) * t2 + (3 * p1 - p0 - 3 * p2 + p3) * t3);
+      const x = f(a[0], b[0], c[0], d[0]), z = f(a[1], b[1], c[1], d[1]), q = out[out.length - 1];
+      if (q) L += Math.hypot(x - q.x, z - q.z);
+      out.push({ x, z, d: L });
+    }
+  }
+  out.L = L;
+  return out;
+}
+// Punkt und Richtung (h = atan2(dz, dx)) bei Länge d; i = wo man zuletzt war (schneller suchen)
+export function pathAt(path, d, i = 0) {
+  i = Math.min(i, path.length - 2);
+  while (i < path.length - 2 && path[i + 1].d < d) i++;
+  const a = path[i], b = path[i + 1], f = b.d > a.d ? Math.min(1, Math.max(0, (d - a.d) / (b.d - a.d))) : 0;
+  return { x: a.x + (b.x - a.x) * f, z: a.z + (b.z - a.z) * f, h: Math.atan2(b.z - a.z, b.x - a.x), i };
+}
+// Winkel a langsam zu b drehen (höchstens m)
+export const turnTo = (a, b, m) => { let d = b - a; d -= Math.round(d / (2 * Math.PI)) * 2 * Math.PI; return a + Math.max(-m, Math.min(m, d)); };
+
+const RZ = u => REST.z + u;
+function restInPath(c, slot) { // von der Autobahn bis ins Feld
+  const pts = [[c.x, c.z], [REST.x - 215, RZ(18.5)], [REST.x - 195, RZ(24)], [REST.x - 160, RZ(31)], [REST.x - 130, RZ(33.5)]];
+  if (slot.truck) pts.push([REST.x + 70, RZ(33.5)], [REST.x + 90, RZ(slot.u)], [REST.x + 100, RZ(slot.u)], [slot.x, RZ(slot.u)]);
+  else pts.push([slot.x - 9, RZ(34)], [slot.x, RZ(41)], [slot.x, RZ(slot.u)]);
+  const P = makePath(pts);
+  P.fast = makePath(pts.slice(0, 4)).L; // bis dahin noch zügig
+  return P;
+}
+function restOutPath(slot) { // vorwärts hinaus, hinten herum zur Einfahrt
+  const sx = slot.x - REST.x, pts = slot.truck ? [[sx, slot.u], [124, slot.u], [140, 44], [149, 33]]
+    : [[sx, slot.u], [sx, 57], [sx + 9, 65], [120, 67], [138, 56], [148, 38]];
+  pts.push([175, 28], [200, 21], [215, 18.5]);
+  return makePath(pts.map(([x, u]) => [REST.x + x, RZ(u)]));
+}
+function freeSlot(truck) {
+  const free = REST_SLOTS.filter(q => q.truck === truck && !q.car && !(q.gone > 0));
+  return free.length ? free[Math.floor(Math.random() * free.length)] : null;
+}
+function stepRestCar(c, dt, cars, me, ahead) {
+  const R = c.rest;
+  if (R.state === 'park') {
+    c.speed = 0;
+    if ((R.t -= dt) <= 0) { R.state = 'out'; R.path = restOutPath(R.slot); R.d = 0; R.i = 0; R.slot.car = null; R.slot.gone = 4; }
+    return;
+  }
+  if (R.state === 'merge') { // an der Einfahrt warten, bis rechts eine Lücke ist
+    const p = hwProject(c.x, c.z);
+    c.s = p.s; c.dir = -1; c.lat = p.lat; c.speed = 0;
+    if (!ahead(c, -LANES[0], -45, 30)) {
+      c.rest = null; c.lane = 0; c.speed = 10; c.laneT = 3; c.restAsk = true;
+      cars.restCars.splice(cars.restCars.indexOf(c), 1);
+    }
+    return;
+  }
+  const left = R.path.L - R.d;
+  let v = R.state === 'in' && R.d < R.path.fast ? 16 : R.state === 'out' && left < 75 ? 13 : 6;
+  v = Math.min(v, Math.sqrt(2 * 2.5 * left) + 0.2); // im Feld (bzw. an der Einfahrt) anhalten
+  const fx = Math.cos(c.h), fz = Math.sin(c.h), wait = (x, z, far) => {
+    const dx = x - c.x, dz = z - c.z, along = dx * fx + dz * fz;
+    return along > 0 && along < far && Math.abs(dz * fx - dx * fz) < 2.6;
+  };
+  for (const o of cars.restCars) if (o !== c && o.rest.state !== 'park' && wait(o.x, o.z, 9)) v = 0; // andere vorne
+  if (wait(me.x, me.z, 8)) v = 0; // du stehst im Weg
+  c.speed += Math.max(-6 * dt, Math.min(3 * dt, v - c.speed));
+  c.speed = Math.max(0, c.speed);
+  R.d = Math.min(R.path.L, R.d + c.speed * dt);
+  const q = pathAt(R.path, R.d, R.i);
+  R.i = q.i; c.x = q.x; c.z = q.z; c.h = turnTo(c.h, q.h, dt * Math.max(0.6, c.speed * 0.5));
+  if (left < 0.05) {
+    if (R.state === 'in') { R.state = 'park'; R.t = (R.slot.truck ? 60 : 25) + Math.random() * (R.slot.truck ? 140 : 90); c.speed = 0; c.h = R.slot.truck ? 0 : Math.PI / 2; }
+    else R.state = 'merge';
+  }
+}
 
 function buildRest(group, { asphaltMat, lineMat, sign, grassMat, rail, posts }) {
   const X = REST.x, Z = REST.z, mat = o => new THREE.MeshStandardMaterial({ roughness: 0.8, ...o });
@@ -155,7 +236,7 @@ function buildRest(group, { asphaltMat, lineMat, sign, grassMat, rail, posts }) 
   for (const sx of [-1, 1]) box(0.3, 0.14, 11.6, curb, X + sx * REST.island, 0.07, Z + EDGE + 6.2);
   // Randlinien und Parkfelder
   flat(2 * REST.end, 0.15, lineMat, X, 0.05, Z + restOuter(REST.end) - 0.6);
-  for (let x = -51; x <= 51; x += 3) flat(0.13, 12, lineMat, X + x, 0.05, Z + 48);
+  for (let x = -37.5; x <= 37.6; x += 3) flat(0.13, 12, lineMat, X + x, 0.05, Z + 48);
   for (const u of [35.5, 44.5, 53.5, 62.5]) flat(60, 0.15, lineMat, X + 110, 0.05, Z + u);
   // Tankstelle (rotes Dach, Zapfsäulen) und Ladesäulen (grün)
   const G = REST_ZONES.gas, C = REST_ZONES.charge, red = mat({ color: 0xd62828 }), white = mat({ color: 0xf3f4f6 }), steel = mat({ color: 0x9ca3af, metalness: 0.5 });
@@ -384,11 +465,15 @@ export function makeHighwayTraffic(scene, kinds, n = 260) {
   const tri = new THREE.Mesh(new THREE.CircleGeometry(0.5, 3).rotateZ(Math.PI / 2), new THREE.MeshBasicMaterial({ color: 0xdc2626, side: THREE.DoubleSide }));
   smoke.visible = tri.visible = false; scene.add(smoke, tri);
   cars.props = { smoke, tri };
-  // Raststätte: ein paar parkierte Autos und Lastwagen (stehen nur da)
-  for (const [kind, x, u, yaw] of REST_PARKED) {
-    if (!kinds[kind]) continue;
-    const mesh = buildCar({ kind, color: kinds[kind].color || '#' + pick(COLORS).toString(16).padStart(6, '0'), special: null }, kinds);
-    mesh.position.set(REST.x + x, 0, REST.z + u); mesh.rotation.y = yaw; scene.add(mesh); cars.meshes.push(mesh);
+  // Raststätte: am Anfang ist gut die Hälfte der Felder besetzt (Zusatzautos: fahren später weg und verschwinden)
+  cars.restCars = [];
+  for (const q of REST_SLOTS) {
+    q.car = null; q.gone = 0;
+    if (Math.random() > 0.6) continue;
+    const c = newCar(q.truck ? 'slow' : pick(['normal', 'normal', 'normal', 'tail', 'racer']), -1, 0, 0, true);
+    c.rest = { state: 'park', slot: q, t: Math.random() * 100 };
+    c.x = q.x; c.z = REST.z + q.u; c.h = q.truck ? 0 : Math.PI / 2; c.speed = 0;
+    q.car = c; cars.push(c); cars.restCars.push(c);
   }
   cars.zones = []; cars.acc = null; cars.extras = 0; cars.meshed = [];
   cars.accT = 60 + Math.random() * 30; // der erste Unfall nach gut einer Minute auf der Autobahn
@@ -405,7 +490,7 @@ function stepCop(c, dt, cars, P, ahead, hooks) {
     if (c.t > 0 || !P) return null;
     let best = null, bd = Infinity;
     for (const r of cars) {
-      if (r.type !== 'racer' || r.dir !== P.dir || r.shoulder || r.wreck) continue;
+      if (r.type !== 'racer' || r.dir !== P.dir || r.shoulder || r.wreck || r.rest) continue;
       const ds = wrapDs((r.s - P.s) * P.dir);
       if (ds > 30 && ds < 400 && ds < bd) { bd = ds; best = r; }
     }
@@ -415,7 +500,7 @@ function stepCop(c, dt, cars, P, ahead, hooks) {
     hooks.msg('🚨 Die Polizei jagt einen Raser!', true);
   }
   const R = c.target;
-  if (R.dead && c.state !== 'leave') { c.state = 'leave'; c.t = 12; c.shoulder = false; }
+  if ((R.dead || R.rest) && c.state !== 'leave') { c.state = 'leave'; c.t = 12; c.shoulder = false; R.shoulder = false; }
   const gap = wrapDs((R.s - c.s) * c.dir) - (R.len + c.len) / 2;
   if (c.state === 'chase') {
     if (gap < 70) c.lane = R.lane; // nah dran: hinter den Raser
@@ -472,7 +557,7 @@ function busy(cars, dir, s0, len) {
 }
 // Stau auffüllen: in allen Spuren Autos mit kleinem Abstand (zuerst die, die schon dort sind; dann Zusatzautos)
 function fillQueue(cars, Z, from = 10) {
-  const here = cars.filter(c => !c.own && c.dir === Z.dir && !c.wreck && !c.shoulder && zoneDist(Z, c) > -8 && zoneDist(Z, c) < Z.len + 10);
+  const here = cars.filter(c => !c.own && !c.rest && c.dir === Z.dir && !c.wreck && !c.shoulder && zoneDist(Z, c) > -8 && zoneDist(Z, c) < Z.len + 10);
   for (let lane = 0; lane < LANES.length; lane++) {
     for (let d = from + Math.random() * 6; d < Z.len - 6;) {
       const s = wrapS(Z.s - Z.dir * d);
@@ -486,7 +571,7 @@ function fillQueue(cars, Z, from = 10) {
 function startAccident(cars, P) {
   const dir = P.dir, s = wrapS(P.s + dir * 760);
   if (busy(cars, dir, s, JAM + 200)) return false;
-  const far = cars.filter(c => !c.own && c.dir === dir && !c.shoulder && !c.wreck && c !== (cars.cop && cars.cop.target)
+  const far = cars.filter(c => !c.own && !c.rest && c.dir === dir && !c.shoulder && !c.wreck && c !== (cars.cop && cars.cop.target)
     && Math.abs(wrapDs(c.s - P.s)) > 430); // nur Autos, die du gerade nicht siehst
   if (far.length < 2) return false;
   const A = { kind: 'acc', s, dir, len: JAM, t: 0, phase: 'jam', wrecks: [], rescue: [], called: false, block: 0, warnT: 0, told: 0 };
@@ -553,7 +638,7 @@ export function stepHighway(cars, dt, t, me, cam, hooks) {
   // Fächer füllen (einmal pro Bild)
   const bins = cars.bins;
   for (const B of bins) for (const b of B) b.length = 0;
-  for (const c of cars) if (c.dir) bins[c.dir > 0 ? 1 : 0][Math.floor(c.s / BIN) % NBIN].push(c);
+  for (const c of cars) if (c.dir && !c.rest) bins[c.dir > 0 ? 1 : 0][Math.floor(c.s / BIN) % NBIN].push(c);
   if (P) bins[P.dir > 0 ? 1 : 0][Math.floor(P.s / BIN) % NBIN].push(P);
   const ahead = (c, lat, from = 0, range = 140) => { // nächstes Fahrzeug vor c auf der Spur lat (from < 0: auch knapp dahinter)
     const B = bins[c.dir > 0 ? 1 : 0], b0 = Math.floor(c.s / BIN), k0 = from < 0 ? -Math.ceil(-from / BIN) - 1 : -1, k1 = Math.ceil(range / BIN) + 1;
@@ -613,12 +698,36 @@ export function stepHighway(cars, dt, t, me, cam, hooks) {
   let nFar = 0, siren = 0, dead = 0;
   const vis = cars.vis || (cars.vis = []); vis.length = 0;
   const cop = cars.cop && cars.cop.state === 'chase' ? cars.cop : null;
+  restSolid.length = 0; // parkierte Fahrzeuge an der Raststätte: fest für dich
+  for (const c of cars.restCars) if (c.rest.state === 'park') restSolid.push({ x: c.x, z: c.z, hx: c.rest.slot.truck ? 4.2 : 1.1, hz: c.rest.slot.truck ? 1.3 : 2.4 });
+  for (const q of REST_SLOTS) if (q.gone > 0) q.gone -= dt;
   const lodD2 = Math.max(700, see + 60) ** 2, frame = cars.frame = (cars.frame || 0) + 1;
   for (const c of cars) {
     // weit weg (nicht zu sehen): nur jedes dritte Bild rechnen, dafür mit dreifachem Zeitschritt
     const lx = c.x - cam.x, lz = c.z - cam.z, lod = !c.own && lx * lx + lz * lz > lodD2 && c.x !== 0;
     if (lod && (frame + (c.ph || 0)) % 3) continue;
     const cdt = lod ? dt * 3 : dt;
+    if (c.rest) { // an der Raststätte
+      stepRestCar(c, cdt, cars, me, ahead);
+      const dx = c.x - cam.x, dz = c.z - cam.z, d2 = dx * dx + dz * dz;
+      if (d2 < see2) { c.yaw = -c.h; c.d2 = d2; c.cdt = cdt; vis.push(c); }
+      continue;
+    }
+    // Richtung −s, rechts unterwegs, kurz vor der Ausfahrt: etwa jeder Zweite fährt zur Raststätte (wenn ein Feld frei ist)
+    if (c.dir === -1 && !c.own) {
+      const ds = c.s - REST_S;
+      if (ds > 250 && ds < 300 && !c.restAsk && c.lane <= 1 && !c.wreck && !c.shoulder && c !== (cars.cop && cars.cop.target)) {
+        c.restAsk = true;
+        const slot = Math.random() < 0.5 && !zoneOf(cars, c) ? freeSlot(c.type === 'slow') : null;
+        if (slot) {
+          const tp = hwPoint(c.s);
+          c.h = Math.atan2(-tp.tz, -tp.tx);
+          c.rest = { state: 'in', slot, path: restInPath(c, slot), d: 0, i: 0 };
+          slot.car = c; cars.restCars.push(c);
+          continue;
+        }
+      } else if (c.restAsk && (ds < 200 || ds > 320)) c.restAsk = false;
+    }
     let want = c.want;
     if (c.own) {
       want = c.type === 'cop' ? stepCop(c, cdt, cars, P, ahead, hooks) : stepRescue(c, cdt, A, P);

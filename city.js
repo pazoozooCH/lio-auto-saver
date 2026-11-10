@@ -8,7 +8,7 @@ import { makeNoise, rng, smoothstep, surface, terrain, cloudDome } from './world
 import { createCarSound, crash, gearbox, horn, createSiren } from './sound.js';
 import { makeNetCars } from './netcars.js';
 import { makeChat } from './chat.js';
-import { buildHighway, outskirtsDist, hwDrivable, onHighway, makeHighwayTraffic, stepHighway, hwProject, hwPoint, HW, HW_LEN, HW_LIMIT, REST, REST_ZONES,
+import { buildHighway, outskirtsDist, hwDrivable, onHighway, makeHighwayTraffic, stepHighway, hwProject, hwPoint, HW, HW_LEN, HW_LIMIT, REST, REST_ZONES, makePath, pathAt, turnTo,
   AREAS, buildAreas, stepAreas, groundShape, areaDrivable, inArea, lockedGate,
   PASS_AREA, buildPass, passGround, passDrivable, onPass, passTerrain, passNearest, inPassRegion, passPoints, SUMMIT, slideInside } from './outskirts.js';
 import { makeEffects, camView, cockpit, COCKPIT, CAM_NAMES, FLY_HTML, FLY_KEYS, flyCss, flyHelp, flyToggle, flyStep } from './fx.js';
@@ -25,7 +25,7 @@ const CYCLE = 22;               // Ampelzyklus in Sekunden
 const TRAFFIC = 46;             // so viele Autos fahren herum
 const SEE = 140;                // weiter weg werden Autos nicht gezeichnet
 const DIRS = [[1, 0], [0, 1], [-1, 0], [0, -1]]; // +x, +z, −x, −z
-const SPECIAL = { '2,5': 'gas', '5,2': 'wash', '5,5': 'pizza', '2,2': 'jail', '6,3': 'workshop', '1,3': 'dealer', '6,6': 'hospital' }; // Blöcke mit Tankstelle, Waschanlage, Pizzeria, Gefängnis, Werkstatt, Autohändler, Spital
+const SPECIAL = { '2,5': 'gas', '5,2': 'wash', '5,5': 'pizza', '2,2': 'jail', '6,3': 'workshop', '1,3': 'dealer', '6,6': 'hospital', '3,6': 'blue' }; // Blöcke mit Tankstelle, Waschanlage, Pizzeria, Gefängnis, Werkstatt, Autohändler, Spital, Blauer Zone
 // Basen: sechs Blöcke nebeneinander am oberen Stadtrand, Platz s im Block (s + 1, 0); Einfahrt von der Strasse, an der man startet
 const BASES = 6, BASE_CARS = 10, BASE_COLORS = ['#ef4444', '#3b82f6', '#22c55e', '#f59e0b', '#a855f7', '#ec4899'];
 const baseOf = key => { const [i, j] = key.split(',').map(Number); return j === 0 && i >= 1 && i <= BASES ? i - 1 : -1; };
@@ -352,6 +352,32 @@ function buildWorld() {
     for (let k = 0; k < 8; k++) bays.push({ x: cx - 13.2 + 1.65 + k * 3.3, z: bz, h: Math.PI / 2 }); // vorwärts hinein: Schnauze nach +z
     places.lot = { bays };
   }
+  // Blaue Zone: Parkplatz mit blauen Feldern (Reihe A vorne mit Einfahrt in der Mitte, Reihe B hinten), Schild und
+  // Anzeige „frei / besetzt“. Die Autos kommen aus dem Verkehr auf der Strasse davor (stepLot) und fahren wieder dorthin.
+  function buildBlue(cx, cz, bi, bj) {
+    box(46, 0.04, 46, tarmac, cx, 0.18, cz);
+    const blue = mat({ color: 0x2563eb, emissive: 0x1d4ed8, emissiveIntensity: 0.25, roughness: 0.6, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 });
+    const marks = quads(), slots = [];
+    for (const o of [-19.8, -16.5, -13.2, -9.9, -6.6, -3.3, 3.3, 6.6, 9.9, 13.2, 16.5, 19.8]) marks.rect(cx + o, cz - 12, 0.15, 5.6, 0.21);
+    for (const sx of [-1, 1]) marks.rect(cx + sx * 11.55, cz - 14.8, 16.5, 0.15, 0.21);
+    for (let k = 0; k <= 12; k++) marks.rect(cx - 19.8 + k * 3.3, cz + 12, 0.15, 5.6, 0.21);
+    marks.rect(cx, cz + 14.8, 39.6, 0.15, 0.21);
+    for (const o of [-18.15, -14.85, -11.55, -8.25, -4.95, 4.95, 8.25, 11.55, 14.85, 18.15]) slots.push({ x: cx + o, z: cz - 12, h: -Math.PI / 2, car: null });
+    for (let k = 0; k < 12; k++) slots.push({ x: cx - 18.15 + k * 3.3, z: cz + 12, h: Math.PI / 2, car: null });
+    for (const q of slots) marks.rect(q.x, q.z, 1.2, 1.2, 0.205); // ein blaues Viereck in jedem Feld
+    decor.add(marks.mesh(blue));
+    // Schild am Eingang und Anzeige darunter
+    const pole = mat({ color: 0x9ca3af, metalness: 0.5 });
+    box(0.2, 4.6, 0.2, pole, cx + 6, 2.3, cz - 21);
+    for (const side of [0, 1]) {
+      const s1 = sign('🅿️ BLAUE ZONE', '#1d4ed8', '#ffffff', 5, 1.1); s1.position.set(cx + 6, 4.2, cz - 21.1 - side * 0.05); s1.rotation.y = side ? Math.PI : 0; decor.add(s1);
+    }
+    const c = document.createElement('canvas'); c.width = 256; c.height = 128;
+    const tex = new THREE.CanvasTexture(c); tex.colorSpace = THREE.SRGBColorSpace;
+    const disp = new THREE.Mesh(new THREE.PlaneGeometry(2.6, 1.3), new THREE.MeshStandardMaterial({ map: tex, emissive: 0xffffff, emissiveMap: tex, emissiveIntensity: 0.6, side: THREE.DoubleSide }));
+    disp.position.set(cx + 6, 2.8, cz - 21.15); disp.rotation.y = Math.PI; disp.userData.keep = true; scene.add(disp);
+    places.blue = { cx, cz, slots, road: node(bj), seg: { i: bi, j: bj, d: 0 }, disp: { c, tex, last: -1 } };
+  }
   function buildDealer(cx, cz) { // Autohändler: Glas-Ausstellungsraum, davor drei Drehteller mit Gebrauchtwagen
     box(46, 0.04, 46, tarmac, cx, 0.18, cz);
     const glass = mat({ color: 0x9cc7e6, metalness: 0.3, roughness: 0.05, transparent: true, opacity: 0.35 }), frame = mat({ color: 0x1f2937 });
@@ -460,7 +486,7 @@ function buildWorld() {
     const key = bi + ',' + bj;
     if (key === plaza) { buildPlaza(decor, cx, cz, round); continue; }
     if (baseOf(key) >= 0) { buildBase(cx, cz, baseOf(key)); continue; }
-    if (SPECIAL[key]) { ({ gas: buildGas, wash: buildWash, pizza: buildPizza, jail: buildJail, workshop: buildWorkshop, dealer: buildDealer, hospital: buildHospital })[SPECIAL[key]](cx, cz); continue; }
+    if (SPECIAL[key]) { ({ gas: buildGas, wash: buildWash, pizza: buildPizza, jail: buildJail, workshop: buildWorkshop, dealer: buildDealer, hospital: buildHospital, blue: (x, z) => buildBlue(x, z, bi, bj) })[SPECIAL[key]](cx, cz); continue; }
     if (parks.has(key)) { // Park: Wiese mit Wegkreuz und Bäumen
       const g = quads(1 / 4), h = inner / 2, p = 1.6;
       g.add(cx - h, cz - h, cx - p, cz - p, 0.17); g.add(cx + p, cz - h, cx + h, cz - p, 0.17);
@@ -746,6 +772,7 @@ function planTurn(c) {
   let pick = Math.random() * weights.reduce((a, b) => a + b, 0), d2 = options[0];
   for (let k = 0; k < options.length; k++) { pick -= weights[k]; if (pick <= 0) { d2 = options[k]; break; } }
   if (!options.length) d2 = (c.d + 2) % 4;
+  if (c.blueGo && options.includes(c.d)) d2 = c.d; // fährt zur Blauen Zone: geradeaus
   const [fx, fz] = DIRS[c.d], [gx, gz] = DIRS[d2], bx = node(bi), bz = node(bj);
   const P0 = [bx - fx * 7 - fz * LANE, bz - fz * 7 + fx * LANE];
   const P2 = [bx + gx * 7 - gz * LANE, bz + gz * 7 + gx * LANE];
@@ -783,6 +810,15 @@ function stepTraffic(dt) {
       m.position.set(c.x, 0, c.z); m.rotation.y = -c.h - c.wreckYaw;
       continue;
     }
+    if (c.lot) { stepLot(c, dt); showCar(c, dt); continue; } // in der Blauen Zone
+    const B = S.places.blue;
+    if (B && !c.turn && c.i === B.seg.i && c.j === B.seg.j && c.d === B.seg.d && c.s > 12 && c.s < 18 && !c.lotAsk && !c.rush && !c.reckless && c.len < 5.6) {
+      c.lotAsk = true; // an der Einfahrt: hinein? (meist, wenn viel los ist; immer, wenn es extra dafür kam)
+      const q = c.blueGo || Math.random() < (city.blue.busy ? 0.6 : 0.12) ? freeBlue() : null;
+      c.blueGo = false;
+      if (q) { enterLot(c, q); showCar(c, dt); continue; }
+    }
+    if (c.s < 10) c.lotAsk = false;
     let limit = c.turn ? c.cruise * (c.turn.straight ? 1 : 0.55) : c.cruise;
     if (c.rush || c.reckless) limit *= 1.5; // Raser
     let atLight = false;
@@ -827,16 +863,147 @@ function stepTraffic(dt) {
       c.x = p[0]; c.z = p[1];
       if (T.t >= 1) { c.i = T.bi; c.j = T.bj; c.d = T.d2; c.s = 7; c.turn = null; c.reckless = c.rush = false; placeOnSegment(c); }
     }
-    const m = c.mesh, seen = Math.hypot(c.x - S.camera.position.x, c.z - S.camera.position.z) < city.see;
-    m.visible = seen;
-    if (seen) {
-      m.position.set(c.x, 0, c.z);
-      m.rotation.y = -c.h;
-      for (const w of m.userData.wheels) w.rotation.z -= c.speed * dt / 0.35;
-      animateCar(m, t, null);
+    showCar(c, dt);
+  }
+}
+function showCar(c, dt) {
+  const m = c.mesh, seen = Math.hypot(c.x - S.camera.position.x, c.z - S.camera.position.z) < city.see;
+  m.visible = seen;
+  if (!seen) return;
+  const B = S.places.blue, onLot = c.lot && B && Math.abs(c.x - B.cx) < 23 && Math.abs(c.z - B.cz) < 23;
+  m.position.set(c.x, onLot ? 0.18 : 0, c.z);
+  m.rotation.y = -c.h;
+  for (const w of m.userData.wheels) w.rotation.z -= (c.lot && c.lot.state === 'back' ? -1 : 1) * c.speed * dt / 0.35;
+  animateCar(m, city.t, null);
+}
+
+// ---------- Blaue Zone ----------
+// Parkplatz in der Stadt: mal ist viel los (fast alles besetzt, manchmal gar kein Feld frei), mal ist es ruhig.
+// Autos aus dem Verkehr biegen ein, parkieren, fahren rückwärts hinaus und wieder in den Verkehr. Wer selber in einem
+// freien Feld parkiert, bekommt Münzen; die Parkscheibe erlaubt BLUE_MAX Sekunden, danach gibt es einen Strafzettel.
+const BLUE_MAX = 180;
+function freeBlue() {
+  const free = S.places.blue.slots.filter(q => !q.car && !q.me && !(q.gone > 0));
+  return free.length ? free[Math.floor(Math.random() * free.length)] : null;
+}
+function enterLot(c, q) {
+  const B = S.places.blue, cx = B.cx, cz = B.cz, sg = q.x >= cx ? 1 : -1, ez = B.road + LANE;
+  const pts = [[c.x, c.z], [cx - 8, ez], [cx - 1.6, ez + 6], [cx - 1.6, cz - 8]]; // Einfahrt links, Ausfahrt rechts
+  if (q.z < cz) pts.push([cx + sg * 2, cz - 1], [q.x + sg * 6, cz + 1], [q.x, cz - 6], [q.x, q.z]); // vorne: vorbei und zurück ins Feld
+  else if (Math.abs(q.x - cx) < 7) pts.push([q.x, cz + 4], [q.x, q.z]);
+  else pts.push([cx + sg * 2, cz - 2], [q.x - sg * 5, cz + 2], [q.x, cz + 6], [q.x, q.z]);
+  c.lot = { state: 'in', q, path: makePath(pts), d: 0, i: 0 };
+  c.turn = null; q.car = c;
+}
+function stepLot(c, dt) {
+  const L = c.lot, q = L.q, B = S.places.blue, me = city.me;
+  if (L.state === 'park') {
+    c.speed = 0;
+    if ((L.t -= dt) <= 0 && Math.hypot(me.pos.x - q.x, me.pos.z - (q.z < B.cz ? q.z + 5 : q.z - 5)) > 4) { // rückwärts hinaus (wenn hinten frei ist)
+      L.state = 'back'; L.path = makePath([[q.x, q.z], [q.x, q.z < B.cz ? B.cz - 3 : B.cz + 3]]); L.d = 0; L.i = 0; q.car = null; q.gone = 4;
+    }
+    return;
+  }
+  if (L.state === 'join') { // auf die Strasse, wenn eine Lücke da ist
+    const jx = B.cx + 13, jz = B.road + LANE;
+    if (!city.cars.some(o => o !== c && !o.lot && Math.abs(o.z - jz) < 2.5 && o.x > jx - 18 && o.x < jx + 8) && Math.hypot(me.pos.x - jx, me.pos.z - jz) > 6) {
+      c.lot = null;
+      Object.assign(c, { i: B.seg.i, j: B.seg.j, d: B.seg.d, s: jx - node(B.seg.i), turn: null, speed: 3, lotAsk: true });
+      placeOnSegment(c);
+    }
+    return;
+  }
+  const left = L.path.L - L.d, back = L.state === 'back';
+  let v = Math.min(back ? 1.8 : L.state === 'in' && L.d < 20 ? 7 : 4, Math.sqrt(2 * 2 * left) + 0.15);
+  const dir = back ? c.h + Math.PI : c.h, fx = Math.cos(dir), fz = Math.sin(dir);
+  const ahead = (x, z, far) => { const dx = x - c.x, dz = z - c.z, along = dx * fx + dz * fz; return along > 0 && along < far && Math.abs(dz * fx - dx * fz) < 2.4; };
+  let byCar = false; // andere auf dem Parkplatz (stehen zwei zu lange voreinander, schiebt sich einer vorsichtig vorbei)
+  if (!(L.ghost > 0)) for (const o of city.cars) if (o !== c && o.lot && o.lot.state !== 'park' && ahead(o.x, o.z, 7)) { v = 0; byCar = true; }
+  L.ghost = (L.ghost || 0) - dt;
+  L.waitT = byCar ? (L.waitT || 0) + dt : 0;
+  if (L.waitT > 4) { L.ghost = 2.5; L.waitT = 0; }
+  if (me.alt < 2 && ahead(me.pos.x, me.pos.z, 7)) v = 0; // du stehst im Weg
+  if (city.walk && ahead(city.walk.x, city.walk.z, 5)) v = 0; // zu Fuss auch
+  c.speed += Math.max(-5 * dt, Math.min(2.5 * dt, v - c.speed));
+  c.speed = Math.max(0, c.speed);
+  L.d = Math.min(L.path.L, L.d + c.speed * dt);
+  const p = pathAt(L.path, L.d, L.i);
+  L.i = p.i; c.x = p.x; c.z = p.z;
+  c.h = turnTo(c.h, back ? p.h + Math.PI : p.h, dt * Math.max(0.8, c.speed * 0.7));
+  if (left > 0.05) return;
+  if (L.state === 'in') { L.state = 'park'; c.h = q.h; c.speed = 0; L.t = city.blue.busy ? 60 + Math.random() * 120 : 15 + Math.random() * 45; }
+  else if (back) {
+    const sg = q.x >= B.cx ? 1 : -1, ez = B.road + LANE, z0 = q.z < B.cz ? B.cz - 3 : B.cz + 3;
+    L.state = 'out'; L.d = 0; L.i = 0;
+    L.path = makePath([[q.x, z0], [B.cx + sg * 4 + 1.6, B.cz - 4], [B.cx + 1.6, B.cz - 10], [B.cx + 1.6, ez + 6], [B.cx + 7, ez + 1], [B.cx + 13, ez]]);
+  } else L.state = 'join';
+}
+function setupBlue() {
+  const B = S.places.blue;
+  city.blue = { busy: Math.random() < 0.5, t: 40 + Math.random() * 40, spawnT: 3, stillT: 0, parked: null, coinT: -999, toldFull: false };
+  if (!B) return;
+  B.disp.last = -1;
+  for (const q of B.slots) {
+    q.car = null; q.gone = 0; q.me = false;
+    if (Math.random() > (city.blue.busy ? 0.9 : 0.55)) continue;
+    let c = null;
+    for (let k = 0; k < 4 && !(c && c.len < 5.6); k++) c = makeCar(city.kinds, B.seg.i, B.seg.j, 0, 20);
+    if (c.len >= 5.6) continue;
+    Object.assign(c, { x: q.x, z: q.z, h: q.h, speed: 0, lot: { state: 'park', q, t: Math.random() * 150 } });
+    q.car = c; city.cars.push(c); S.scene.add(c.mesh);
+  }
+}
+function drawBlueDisplay(free) {
+  const { c, tex } = S.places.blue.disp, g = c.getContext('2d');
+  g.fillStyle = '#0b1220'; g.fillRect(0, 0, 256, 128);
+  g.textAlign = 'center'; g.textBaseline = 'middle';
+  g.fillStyle = free ? '#22c55e' : '#ef4444'; g.font = 'bold 50px system-ui, sans-serif';
+  g.fillText(free ? free + ' frei' : 'BESETZT', 128, 50);
+  g.fillStyle = '#93c5fd'; g.font = 'bold 22px system-ui, sans-serif'; g.fillText('🕐 Parkscheibe 3 Min.', 128, 104);
+  tex.needsUpdate = true;
+}
+function stepBlue(dt) {
+  const B = S.places.blue, st = city.blue, me = city.me;
+  if (!B) return;
+  if ((st.t -= dt) <= 0) { st.busy = !st.busy; st.t = st.busy ? 80 + Math.random() * 70 : 50 + Math.random() * 50; } // mal viel los, mal ruhig
+  // stehst du (mit dem Auto) in einem Feld?
+  let mine = null;
+  for (const q of B.slots) { if (q.gone > 0) q.gone -= dt; q.me = Math.abs(me.pos.x - q.x) < 1.7 && Math.abs(me.pos.z - q.z) < 3 && me.alt < 1.5; if (q.me) mine = q; }
+  if (mine && !mine.car && Math.abs(me.speed) < 0.4) st.stillT += dt; else if (!mine) { st.stillT = 0; st.parked = null; }
+  if (mine && !st.parked && st.stillT > 1.2) {
+    st.parked = { t: 0, warned: false, fined: false };
+    const coins = !city.net && city.t - st.coinT > 90 ? 3 : 0;
+    if (coins) { city.earn(coins); st.coinT = city.t; }
+    showMsg('🅿️ Parkiert in der Blauen Zone! Parkscheibe: 3 Minuten 🕐' + (coins ? '  +' + coins + ' 🪙' : ''), 2.6);
+  }
+  if (st.parked) {
+    const P = st.parked;
+    P.t += dt;
+    if (P.t > BLUE_MAX - 30 && !P.warned) { P.warned = true; showMsg('⏰ Parkzeit bald um – noch 30 Sekunden!', 2.4); }
+    if (P.t > BLUE_MAX && !P.fined && !city.ticket && !city.police) {
+      P.fined = true;
+      city.reason = { kind: 'blue', text: '🅿️ Blaue Zone: Parkzeit überschritten' };
+      giveTicket();
+    }
+  }
+  // Anzeige und Hinweis, wenn alles besetzt ist
+  const free = B.slots.filter(q => !q.car && !q.me).length;
+  if (free !== B.disp.last) { B.disp.last = free; drawBlueDisplay(free); }
+  const near = Math.hypot(me.pos.x - B.cx, me.pos.z - (B.road + 4)) < 28;
+  if (near && !free && !st.toldFull && !mine) { st.toldFull = true; showMsg('🅿️ Blaue Zone: alles besetzt – kein Platz frei 😕', 2.2); }
+  if (!near) st.toldFull = false;
+  // Nachschub: ein weit entferntes Auto fährt (unsichtbar umgesetzt) von weiter vorne her zur Blauen Zone
+  if ((st.spawnT -= dt) <= 0) {
+    st.spawnT = st.busy ? 4 + Math.random() * 4 : 20 + Math.random() * 20;
+    const si = B.seg.i - 2, cam = S.camera.position;
+    if (free > 0 && si >= 0 && Math.hypot(node(si) - cam.x, B.road - cam.z) > 110) {
+      const c = city.cars.find(o => !o.lot && !(o.wreck > 0) && !o.turn && !o.blueGo && o.len < 5.6 && !o.rush && !o.reckless
+        && Math.hypot(o.x - cam.x, o.z - cam.z) > 160);
+      if (c) { Object.assign(c, { i: si, j: B.seg.j, d: B.seg.d, s: 4, turn: null, speed: 8, blueGo: true, lotAsk: false }); placeOnSegment(c); }
     }
   }
 }
+
 
 // ---------- Unfälle und Stau ----------
 // Ab und zu baut ein Auto einen Unfall: Auffahrunfall (fährt dem Vordermann hinten rein) oder ein Raser fährt über Rot
@@ -884,9 +1051,9 @@ function stepAccidents(dt) {
   }
   // Raser auf Kollisionskurs: kracht, wenn er ein anderes Auto berührt
   for (const c of city.cars) {
-    if (!(c.rush || c.reckless) || c.wreck > 0) continue;
+    if (!(c.rush || c.reckless) || c.wreck > 0 || c.lot) continue;
     for (const o of city.cars) {
-      if (o === c || o.wreck > 0) continue;
+      if (o === c || o.wreck > 0 || o.lot) continue;
       if (Math.hypot(o.x - c.x, o.z - c.z) < (c.len + o.len) * 0.32) {
         wreck(c, (Math.random() < 0.5 ? -1 : 1) * (0.3 + Math.random() * 0.3));
         wreck(o, (Math.random() < 0.5 ? -1 : 1) * (0.15 + Math.random() * 0.3));
@@ -901,12 +1068,12 @@ function stepAccidents(dt) {
   if (city.cars.filter(c => c.wreck > 0).length >= 4) return; // nicht zu viele auf einmal
   if (Math.random() < 0.6) { // Auffahrunfall: Auto mit Vordermann auf derselben Spur
     for (const c of city.cars) {
-      if (c.turn || c.wreck > 0 || !near(c)) continue;
-      const lead = city.cars.find(o => o !== c && !o.turn && !(o.wreck > 0) && o.i === c.i && o.j === c.j && o.d === c.d && o.s > c.s && o.s - c.s < 30);
+      if (c.turn || c.wreck > 0 || c.lot || !near(c)) continue;
+      const lead = city.cars.find(o => o !== c && !o.turn && !(o.wreck > 0) && !o.lot && o.i === c.i && o.j === c.j && o.d === c.d && o.s > c.s && o.s - c.s < 30);
       if (lead) { c.rush = true; return; }
     }
   }
-  const c = city.cars.find(o => !o.turn && !(o.wreck > 0) && near(o)); // Raser: fährt über Rot
+  const c = city.cars.find(o => !o.turn && !(o.wreck > 0) && !o.lot && near(o)); // Raser: fährt über Rot
   if (c) c.reckless = true;
 }
 
@@ -1954,7 +2121,7 @@ function driveAway(v) {
   const c = makeCar(city.kinds, Math.max(0, Math.min(N - 1, i)), Math.max(0, Math.min(N, j)), 0, BLOCK / 2, { kind: v.kind, color: v.color, special: null });
   placeOnSegment(c);
   S.scene.add(c.mesh);
-  const far = city.cars.findIndex(o => !(o.wreck > 0) && Math.hypot(o.x - city.me.pos.x, o.z - city.me.pos.z) > 200);
+  const far = city.cars.findIndex(o => !(o.wreck > 0) && !o.lot && Math.hypot(o.x - city.me.pos.x, o.z - city.me.pos.z) > 200);
   if (far >= 0) { S.scene.remove(city.cars[far].mesh); city.cars.splice(far, 1); }
   city.cars.push(c);
 }
@@ -2544,7 +2711,7 @@ function stepPolice(dt) {
 const speedFine = kmh => Math.max(10, (Math.floor(kmh / 10) - 8) * 10);
 function giveTicket() {
   city.fines++;
-  const R = city.reason || {}, amount = R.kind === 'speed' ? speedFine(R.kmh) : R.kind === 'gasse' ? 50 : Math.min(50, 10 * city.fines), paid = city.pay(amount);
+  const R = city.reason || {}, amount = R.kind === 'speed' ? speedFine(R.kmh) : R.kind === 'gasse' ? 50 : R.kind === 'blue' ? 20 : Math.min(50, 10 * city.fines), paid = city.pay(amount);
   city.ticket = true;
   const T = S.ui.ticket;
   T.querySelector('.amount').textContent = paid ? paid + ' 🪙' : 'Verwarnung';
@@ -2565,8 +2732,8 @@ function closeTicket() {
   if (P) { P.state = 'leave'; P.t = 0; P.siren.set(0); }
   if ((city.reason || {}).jail) { city.reason = null; goToJail(); return; }
   const kind = (city.reason || {}).kind;
-  showMsg(kind === 'speed' ? 'Gute Fahrt! Und nicht zu schnell 😉' : kind === 'gasse' ? 'Bei Blaulicht immer Platz machen 🚑' : 'Gute Fahrt! Und bei Rot anhalten 😉', 2);
-  if (kind === 'gasse') city.reason = null;
+  showMsg(kind === 'speed' ? 'Gute Fahrt! Und nicht zu schnell 😉' : kind === 'gasse' ? 'Bei Blaulicht immer Platz machen 🚑' : kind === 'blue' ? 'Parkscheibe nicht vergessen 🕐' : 'Gute Fahrt! Und bei Rot anhalten 😉', 2);
+  if (kind === 'gasse' || kind === 'blue') city.reason = null;
 }
 function removePolice() {
   const P = city.police;
@@ -2988,6 +3155,7 @@ export function startCity({ player, kinds, topSpeed, onExit, pay = () => 0, earn
   S.ui.jail.hidden = true;
   if (jailUntil() > Date.now()) { goToJail(jailUntil()); showMsg('🔒 Du sitzt noch im Gefängnis!', 2.4); } // Zeit läuft weiter
   parkLotCars();
+  setupBlue();
   setupKeys();
   city.hw = makeHighwayTraffic(S.scene, kinds);
   for (const m of city.hw.meshes) noShadow(m);
@@ -3050,6 +3218,7 @@ function step(now) {
   stepBases(dt);
   stepMission(dt);
   stepTraffic(dt);
+  stepBlue(dt);
   stepAccidents(dt);
   stepHw(dt);
   stepAreas(S.areas, dt, city.keys.size, {
@@ -3253,7 +3422,10 @@ function endCity() {
   if (c.walk) S.scene.remove(c.walk.mesh);
   for (const cu of c.customers || []) S.scene.remove(cu.mesh);
   if (c.truck) S.scene.remove(c.truck.mesh);
-  for (const h of c.hw || []) S.scene.remove(h.mesh);
+  if (c.hw && c.hw.meshes) { // Autobahn: Vorrat, Klötze, Unfallstelle
+    for (const m of c.hw.meshes) S.scene.remove(m);
+    S.scene.remove(c.hw.far.body, c.hw.far.cab, c.hw.props.smoke, c.hw.props.tri);
+  }
   S.ui.talkpanel.hidden = true; S.ui.dealpanel.hidden = true; S.ui.talkbtn.hidden = true;
   S.ui.walkbtn.textContent = '🚪';
   S.ui.walkbtn.classList.remove('ready');
