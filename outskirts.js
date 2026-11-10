@@ -1145,14 +1145,27 @@ export function slideInside(x, z, r, keys) {
     const q = passNearest(x, z), max = PASS_W - r * 0.5 - 0.05;
     if (q.d < max + 4) { const k = max / (q.d || 1); return { x: q.p.x + (x - q.p.x) * k, z: q.p.z + (z - q.p.z) * k }; }
   }
-  if (z > RAMP.z0 && z < RAMP.z1 && Math.abs(x) < RAMP.x1 + 4) return { x: Math.max(RAMP.x0 + r * 0.6 + 0.05, Math.min(RAMP.x1 - r * 0.6 - 0.05, x)), z };
+  if (z > RAMP.z0 && z < RAMP.z1 && Math.abs(x) < RAMP.x1 + 0.5) return { x: Math.max(RAMP.x0 + r * 0.6 + 0.05, Math.min(RAMP.x1 - r * 0.6 - 0.05, x)), z };
   if (inRestZone(x, z)) return null; // Raststätte: einfach zurück an die letzte gute Stelle
   const p = hwProject(x, z);
-  if (Math.abs(p.lat) < WIDE + 2) {
+  if (Math.abs(p.lat) < EDGE + 0.6) { // nur wer auf der Fahrbahn war (von aussen nicht durch die Leitplanke)
     const hi = inRW(p.s, p.lat) ? Math.min(EDGE - r * 0.8, coneLat(p.s) - r * 0.6) - 0.05 : EDGE - r * 0.8 - 0.05; // Baustelle: an den Kegeln entlang
     const lo = MEDIAN + r * 0.6 + 0.05, lat = (p.lat >= 0 ? 1 : -1) * Math.min(hi, Math.max(lo, Math.abs(p.lat)));
     const q = at(p.s, lat);
     return { x: q.x, z: q.z };
   }
   return null;
+}
+
+// ---------- Freies Gelände ----------
+// Neben den Strassen darf man überall fahren und gehen. Nur hier nicht (und city.js sagt warum): am Ende der Welt, im
+// Wasser, über die Autobahn-Leitplanken (dort nur über Zufahrt und Raststätte), in Gebieten mit Schranke, solange die
+// Schlüssel fehlen, und am Berg vor dem 20. Schlüssel. Gibt '' zurück, wenn es geht.
+export function offroadWhy(x, z, r, keys) {
+  if (x < -1094 || x > 1094 || z < -1094 || z > 3294) return 'world';
+  if (inBox(x, z, WATER, -r)) return 'water';
+  if (Math.abs(hwProject(x, z).lat) < WIDE + r || boxDist(x, z, REST_BOX) < r || boxDist(x, z, RAMP) < r + 1.5) return 'highway';
+  for (const A of Object.values(AREAS)) if (keys < A.need && (boxDist(x, z, A.rect) < r + 2 || boxDist(x, z, A.road) < r + 2)) return 'locked:' + A.name + ':' + A.need;
+  if (inRegion(x, z) && keys < PASS_AREA.need) return 'locked:' + PASS_AREA.name + ':' + PASS_AREA.need;
+  return '';
 }

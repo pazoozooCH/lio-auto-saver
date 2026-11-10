@@ -6,11 +6,11 @@ import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 import { buildCar, animateCar, warmUp, makeQuality, mergeStatic } from './cars3d.js';
 import { makeNoise, rng, smoothstep, surface, terrain, cloudDome } from './world3d.js';
 import { createCarSound, crash, gearbox, horn, createSiren } from './sound.js';
-import { buildCountry, stepCountry, countryDist, countryDrivable, countrySurface, inCountry, inWater, nearPier, BOAT_Y, BOAT_HOME, RIDES_INFO, FARM } from './country.js';
+import { buildCountry, stepCountry, countryDist, countryDrivable, countrySurface, inCountry, inWater, nearPier, BOAT_Y, BOAT_HOME, RIDES_INFO, FARM, countryBlocked, LIFT } from './country.js';
 import { makeNetCars } from './netcars.js';
 import { makeChat } from './chat.js';
 import { buildHighway, outskirtsDist, hwDrivable, onHighway, makeHighwayTraffic, stepHighway, hwProject, hwPoint, HW, HW_LEN, HW_LIMIT, REST, REST_ZONES, makePath, pathAt, turnTo,
-  AREAS, buildAreas, stepAreas, groundShape, areaDrivable, inArea, lockedGate,
+  AREAS, buildAreas, stepAreas, groundShape, areaDrivable, inArea, lockedGate, offroadWhy,
   PASS_AREA, buildPass, passGround, passDrivable, onPass, passTerrain, passNearest, inPassRegion, passPoints, SUMMIT, slideInside } from './outskirts.js';
 import { makeEffects, camView, cockpit, COCKPIT, CAM_NAMES, FLY_HTML, FLY_KEYS, flyCss, flyHelp, flyToggle, flyStep } from './fx.js';
 
@@ -748,7 +748,7 @@ function buildWorld() {
   const flash = new THREE.Mesh(new THREE.SphereGeometry(0.6, 12, 8), new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0, depthWrite: false }));
   flash.visible = false;
   scene.add(flash);
-  return { renderer, scene, camera, sun, clouds, lamps, solid, round, parks, places, sign, country, redCams, speedCams, flash, areas, ground: { asphalt: asphaltMat, grass: grassMat, pave: paveMat, land: land.material },
+  return { renderer, scene, camera, sun, clouds, lamps, solid, round, parks, places, sign, country, height, redCams, speedCams, flash, areas, ground: { asphalt: asphaltMat, grass: grassMat, pave: paveMat, land: land.material },
     night: { sky: su, hemi, envs: { ...envs, day: dayEnv }, walls: [...walls, ...homeWalls], heads: headM.material, pools, stars, headlight, fog: scene.fog } };
 }
 
@@ -1091,6 +1091,83 @@ function stepWorks(dt) {
   const W = city.works, me = city.me;
   if ((W.t -= dt) <= 0) { endWorks(); return; }
   if (!W.told && Math.hypot(me.pos.x - W.x, me.pos.z - W.z) < 70 && me.alt < 2) { W.told = true; showMsg('🚧 Baustelle – Strasse gesperrt, fahr eine Umleitung!', 2.4); }
+}
+
+// ---------- Skifahren (Skigebiet am Pass) ----------
+// Zu Fuss zur Talstation, X: im Sessellift hinauf. Oben bekommt man Ski: ⬅️➡️ lenken, ⬆️ anschieben, ⬇️ bremsen (Pflug),
+// bergab wird man von selber schneller. Unten an der Talstation wieder X = nochmals hinauf; sonst X = Ski aus.
+function startLift(w) {
+  const T = S.country.lift.towers;
+  w.lift = { u: 0, len: Math.hypot(T[T.length - 1].x - T[0].x, T[T.length - 1].z - T[0].z) };
+  w.target = null;
+  if (!w.chair) { // Sessel unter dir
+    const ch = new THREE.Group(), m = new THREE.MeshStandardMaterial({ color: 0x2563eb });
+    const seat = new THREE.Mesh(new THREE.BoxGeometry(0.8, 0.12, 1.6), m); seat.position.y = 0.45; ch.add(seat);
+    const back = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.8, 1.6), m); back.position.set(-0.4, 0.85, 0); ch.add(back);
+    const bar = new THREE.Mesh(new THREE.BoxGeometry(0.06, 2.2, 0.06), new THREE.MeshStandardMaterial({ color: 0x374151 })); bar.position.set(-0.3, 1.9, 0); ch.add(bar);
+    w.chair = ch;
+  }
+  w.mesh.add(w.chair);
+  showMsg('🚡 Es geht hinauf!', 1.6);
+}
+function stepLift(w, dt) {
+  const L = w.lift, C = S.country, T = C.lift.towers, n = T.length - 1;
+  L.u = Math.min(1, L.u + dt * 9 / L.len);
+  const f = Math.min(n - 1e-6, L.u * n), k = Math.floor(f), q = f - k, a = T[k], b = T[k + 1];
+  w.x = a.x + (b.x - a.x) * q + C.lift.sx; w.z = a.z + (b.z - a.z) * q + C.lift.sz;
+  w.gy = a.y + (b.y - a.y) * q - 2.9;
+  w.h = Math.atan2(T[n].z - T[0].z, T[n].x - T[0].x);
+  w.mesh.position.set(w.x, w.gy, w.z); w.mesh.rotation.set(0, -w.h, 0);
+  w.mesh.userData.legs.forEach(l => { l.rotation.z = 1.4; }); // sitzen
+  w.mesh.userData.arms.forEach(a => { a.rotation.z = 0.3; });
+  if (L.u >= 1) { // oben: aussteigen, Ski an
+    w.lift = null; w.mesh.remove(w.chair);
+    const back = Math.atan2(T[0].z - T[n].z, T[0].x - T[n].x), s0 = T[n - 1]; // beim obersten Mast beginnt die Abfahrt (ab da geht es nur noch hinunter)
+    w.x = s0.x - C.lift.sx * 3; w.z = s0.z - C.lift.sz * 3; w.h = back; w.speed = 2;
+    skiOn(w);
+  }
+}
+function skiOn(w) {
+  if (!w.skis) {
+    const g = new THREE.Group(), m = new THREE.MeshStandardMaterial({ color: 0xdc2626 });
+    for (const z of [-0.12, 0.12]) { const s = new THREE.Mesh(new THREE.BoxGeometry(1.8, 0.05, 0.11), m); s.position.set(0.15, 0.03, z); g.add(s); }
+    w.skis = g;
+  }
+  w.mesh.add(w.skis);
+  w.ski = true; w.speed = 0;
+  S.ui.hint.textContent = '⛷️ ⬅️ ➡️ lenken · ⬆️ anschieben · ⬇️ bremsen · X Ski aus (unten an der Talstation: X = Lift)';
+  showMsg('⛷️ Ski an! Fahr hinunter – ⬅️➡️ lenken, ⬇️ bremsen', 2.6);
+}
+function skiOff(w) {
+  w.ski = false; w.speed = 0;
+  if (w.skis) w.mesh.remove(w.skis);
+  w.mesh.rotation.set(0, -w.h, 0);
+  S.ui.hint.textContent = '⬅️ ➡️ drehen · ⬆️ gehen · Leertaste rennen · X einsteigen';
+  showMsg('🚶 Ski aus', 1.2);
+}
+function stepSki(w, dt) {
+  const input = city.input, G = (x, z) => groundAt(x, z), steer = (input.right ? 1 : 0) - (input.left ? 1 : 0);
+  w.h += steer * 1.7 * dt;
+  const fx = Math.cos(w.h), fz = Math.sin(w.h);
+  const slope = (G(w.x + fx, w.z + fz) - G(w.x - fx, w.z - fz)) / 2; // > 0: bergauf
+  let v = w.speed - 9.81 * slope * 0.85 * dt;
+  if (input.gas && v < 6) v += 3 * dt; // mit den Stöcken anschieben
+  if (input.brake) v -= Math.sign(v) * Math.min(Math.abs(v), 7 * dt); // Pflug
+  v -= v * 0.05 * dt + Math.sign(v) * Math.min(Math.abs(v), 0.4 * dt); // Schnee bremst ein wenig
+  if (steer) v *= 1 - 0.2 * dt;
+  v = Math.max(-2, Math.min(26, v));
+  const nx = w.x + fx * v * dt, nz = w.z + fz * v * dt;
+  if (allowedAt(nx, nz, 0.5)) { w.x = nx; w.z = nz; } else { v = 0; if (city.msgT <= 0) showMsg('⛷️ Hier geht es nicht weiter', 1.2); }
+  w.speed = v; w.gy = G(w.x, w.z);
+  if (Math.abs(v) > 8 && steer && Math.random() < dt * 30) S.fx.puff(w.x - fx, w.gy + 0.2, w.z - fz, 0, 0); // Schnee stäubt
+  w.mesh.position.set(w.x, w.gy, w.z); w.mesh.rotation.set(-steer * Math.min(0.4, Math.abs(v) / 40), -w.h, 0);
+  w.mesh.userData.legs.forEach(l => { l.rotation.z = 0.35; });
+  w.mesh.userData.arms.forEach((a, i) => { a.rotation.z = 0.5 + (input.gas ? Math.sin(city.t * 8 + i) * 0.5 : 0); });
+  const atLift = Math.hypot(w.x - LIFT.A.x, w.z - LIFT.A.z) < 14;
+  if (atLift && !(w.target && w.target.lift)) showMsg('🚡 Talstation – X: nochmals hinauf', 1.6);
+  w.target = atLift ? { lift: true } : null;
+  S.ui.walkbtn.classList.toggle('ready', atLift);
+  S.ui.kmh.textContent = Math.round(Math.abs(v) * 3.6);
 }
 
 // ---------- Boot (Strand) ----------
@@ -1459,8 +1536,8 @@ function stepMe(dt) {
     else city.emptyMsg = false;
   }
   if (gas) {
-    if (me.speed < 0) me.speed = Math.min(0, me.speed + BRAKE * dt);
-    else me.speed += me.acc * boost * Math.max(0, 1 - (me.speed / maxV) ** (me.maxV > 60 ? 3 : 1)) * dt; // LIONEL X zieht bis fast oben durch
+    if (me.speed < -0.5) me.speed = Math.min(0, me.speed + BRAKE * dt); // rückwärts: erst bremsen
+    else me.speed = Math.max(0, me.speed) + me.acc * boost * Math.max(0, 1 - (me.speed / maxV) ** (me.maxV > 60 ? 3 : 1)) * dt; // LIONEL X zieht bis fast oben durch
   } else if (!brake) me.speed -= Math.sign(me.speed) * Math.min(Math.abs(me.speed), 2.5 * dt);
   if (brake) me.speed = me.speed > 0 ? Math.max(0, me.speed - BRAKE * dt) : Math.max(-8, me.speed - 6 * dt);
   if (me.speed > maxV) me.speed = Math.max(maxV, me.speed - 12 * dt);
@@ -1548,7 +1625,12 @@ function stepMe(dt) {
     me.speed *= fast ? -0.25 : 0.3; me.vl *= 0.2;
     const lg = lockedGate(me.pos.x, me.pos.z, city.keys.size);
     if (lg && city.msgT <= 0) showMsg('🔒 ' + lg.name + ' öffnet ab ' + lg.need + ' goldenen Schlüsseln (du hast ' + city.keys.size + ')', 2.4);
-    else if (city.msgT <= 0 && !onHighway(me.pos.x, me.pos.z) && !onPass(me.pos.x, me.pos.z) && !inArea(me.pos.x, me.pos.z) && !inCountry(me.pos.x, me.pos.z) && !city.boat) showMsg('🌲 Hier ist die Stadt zu Ende', 1.5);
+    else if (city.msgT <= 0 && !city.boat) { // sagen, warum es nicht weitergeht
+      const fx = Math.cos(me.heading) * 3, fz = Math.sin(me.heading) * 3, why = offroadWhy(me.pos.x + fx, me.pos.z + fz, me.radius, city.keys.size);
+      if (why === 'water') showMsg('🌊 Da ist Wasser – das Boot wartet am Steg beim Strand', 1.8);
+      else if (why === 'world') showMsg('🌍 Hier ist die Welt zu Ende', 1.5);
+      else if (why.startsWith('locked')) { const [, name, need] = why.split(':'); showMsg('🔒 ' + name + ' öffnet ab ' + need + ' goldenen Schlüsseln (du hast ' + city.keys.size + ')', 2.2); }
+    }
   } else city.okPos = { x: me.pos.x, z: me.pos.z };
   // Über eine rote Ampel gefahren?
   const ni = Math.round(me.pos.x / BLOCK + N / 2), nj = Math.round(me.pos.z / BLOCK + N / 2);
@@ -1564,11 +1646,11 @@ function stepMe(dt) {
   }
   city.inCross = inX;
   // Am Berg: Boden unter dem Auto, Neigung vorne/hinten, bergab rollt es schneller
-  city.gy = city.boat && !city.walk ? BOAT_Y + Math.sin(city.t * 1.6) * 0.08 : passGround(me.pos.x, me.pos.z);
+  city.gy = city.boat && !city.walk ? BOAT_Y + Math.sin(city.t * 1.6) * 0.08 : groundAt(me.pos.x, me.pos.z);
   let slope = 0;
-  if (city.gy || Math.abs(me.pos.z) > LIMIT) {
+  if (!city.boat && (city.gy || Math.abs(me.pos.z) > LIMIT || Math.abs(me.pos.x) > LIMIT)) {
     const hx = Math.cos(me.heading) * me.len * 0.4, hz = Math.sin(me.heading) * me.len * 0.4;
-    slope = (passGround(me.pos.x + hx, me.pos.z + hz) - passGround(me.pos.x - hx, me.pos.z - hz)) / (me.len * 0.8 || 1);
+    slope = (groundAt(me.pos.x + hx, me.pos.z + hz) - groundAt(me.pos.x - hx, me.pos.z - hz)) / (me.len * 0.8 || 1);
     if (!me.fly) me.speed -= 9.81 * slope * 0.7 * dt;
   }
   const m = me.mesh;
@@ -1619,8 +1701,27 @@ function stepHw(dt) {
   stepHighway(city.hw, dt, city.t, hwMe, S.camera.position, hwHooks);
 }
 // Wo man fahren (und gehen) darf: in der Stadt bis zum Waldrand, draussen nur auf der Autobahn
-const allowedAt = (x, z, r) => city.boat && !city.walk ? inWater(x, z, r) : (Math.abs(x) <= LIMIT && Math.abs(z) <= LIMIT) || hwDrivable(x, z, r) || countryDrivable(x, z, r) || areaDrivable(x, z, r, city.keys ? city.keys.size : 0)
-  || passDrivable(x, z, r, city.keys ? city.keys.size : 0);
+// (dazu überall auf dem Gelände, siehe offroadWhy in outskirts.js: nicht ins Wasser, nicht über Leitplanken, nicht in gesperrte Gebiete)
+const allowedAt = (x, z, r) => {
+  if (city.boat && !city.walk) return inWater(x, z, r);
+  const keys = city.keys ? city.keys.size : 0;
+  if ((Math.abs(x) <= LIMIT && Math.abs(z) <= LIMIT) || hwDrivable(x, z, r) || countryDrivable(x, z, r) || areaDrivable(x, z, r, keys) || passDrivable(x, z, r, keys)) return true;
+  return !offroadWhy(x, z, r, keys) && !countryBlocked(x, z, r);
+};
+// Bodenhöhe unter einem Punkt: in der Stadt 0, auf der Passstrasse ihre Höhe, am Berg das feine Gelände, sonst genau
+// wie das Gelände-Netz (20-m-Dreiecke, sonst schwebt man oder versinkt zwischen den Ecken)
+const groundMemo = new Map();
+function landAt(i, j) { const k = i * 100000 + j; let h = groundMemo.get(k); if (h === undefined) { h = S.height(-1100 + i * 20, -1100 + j * 20); groundMemo.set(k, h); } return h; }
+function groundAt(x, z) {
+  const pg = passGround(x, z);
+  if (pg) return pg;
+  if (Math.abs(x) <= LIMIT && Math.abs(z) <= LIMIT) return 0;
+  if (inPassRegion(x, z)) return Math.max(0, S.country.ground(x, z));
+  if (onHighway(x, z) || inArea(x, z) || inCountry(x, z)) return 0;
+  const gx = (x + 1100) / 20, gz = (z + 1100) / 20, i = Math.floor(gx), j = Math.floor(gz), fx = gx - i, fz = gz - j;
+  const a = landAt(i, j), b = landAt(i, j + 1), c = landAt(i + 1, j + 1), d = landAt(i + 1, j);
+  return Math.max(0, fx + fz <= 1 ? a + (d - a) * fx + (b - a) * fz : c + (b - c) * (1 - fx) + (d - c) * (1 - fz));
+}
 
 // ---------- Reifenrauch und Bremsspuren ----------
 // Rauch, Spuren und Drift-Punkte nach jedem Schritt
@@ -1986,6 +2087,8 @@ function toggleWalk() {
 }
 function getIn() {
   const w = city.walk, t = w.target;
+  if (t && t.lift) { startLift(w); return; }
+  if (w.ski) { skiOff(w); return; }
   if (!t) { showMsg('🚗 Geh näher zu einem Auto', 1.4); return; }
   S.scene.remove(w.mesh);
   city.walk = null;
@@ -2013,6 +2116,8 @@ function getIn() {
 }
 function stepWalk(dt) {
   const w = city.walk, input = city.input, me = city.me;
+  if (w.lift) { stepLift(w, dt); return; }
+  if (w.ski) { stepSki(w, dt); return; }
   w.h += ((input.right ? 1 : 0) - (input.left ? 1 : 0)) * 2.6 * dt;
   const want = input.gas ? (input.drift ? 7 : 3.6) : input.brake ? -1.8 : 0;
   w.speed += (want - w.speed) * Math.min(1, dt * 8);
@@ -2031,7 +2136,7 @@ function stepWalk(dt) {
   push(me.pos.x, me.pos.z, R + me.radius * 0.6);
   if (!allowedAt(w.x, w.z, 0.5)) { w.x = w.okX ?? w.x; w.z = w.okZ ?? w.z; } else { w.okX = w.x; w.okZ = w.z; }
   // Laufen: Beine und Arme schwingen
-  w.gy = passGround(w.x, w.z);
+  w.gy = groundAt(w.x, w.z);
   animatePerson(w, dt);
   // Welches Auto ist nah genug zum Einsteigen? Das eigene oder eines in der eigenen Base
   let best = null, bd = Infinity;
@@ -2049,8 +2154,9 @@ function stepWalk(dt) {
     if (d < 1.6 && d < bd) { bd = d; best = { v: R.v, x: R.x, z: R.z, h: R.h, ride: R }; }
   }
   if (!city.boat && nearPier(w.x, w.z) && Math.hypot(w.x - BOAT_HOME.x, w.z - BOAT_HOME.z) < 12.5) { best = { boat: true }; bd = 0; } // Boot am Steg
-  if (best && (!w.target || w.target.v !== best.v || !!w.target.boat !== !!best.boat))
-    showMsg(best.boat ? '🚤 Boot – einsteigen' : best.v ? '🔑 ' + ((city.kinds[best.v.kind] || {}).name || '') + ' – 🚗 einsteigen' : '🚗 Einsteigen?', 1.2);
+  if (Math.hypot(w.x - LIFT.A.x, w.z - LIFT.A.z) < 14) { best = { lift: true }; bd = 0; } // Sessellift (Talstation)
+  if (best && (!w.target || w.target.v !== best.v || !!w.target.boat !== !!best.boat || !!w.target.lift !== !!best.lift))
+    showMsg(best.lift ? '🚡 Sessellift – X: einsteigen und hinauffahren' : best.boat ? '🚤 Boot – einsteigen' : best.v ? '🔑 ' + ((city.kinds[best.v.kind] || {}).name || '') + ' – 🚗 einsteigen' : '🚗 Einsteigen?', 1.2);
   w.target = best;
   S.ui.walkbtn.classList.toggle('ready', !!best);
 }
@@ -3401,7 +3507,7 @@ function drawMinimapBase() {
   g.fillStyle = '#4aa3ff';
   g.beginPath(); g.arc(mx(0), mx(0), 3, 0, Math.PI * 2); g.fill();
   g.font = '13px system-ui, sans-serif'; g.textAlign = 'center'; g.textBaseline = 'middle';
-  for (const [k, icon] of [['gas', '⛽'], ['wash', '🫧'], ['pizza', '🍕'], ['jail', '🔒'], ['repair', '🔧'], ['dealer', '🚗'], ['hospital', '🏥']]) { const p = S.places[k]; if (p) g.fillText(icon, mx(p.x), mx(p.z)); }
+  for (const [k, icon] of [['gas', '⛽'], ['wash', '🫧'], ['pizza', '🍕'], ['jail', '🔒'], ['repair', '🔧'], ['dealer', '🚗'], ['hospital', '🏥'], ['house', '🏡'], ['blue', '🅿️']]) { const p = S.places[k] && { x: S.places[k].x ?? S.places[k].cx, z: S.places[k].z ?? S.places[k].cz }; if (p) g.fillText(icon, mx(p.x), mx(p.z)); }
   g.strokeStyle = 'rgba(220,225,235,0.85)'; g.lineWidth = Math.max(2, ROAD * mapScale);
   for (let i = 0; i <= N; i++) {
     g.beginPath(); g.moveTo(mx(node(i)), mx(-HALF)); g.lineTo(mx(node(i)), mx(HALF)); g.stroke();
@@ -3767,7 +3873,7 @@ function render(dt) {
     camWant.set(w.x - wx * 4.2, gy + 2.4, w.z - wz * 4.2);
     camAhead.set(w.x + wx * 3, gy + 1.3, w.z + wz * 3);
   } else if (!camView(camMode, me.pos.x, me.alt + city.gy, me.pos.z, me.heading, camWant, camAhead)) {
-    const y = me.alt + city.gy, hy = (passGround(me.pos.x - fx * back, me.pos.z - fz * back) || y) ; // hinter dir am Berg nicht in den Hang
+    const y = me.alt + city.gy, hy = (groundAt(me.pos.x - fx * back, me.pos.z - fz * back) || y) ; // hinter dir am Hang nicht in den Boden
     camWant.set(me.pos.x - fx * back, Math.max(y, hy) + 3.3 + Math.abs(me.speed) * 0.01, me.pos.z - fz * back);
     camAhead.set(me.pos.x + fx * 6, y + 1.2, me.pos.z + fz * 6);
   }

@@ -68,6 +68,10 @@ export function countrySurface(x, z) {
   if (passGround(x, z) > SNOW_ROAD) return 'snow';
   return null;
 }
+// Feste Dinge (auch wenn man quer übers Gelände kommt): Gebäude auf dem Hof, Weide, Kiosk
+export const countryBlocked = (x, z, r = 1) => FARM_SOLIDS.some(b => box(b, x, z, -r * 0.6)) || box(PASTURE, x, z, -r * 0.6) || box(KIOSK, x, z, -r * 0.6);
+// Skigebiet: Talstation, Bergstation (für city.js: Lift fahren und selber Ski fahren)
+export const LIFT = { A: LIFT_A, B: LIFT_B };
 // Auf dem Wasser (für das Boot)
 export const inWater = (x, z, r = 2) => box(WATER, x, z, r + 6) && !box(PIER, x, z, -r);
 export const nearPier = (x, z) => Math.hypot(x - BOAT_HOME.x, z - BOAT_HOME.z) < 14;
