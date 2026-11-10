@@ -24,6 +24,10 @@ Browser-Spiel ohne Build: `index.html` + `game.js` (Spiellogik, Menüs und 2D-Ze
   Fahrschule (Auftrag `school`, Führerschein in `autoRetterLicense`) und Autohändler (Block 1,3, `cityDealer` in `game.js`).
   Blaue Zone (Block 3,6, `stepBlue`/`stepLot`): Verkehrsautos parkieren dort, mal viel los, mal ruhig; selber parkieren gibt
   Münzen, nach 3 Minuten (Parkscheibe) ein Strafzettel.
+  Fussgänger (`stepPeds`): gehen um die Blöcke, überqueren bei Rot auf dem Zebrastreifen, Autos halten an (`followLimit`).
+  Baustelle (`stepWorks`): sperrt ein Strassenstück, Verkehr fährt Umleitung (`isClosed` in `planTurn`).
+  Eigenes Haus (Block 7,5, `stepHouse`): am Briefkasten kaufen und Gartensachen kaufen, Garage = gratis reparieren und tanken;
+  Spielstand `autoRetterHouse`. Testen im Hintergrund-Tab: `window.__cityTick(n)` rechnet n Bilder.
   Dort auch das eigene Autohaus: sechs feste Plätze (3 Drehteller draussen, 3 im Ausstellungsraum), Bestellungen bringt der
   Autotransporter (`stepDelivery`), Kunden mit Wunsch und Beratung (💬/T), Spielstand `autoRetterShop` (stock, orders). Oben am Stadtrand ist Platz für sechs Basen nebeneinander (nur für echte Spieler, sonst Wiese): bis zu 10 ausgesuchte
   Autos (`baseGarage` in `game.js`, Spielstand `autoRetterBase`), dort Auto wechseln; online je Spieler eine (`rooms/<CODE>/bases`).
@@ -37,6 +41,10 @@ Browser-Spiel ohne Build: `index.html` + `game.js` (Spiellogik, Menüs und 2D-Ze
   wer die Gasse blockiert, bekommt über `hooks.gasse` einen Strafzettel), Hafen (Westen, ab 5 goldenen Schlüsseln), Flughafen (Osten, ab 12) und
   Passstrasse mit Höhe (Norden, ab 20; `passGround` = Bodenhöhe, `passTerrain` formt das Gelände). In der Stadt:
   Überraschungen (Feuer, Banküberfall, Notfall → Spital), 30 goldene Schlüssel (Spielstand `autoRetterKeys`).
+- `country.js`: neue Gebiete draussen (für `city.js`, frei zugänglich): Bauernhof im Nordosten (Feldweg, Felder, Matsch,
+  Kühe, Heuballen mit dem Traktor einsammeln, Traktor zum Einsteigen: `city.rides`), Strand im Westen (Promenade, Sand, Steg mit
+  Boot: `city.boat`, fährt nur auf dem Wasser) und Skigebiet am Pass (Schnee ab Höhe 55, Sessellift, Skifahrer).
+  Böden: `countrySurface` ('gravel', 'mud', 'sand', 'snow'), Wirkung in `stepMe` (`SURF`, `SURF_GRIP`).
 - `stunt.js`: 3D-Stuntpark mit eigener Physik in der Höhe (Rampen als Formen in `SHAPES`, Looping, Feuerringe, Salto/Schraube).
   Testen: `startStuntMode()`, dann `window.__stunt()` (`me`, `input`, `score`).
 - `viewer.js`: 3D-Ansicht eines Fahrzeugs zum Drehen (eigener Renderer, wird beim Schliessen freigegeben).

@@ -1104,7 +1104,7 @@ export function buildPass({ scene, group, asphaltMat, lineMat, sign, natural, te
   // feines Geländestück über dem groben (Fels an steilen Stellen, oben Schnee)
   const rock = new THREE.Color(0x857b70), gA = new THREE.Color(0x5e9142), gB = new THREE.Color(0x4a7c35), snow = new THREE.Color(0xf1f5f9);
   const land = terrainMesh({ size: 840, segments: 140, center: [0, -705], height: (x, z) => passTerrain(x, z, natural(x, z)),
-    color: (x, z, y, steep, c) => { c.lerpColors(gA, gB, 0.5 + 0.5 * Math.sin(x / 23 + z / 31)); c.lerp(rock, smooth01((steep - 0.2) / 0.25)); c.lerp(snow, smooth01((y - 85) / 30) * 0.85); } });
+    color: (x, z, y, steep, c) => { c.lerpColors(gA, gB, 0.5 + 0.5 * Math.sin(x / 23 + z / 31)); c.lerp(rock, smooth01((steep - 0.2) / 0.25)); c.lerp(snow, smooth01((y - 48) / 25) * 0.95); } }); // Skigebiet: oben alles weiss
   scene.add(land);
   // Fahrbahn, Linien, Leitplanken
   const rows = (off0, off1, dy0, dy1) => P.pts.map((p, i) => {
