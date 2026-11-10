@@ -17,7 +17,8 @@ const boxDist = (x, z, b) => {
 
 // ---------- Bauernhof ----------
 export const FARM = { x0: 440, x1: 1040, z0: -1040, z1: -350 };
-const FARM_ROADS = [{ x0: 300, x1: 512, z0: -287, z1: -273 }, { x0: 494, x1: 508, z0: -360, z1: -273 }]; // Feldweg von der Stadt
+const FARM_ROADS = [{ x0: 250, x1: 330, z0: -263, z1: -249 }, { x0: 316, x1: 330, z0: -287, z1: -249 }, { x0: 316, x1: 512, z0: -287, z1: -273 },
+  { x0: 494, x1: 508, z0: -360, z1: -273 }]; // Feldweg: Verlängerung der nördlichen Ringstrasse, dann nach Osten und Norden
 const TRACKS = [{ x0: 494, x1: 508, z0: -1000, z1: -350 }, { x0: 501, x1: 1010, z0: -560, z1: -546 }, { x0: 501, x1: 1010, z0: -800, z1: -786 }];
 const YARD = { x0: 470, x1: 640, z0: -500, z1: -360 };
 const FIELDS = [{ x0: 650, x1: 1020, z0: -530, z1: -380, kind: 'wheat' }, { x0: 520, x1: 1020, z0: -775, z1: -575, kind: 'green' },
@@ -30,7 +31,7 @@ const TRACTOR = { x: 530, z: -475, h: 0 };
 // ---------- Strand ----------
 const BEACH = { x0: -702, x1: -646, z0: -660, z1: -170 };
 const PROM = { x0: -646, x1: -632, z0: -660, z1: -150 };
-const BEACH_ROAD = { x0: -646, x1: -300, z0: -207, z1: -193 };
+const BEACH_ROAD = { x0: -646, x1: -250, z0: -200, z1: -184 }; // genau auf der Stadtstrasse z = −192 (beide Spuren)
 const PIER = { x0: -772, x1: -700, z0: -424, z1: -416 };
 const WATER = { x0: -1100, x1: -702, z0: -700, z1: 380, y: -4 }; // wie in outskirts.js
 const BOAT_HOME = { x: -780, z: -420, h: Math.PI };
@@ -102,7 +103,7 @@ export function buildCountry({ scene, group, asphaltMat, grassMat, sign, natural
   const barnRoof = add(new THREE.CylinderGeometry(14.5, 14.5, 36.4, 4, 1, false, 0, Math.PI), roofM, 590, 10, -400); barnRoof.rotation.x = Math.PI / 2; barnRoof.rotation.y = Math.PI / 2; barnRoof.scale.set(1, 1, 0.45);
   add(new THREE.BoxGeometry(0.3, 7, 10), white, 575.9, 3.5, -400);
   add(new THREE.CylinderGeometry(4, 4, 16, 20), grey, 615, 8, -440); add(new THREE.SphereGeometry(4, 20, 10, 0, Math.PI * 2, 0, Math.PI / 2), grey, 615, 16, -440);
-  signPair('🚜 BAUERNHOF', '#3f6212', '#ffffff', 8, 1.6, 320, 4, -292, Math.PI / 2);
+  signPair('🚜 BAUERNHOF', '#3f6212', '#ffffff', 8, 1.6, 300, 4, -268, Math.PI / 2);
   // Weide mit Zaun und Kühen
   const fence = new THREE.Group(); group.add(fence);
   for (const [x0, z0, x1, z1] of [[PASTURE.x0, PASTURE.z0, PASTURE.x1, PASTURE.z0], [PASTURE.x0, PASTURE.z1, PASTURE.x1, PASTURE.z1], [PASTURE.x0, PASTURE.z0, PASTURE.x0, PASTURE.z1], [PASTURE.x1, PASTURE.z0, PASTURE.x1, PASTURE.z1]]) {
@@ -167,7 +168,7 @@ export function buildCountry({ scene, group, asphaltMat, grassMat, sign, natural
   add(new THREE.BoxGeometry(3, 0.3, 3), white, -690, 3.7, -420); add(new THREE.BoxGeometry(2.6, 1.4, 2.6), M(0xef4444), -690, 4.6, -420);
   for (const x of [-688, -676]) add(new THREE.CylinderGeometry(0.06, 0.06, 2.6, 6), white, x, 1.3, -520);
   add(new THREE.BoxGeometry(12, 0.9, 0.04), M(0xf8fafc, { transparent: true, opacity: 0.7 }), -682, 2.1, -520);
-  signPair('🏖️ STRAND', '#0e7490', '#ffffff', 7, 1.5, -330, 4, -212, -Math.PI / 2);
+  signPair('🏖️ STRAND', '#0e7490', '#ffffff', 7, 1.5, -300, 4, -204, -Math.PI / 2);
 
   // ===== Skigebiet: Sessellift, Skihütte, Skifahrer =====
   const ground = (x, z) => Math.max(passTerrain(x, z, natural(x, z)), passGround(x, z));

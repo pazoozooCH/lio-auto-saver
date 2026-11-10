@@ -604,7 +604,7 @@ function buildWorld() {
   for (let k = 0; k < 360;) {
     const a = r() * Math.PI * 2, rr = HALF + 30 + r() * 150;
     const tx = Math.cos(a) * rr * 1.1, tz = Math.sin(a) * rr * 1.1;
-    if (Math.max(Math.abs(tx), Math.abs(tz)) < HALF + ROAD / 2 + 12 || groundShape(tx, tz).d < 14 || (inPassRegion(tx, tz) && passNearest(tx, tz).d < 16)) continue; // nicht auf Strassen und Plätzen
+    if (Math.max(Math.abs(tx), Math.abs(tz)) < HALF + ROAD / 2 + 12 || groundShape(tx, tz).d < 14 || countryDist(tx, tz) < 14 || (inPassRegion(tx, tz) && passNearest(tx, tz).d < 16)) continue; // nicht auf Strassen und Plätzen
     trees.push([tx, height(tx, tz), tz, 0.9 + r() * 0.9]);
     k++;
   }
@@ -3420,8 +3420,8 @@ function drawWideMap(g) {
   g.strokeStyle = city.keys.size >= PASS_AREA.need ? '#e5e7eb' : '#6b7280'; g.lineWidth = 2; g.beginPath(); // Passstrasse
   passPoints().forEach((p, i) => (i % 6 ? 0 : i ? g.lineTo(wx(p.x), wz(p.z)) : g.moveTo(wx(p.x), wz(p.z))));
   g.stroke();
-  rect(FARM, '#8a9a3a'); rect({ x0: 300, x1: 512, z0: -287, z1: -273 }, '#a47b4f'); // Bauernhof
-  rect({ x0: -702, x1: -646, z0: -660, z1: -170 }, '#e8d39a'); rect({ x0: -646, x1: -300, z0: -207, z1: -193 }, '#9ca3af'); // Strand
+  rect(FARM, '#8a9a3a'); rect({ x0: 316, x1: 512, z0: -287, z1: -273 }, '#a47b4f'); rect({ x0: 250, x1: 330, z0: -263, z1: -249 }, '#a47b4f'); // Bauernhof
+  rect({ x0: -702, x1: -646, z0: -660, z1: -170 }, '#e8d39a'); rect({ x0: -646, x1: -250, z0: -200, z1: -184 }, '#9ca3af'); // Strand
   g.fillStyle = '#7b8490'; g.fillRect(wx(-HALF), wz(-HALF), 2 * HALF * sc, 2 * HALF * sc);
   g.strokeStyle = '#e5e7eb'; g.lineWidth = 3; g.beginPath();
   for (let s = 0; s <= HW_LEN; s += 40) { const p = hwPoint(s); if (s) g.lineTo(wx(p.x), wz(p.z)); else g.moveTo(wx(p.x), wz(p.z)); }
