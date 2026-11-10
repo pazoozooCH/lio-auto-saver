@@ -1,4 +1,5 @@
-// Gebiete ausserhalb des Stadtgitters (für city.js). Die Autobahn: ein Oval südlich der Stadt (etwa 4,8 km) mit vier
+// Gebiete ausserhalb des Stadtgitters (für city.js). Die Autobahn: ein Rechteck mit runden Ecken südlich der Stadt
+// (etwa 7,8 km; die Südgerade liegt auf einem eigenen Geländestück bis z ≈ 3300) mit vier
 // Spuren je Richtung, Mittelleitplanke und Leitplanken aussen, Zufahrt vom Südrand der Stadt. Tempolimit 140 (HW_LIMIT) –
 // an das sich Raser und Drängler aber nicht halten (die fahren gegen 200).
 // Auf der Autobahn fährt jeder anders: gemütliche Lastwagen rechts, normale Autos (überholen und gehen wieder rechts),
@@ -8,9 +9,13 @@
 import * as THREE from 'three';
 import { buildCar, animateCar } from './cars3d.js';
 
-export const HW = { cz: 710, half: 790, R: 260 }; // reicht fast bis zum Rand des Geländes (±1100 m)
+// Mittellinie = Rechteck (x ±half, z cz … cz + L) mit Abstand R rundherum: oben (Norden, bei der Stadt) nach Osten,
+// rechts nach Süden, unten nach Westen, links nach Norden; die Ecken sind Viertelkreise
+export const HW = { cz: 710, half: 790, R: 260, L: 1500 };
 export const HW_LIMIT = 140;
-export const HW_LEN = 4 * HW.half + 2 * Math.PI * HW.R;
+const Q = Math.PI * HW.R / 2; // Viertelkreis
+export const HW_LEN = 4 * HW.half + 2 * HW.L + 4 * Q; // ≈ 7794 m
+const S_SOUTH = 2 * HW.half + 2 * Q + HW.L; // Anfang der Südgeraden
 const TOP = HW.cz - HW.R; // die obere Gerade liegt bei z = 450
 const RAMP = { x0: -7, x1: 7, z0: 250, z1: TOP - 6 }; // Zufahrt von der Strasse am Südrand der Stadt (z = 256)
 const GAP = { s0: HW.half - 16, s1: HW.half + 16 }; // Einfahrt: dort fehlen Mittel- und Aussenleitplanke
@@ -19,25 +24,34 @@ const LANES = [14.1, 10.4, 6.6, 2.9]; // Spurmitte: ganz rechts … ganz links (
 const WIDE = EDGE + 1.2; // so weit reicht die Autobahn seitlich
 const inGap = s => s > GAP.s0 && s < GAP.s1;
 
+const arcAt = (cx, cz, a) => ({ x: cx + HW.R * Math.cos(a), z: cz + HW.R * Math.sin(a), tx: -Math.sin(a), tz: Math.cos(a) });
 export function hwPoint(s) {
   s = ((s % HW_LEN) + HW_LEN) % HW_LEN;
-  const { half: h, R, cz } = HW, arc = Math.PI * R;
-  if (s < 2 * h) return { x: -h + s, z: cz - R, tx: 1, tz: 0 };
-  s -= 2 * h;
-  if (s < arc) { const a = -Math.PI / 2 + s / R; return { x: h + R * Math.cos(a), z: cz + R * Math.sin(a), tx: -Math.sin(a), tz: Math.cos(a) }; }
-  s -= arc;
-  if (s < 2 * h) return { x: h - s, z: cz + R, tx: -1, tz: 0 };
-  s -= 2 * h;
-  const a = Math.PI / 2 + s / R;
-  return { x: -h + R * Math.cos(a), z: cz + R * Math.sin(a), tx: -Math.sin(a), tz: Math.cos(a) };
+  const { half: h, R, cz, L } = HW, z1 = cz + L;
+  if (s < 2 * h) return { x: -h + s, z: cz - R, tx: 1, tz: 0 }; s -= 2 * h;
+  if (s < Q) return arcAt(h, cz, -Math.PI / 2 + s / R); s -= Q;
+  if (s < L) return { x: h + R, z: cz + s, tx: 0, tz: 1 }; s -= L;
+  if (s < Q) return arcAt(h, z1, s / R); s -= Q;
+  if (s < 2 * h) return { x: h - s, z: z1 + R, tx: -1, tz: 0 }; s -= 2 * h;
+  if (s < Q) return arcAt(-h, z1, Math.PI / 2 + s / R); s -= Q;
+  if (s < L) return { x: -h - R, z: z1 - s, tx: 0, tz: -1 }; s -= L;
+  return arcAt(-h, cz, Math.PI + s / R);
 }
 export function hwProject(x, z) {
-  const { half: h, R, cz } = HW, qx = Math.max(-h, Math.min(h, x)), dx = x - qx, dz = z - cz, len = Math.hypot(dx, dz) || 1e-6;
+  const { half: h, R, cz, L } = HW, z1 = cz + L;
+  const qx = Math.max(-h, Math.min(h, x)), qz = Math.max(cz, Math.min(z1, z)), dx = x - qx, dz = z - qz;
+  if (!dx && !dz) { // mitten im Rechteck (weit weg von der Strasse): nächste Seite
+    const n = z - cz, so = z1 - z, w = x + h, e = h - x, m = Math.min(n, so, w, e);
+    const s = m === n ? x + h : m === e ? 2 * h + Q + (z - cz) : m === so ? S_SOUTH + (h - x) : 4 * h + 3 * Q + L + (z1 - z);
+    return { s, lat: R + m };
+  }
+  const a = Math.atan2(dz, dx);
   let s;
-  if (qx > -h && qx < h) s = dz < 0 ? qx + h : 2 * h + Math.PI * R + (h - qx);
-  else if (qx >= h) s = 2 * h + (Math.atan2(dz, dx) + Math.PI / 2) * R;
-  else { let a = Math.atan2(dz, dx); if (a < 0) a += 2 * Math.PI; s = 4 * h + Math.PI * R + (a - Math.PI / 2) * R; }
-  return { s, lat: R - len };
+  if (!dx) s = dz < 0 ? qx + h : S_SOUTH + (h - qx);
+  else if (!dz) s = dx > 0 ? 2 * h + Q + (qz - cz) : 4 * h + 3 * Q + L + (z1 - qz);
+  else if (dx > 0) s = dz < 0 ? 2 * h + (a + Math.PI / 2) * R : 2 * h + Q + L + a * R;
+  else s = dz > 0 ? 4 * h + 2 * Q + L + (a - Math.PI / 2) * R : 4 * h + 3 * Q + 2 * L + (a + Math.PI) * R;
+  return { s, lat: R - Math.hypot(dx, dz) };
 }
 const at = (s, lat) => { const p = hwPoint(s); return { x: p.x - p.tz * lat, z: p.z + p.tx * lat, tx: p.tx, tz: p.tz }; };
 
@@ -46,7 +60,7 @@ const boxDist = (x, z, b) => {
   const dx = Math.max(b.x0 - x, 0, x - b.x1), dz = Math.max(b.z0 - z, 0, z - b.z1);
   return dx || dz ? Math.hypot(dx, dz) : -Math.min(x - b.x0, b.x1 - x, z - b.z0, b.z1 - z);
 };
-export function outskirtsDist(x, z) { return Math.min(Math.abs(hwProject(x, z).lat) - WIDE, boxDist(x, z, RAMP)); }
+export function outskirtsDist(x, z) { return Math.min(Math.abs(hwProject(x, z).lat) - WIDE, boxDist(x, z, RAMP), boxDist(x, z, REST_BOX)); }
 
 // Darf ein Fahrzeug (Radius r) hier draussen stehen? Leitplanken aussen und in der Mitte, Zufahrt mit Leitplanken
 export function hwDrivable(x, z, r = 1) {
@@ -54,6 +68,7 @@ export function hwDrivable(x, z, r = 1) {
   if (rwBlocked(p.s, p.lat, r)) return false; // Baustelle
   if (Math.abs(p.lat) <= EDGE - r * 0.8 && (Math.abs(p.lat) >= MEDIAN + r * 0.6 || gap)) return true;
   if (gap && p.lat < 0 && p.lat > -WIDE - 3) return true; // Einfahrt von der Zufahrt her
+  if (restDrivable(x, z, r)) return true;
   return x > RAMP.x0 + r * 0.6 && x < RAMP.x1 - r * 0.6 && z > RAMP.z0 && z < RAMP.z1 + 8;
 }
 export const onHighway = (x, z) => Math.abs(hwProject(x, z).lat) < WIDE || boxDist(x, z, RAMP) < 0;
@@ -90,7 +105,7 @@ function ribbon(lat0, lat1, y0, y1, mat, keep = () => true, step = 4) {
 // ---------- Spannung auf der Autobahn ----------
 // Tunnel durch einen Hügel auf der unteren Geraden, eine Baustelle auf der oberen (Richtung +s: die zwei rechten Spuren
 // gesperrt, alle müssen nach links), knapp überholen gibt Bonus (hooks.nearMiss) und ab und zu jagt die Polizei einen Raser.
-const TUNNEL = { s0: 2 * HW.half + Math.PI * HW.R + 520, len: 420, h: 7 };
+const TUNNEL = { s0: S_SOUTH + 60, len: 420, h: 7 }; // auf der Südgeraden, nach der Raststätte (Richtung −s)
 const RW = { dir: 1, s0: 140, s1: 440, lat: 8.5, taper: 60 }; // Baustelle: ab lat 8.5 nach rechts gesperrt (davor schräg)
 const SHOULDER = 16.4; // Pannenstreifen (dort hält die Polizei einen Raser an)
 const inRW = (s, lat) => lat > 0 && s > RW.s0 - RW.taper && s < RW.s1;
@@ -98,6 +113,98 @@ const coneLat = s => s >= RW.s0 ? RW.lat : EDGE - 1 - (EDGE - 1 - RW.lat) * (s -
 const rwBlocked = (s, lat, r) => inRW(s, lat) && lat > coneLat(s) - r * 0.6;
 // Muss ein Auto (Richtung +1) wegen der Baustelle schon auf die linken Spuren? (220 m vor den Kegeln bis zum Ende)
 const rwZone = c => c.dir === 1 && (((RW.s0 - RW.taper - c.s) % HW_LEN + HW_LEN) % HW_LEN < 220 || (c.s > RW.s0 - RW.taper && c.s < RW.s1));
+// ---------- Raststätte ----------
+// Aussen an der Südgeraden (für die Richtung −s, also wer von der Zufahrt her kommt): Ausfahrt, Grasinsel, Tankstelle
+// mit Ladesäulen (REST_ZONES: city.js tankt dort wie an der Tankstelle in der Stadt), Parkplätze für Autos und
+// Lastwagen, ein Restaurant. u = Abstand nach aussen (Süden) von der Mittellinie, x wie in der Welt.
+export const REST = { x: 0, z: HW.cz + HW.L + HW.R, half: 150, end: 222, island: 142 };
+const REST_S = S_SOUTH + HW.half; // s in der Mitte der Raststätte
+const REST_BOX = { x0: REST.x - REST.end - 10, x1: REST.x + REST.end + 10, z0: REST.z + EDGE, z1: REST.z + 135 };
+const RB = { x0: -45, x1: 45, u0: 74, u1: 98 }; // Restaurant
+export const REST_ZONES = { gas: { x: REST.x - 110, z: REST.z + 50, w: 34, d: 18 }, charge: { x: REST.x - 80, z: REST.z + 50, w: 10, d: 14 } };
+// parkierte Fahrzeuge: [Art, x, u, Drehung] – stehen fest (auch für die Kollision)
+export const REST_PARKED = [['car', -42, 48, -Math.PI / 2], ['kombi', -33, 48, -Math.PI / 2], ['kompakt', -18, 48, -Math.PI / 2], ['ecar', 3, 48, -Math.PI / 2],
+  ['minivan', 21, 48, -Math.PI / 2], ['camper', 39, 48, -Math.PI / 2], ['tanker', 108, 40, 0], ['umzug', 108, 49, 0], ['delivery', 108, 58, 0]];
+const restOuter = ax => EDGE + 16 + 96 * Math.min(1, Math.max(0, (REST.half - ax) / 30));
+const restGap = s => { const d = Math.abs(s - REST_S); return d > REST.island && d < REST.end; }; // Aus- und Einfahrt
+function restDrivable(x, z, r) {
+  const u = z - REST.z, ax = Math.abs(x - REST.x);
+  if (ax > REST.end || u < EDGE - 2 || u > restOuter(ax) - r * 0.6) return false;
+  if (ax < REST.island && u < EDGE + 12 + r * 0.6) return false; // Grasinsel zwischen Autobahn und Raststätte
+  if (x > REST.x + RB.x0 - r * 0.6 && x < REST.x + RB.x1 + r * 0.6 && u > RB.u0 - r * 0.6 && u < RB.u1 + r * 0.6) return false; // Restaurant
+  for (const [, px, pu, yaw] of REST_PARKED) { // parkierte Fahrzeuge
+    const hx = yaw ? 1.1 : 4.4, hu = yaw ? 2.5 : 1.3;
+    if (Math.abs(x - REST.x - px) < hx + r * 0.6 && Math.abs(u - pu) < hu + r * 0.6) return false;
+  }
+  return true;
+}
+const inRestZone = (x, z) => Math.abs(x - REST.x) < REST.end + 5 && z - REST.z > EDGE + 0.5 && z - REST.z < 140;
+
+function buildRest(group, { asphaltMat, lineMat, sign, grassMat, rail, posts }) {
+  const X = REST.x, Z = REST.z, mat = o => new THREE.MeshStandardMaterial({ roughness: 0.8, ...o });
+  const box = (w, h, d, m, x, y, z) => { const b = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), m); b.position.set(x, y, z); b.castShadow = b.receiveShadow = true; group.add(b); return b; };
+  const flat = (w, d, m, x, y, z) => { const f = new THREE.Mesh(new THREE.PlaneGeometry(w, d).rotateX(-Math.PI / 2), m); f.position.set(x, y, z); f.receiveShadow = true; group.add(f); return f; };
+  // Belag: Ausfahrt, Gasse, Parkplatz (Zeilen von West nach Ost, damit die Oberseite nach oben zeigt)
+  const rows = [];
+  for (let x = -REST.end; x <= REST.end + 0.01; x += 3) rows.push([[X + x, 0.025, Z + EDGE - 0.6, x / 8, 0], [X + x, 0.025, Z + restOuter(Math.abs(x)), x / 8, 14]]);
+  group.add(strip(rows, asphaltMat));
+  // Grasinsel mit Randstein
+  const curb = mat({ color: 0xc7c9cc });
+  flat(2 * REST.island, 11.2, grassMat, X, 0.13, Z + EDGE + 6.2);
+  box(2 * REST.island, 0.14, 0.3, curb, X, 0.07, Z + EDGE + 12.05);
+  for (const sx of [-1, 1]) box(0.3, 0.14, 11.6, curb, X + sx * REST.island, 0.07, Z + EDGE + 6.2);
+  // Randlinien und Parkfelder
+  flat(2 * REST.end, 0.15, lineMat, X, 0.05, Z + restOuter(REST.end) - 0.6);
+  for (let x = -51; x <= 51; x += 3) flat(0.13, 12, lineMat, X + x, 0.05, Z + 48);
+  for (const u of [35.5, 44.5, 53.5, 62.5]) flat(60, 0.15, lineMat, X + 110, 0.05, Z + u);
+  // Tankstelle (rotes Dach, Zapfsäulen) und Ladesäulen (grün)
+  const G = REST_ZONES.gas, C = REST_ZONES.charge, red = mat({ color: 0xd62828 }), white = mat({ color: 0xf3f4f6 }), steel = mat({ color: 0x9ca3af, metalness: 0.5 });
+  box(G.w + 2, 0.7, G.d + 2, red, G.x, 5.6, G.z);
+  box(G.w + 2.1, 0.25, G.d + 2.1, white, G.x, 5.15, G.z);
+  for (const dx of [-G.w / 2 + 1, G.w / 2 - 1]) for (const dz of [-G.d / 2 + 1, G.d / 2 - 1]) box(0.5, 5.2, 0.5, steel, G.x + dx, 2.6, G.z + dz);
+  for (const dx of [-10, 0, 10]) { box(1.2, 1.7, 0.8, red, G.x + dx, 0.85, G.z); box(1.25, 0.4, 0.85, white, G.x + dx, 1.5, G.z); }
+  const green = mat({ color: 0x16a34a });
+  box(C.w + 1, 0.4, C.d, green, C.x, 4.2, C.z);
+  for (const dz of [-3.5, 3.5]) { box(0.7, 1.8, 0.5, green, C.x, 0.9, C.z + dz); box(0.4, 4, 0.4, steel, C.x + C.w / 2, 2, C.z + dz); }
+  for (const side of [0, 1]) {
+    const s1 = sign('⛽ TANKEN', '#d62828', '#ffffff', 6, 1.3); s1.position.set(G.x, 6.6, G.z - G.d / 2 - 1.2 - side * 0.05); s1.rotation.y = side ? Math.PI : 0; group.add(s1);
+    const s2 = sign('⚡ LADEN', '#16a34a', '#ffffff', 4.5, 1.1); s2.position.set(C.x, 5, C.z - C.d / 2 - 0.2 - side * 0.05); s2.rotation.y = side ? Math.PI : 0; group.add(s2);
+  }
+  // Restaurant: Wände, Glasfront zur Autobahn, Dach, Schild
+  const wall = mat({ color: 0xe8dcc4 }), glass = mat({ color: 0x5b8db8, metalness: 0.4, roughness: 0.15 }), roof = mat({ color: 0x5b4636 });
+  const bw = RB.x1 - RB.x0, bd = RB.u1 - RB.u0, bx = X + (RB.x0 + RB.x1) / 2, bz = Z + (RB.u0 + RB.u1) / 2;
+  box(bw, 5, bd, wall, bx, 2.5, bz);
+  box(bw - 6, 3.4, 0.3, glass, bx, 2.2, Z + RB.u0 - 0.1);
+  box(bw + 3, 0.6, bd + 3, roof, bx, 5.3, bz);
+  box(10, 0.3, 4, roof, bx, 3.6, Z + RB.u0 - 2); // Vordach über der Tür
+  for (const side of [0, 1]) {
+    const s = sign('🍔 RASTSTÄTTE ☕', '#b45309', '#ffffff', 16, 2.4); s.position.set(bx, 7.2, Z + RB.u0 - 0.2 - side * 0.05); s.rotation.y = side ? Math.PI : 0; group.add(s);
+  }
+  // Tische draussen und ein paar Bäume
+  const wood = mat({ color: 0x8b5a2b });
+  for (let k = 0; k < 5; k++) { const x = X - 38 + k * 19; box(2.4, 0.15, 1.2, wood, x, 0.8, Z + 104); box(2.4, 0.1, 0.4, wood, x, 0.45, Z + 103); box(2.4, 0.1, 0.4, wood, x, 0.45, Z + 105); }
+  const trees = [];
+  for (let x = -REST.half + 6; x <= REST.half - 6; x += 14) trees.push([X + x, Z + restOuter(Math.abs(x)) + 6]);
+  for (let x = -REST.island + 10; x <= REST.island - 10; x += 22) trees.push([X + x, Z + EDGE + 6.5]);
+  const trunk = new THREE.InstancedMesh(new THREE.CylinderGeometry(0.2, 0.3, 2.6, 6), mat({ color: 0x5b4030 }), trees.length);
+  const crown = new THREE.InstancedMesh(new THREE.IcosahedronGeometry(2.2, 1), mat({ color: 0x3f7a35, flatShading: true }), trees.length);
+  const m4 = new THREE.Matrix4();
+  trees.forEach(([x, z], k) => { trunk.setMatrixAt(k, m4.makeTranslation(x, 1.3, z)); crown.setMatrixAt(k, m4.makeTranslation(x, 3.6, z)); });
+  crown.castShadow = true; group.add(trunk, crown);
+  // Schilder vor der Ausfahrt (die Autos kommen von Westen) und ein hoher Mast
+  for (const [d, text] of [[720, '⛽🍔 Raststätte 500 m'], [400, '⛽🍔 Raststätte 200 m'], [REST.end + 10, '⛽🍔 Raststätte ↘']]) for (const side of [0, 1]) {
+    const p = at(REST_S + d, -(EDGE + 1.6)), sg = sign(text, '#1d4ed8', '#ffffff', 9, 1.6);
+    sg.position.set(p.x + side * 0.05, 4.5, p.z); sg.rotation.y = -Math.PI / 2 + side * Math.PI; // vorne die Seite, die nach Westen schaut group.add(sg);
+  }
+  box(0.5, 14, 0.5, steel, X - 175, 7, Z + 30);
+  for (const side of [0, 1]) { const s = sign('⛽ 🍔 ☕', '#b45309', '#ffffff', 5, 2.2); s.position.set(X - 175 + side * 0.3 - 0.15, 13, Z + 30); s.rotation.y = -Math.PI / 2 + side * Math.PI; group.add(s); }
+  // Leitplanke aussen um den Parkplatz (nur als Rand, fahren darf man dort sowieso nicht weiter)
+  for (let x = -REST.end; x < REST.end; x += 4) posts.push({ x: X + x, z: Z + restOuter(Math.abs(x)) + 0.4 });
+  const pr = [];
+  for (let x = -REST.end; x <= REST.end + 0.01; x += 3) { const zz = Z + restOuter(Math.abs(x)) + 0.4; pr.push([[X + x, 0.8, zz, 0, 0], [X + x, 0.45, zz, 0, 1]]); }
+  group.add(strip(pr, rail));
+}
+
 function buildExtras(group, sign, grassMat) {
   const concrete = new THREE.MeshStandardMaterial({ color: 0x9ca3af, roughness: 0.9, side: THREE.DoubleSide });
   const T0 = TUNNEL.s0, T1 = TUNNEL.s0 + TUNNEL.len, inT = s => s >= T0 && s <= T1, H = TUNNEL.h;
@@ -160,9 +267,11 @@ export function buildHighway({ group, asphaltMat, lineMat, sign, grassMat }) {
   const noGap = s => !(inGap(s) && s < 2 * HW.half);
   for (const l of [-MEDIAN, MEDIAN]) add(ribbon(l, l, 0, 0.85, concrete, noGap)); // Mittelleitplanke (Beton)
   add(ribbon(-MEDIAN, MEDIAN, 0.85, 0.85, concrete, noGap));
-  add(ribbon(EDGE, EDGE, 0.45, 0.8, rail)); add(ribbon(-EDGE, -EDGE, 0.45, 0.8, rail, noGap)); // Leitplanken aussen
+  const outer = s => noGap(s) && !restGap(s); // aussen fehlt die Leitplanke bei der Einfahrt und an der Raststätte
+  add(ribbon(EDGE, EDGE, 0.45, 0.8, rail)); add(ribbon(-EDGE, -EDGE, 0.45, 0.8, rail, outer)); // Leitplanken aussen
   const posts = [];
-  for (let s = 0; s < HW_LEN; s += 4) for (const l of [EDGE + 0.1, -EDGE - 0.1]) if (l > 0 || noGap(s)) posts.push(at(s, l));
+  for (let s = 0; s < HW_LEN; s += 4) for (const l of [EDGE + 0.1, -EDGE - 0.1]) if (l > 0 || outer(s)) posts.push(at(s, l));
+  buildRest(group, { asphaltMat, lineMat, sign, grassMat, rail, posts });
   // Zufahrt
   const ramp = new THREE.Mesh(new THREE.PlaneGeometry(RAMP.x1 - RAMP.x0, RAMP.z1 + 4 - RAMP.z0).rotateX(-Math.PI / 2), asphaltMat);
   ramp.position.set(0, 0.03, (RAMP.z0 + RAMP.z1 + 4) / 2); ramp.receiveShadow = true;
@@ -193,48 +302,79 @@ export function buildHighway({ group, asphaltMat, lineMat, sign, grassMat }) {
 }
 
 // ---------- Verkehr ----------
+// Viele Autos: jedes ist nur ein kleines Objekt (Strecke s, Spur, Tempo). Nur die nahen bekommen ein echtes 3D-Auto aus
+// einem Vorrat (POOL), weiter weg genügt ein einfacher Klotz (zwei InstancedMesh = zwei Zeichen-Befehle für alle).
+// Gesucht wird der Vordermann über Fächer (BIN Meter lang), sonst würde jedes Auto alle anderen anschauen.
 const KINDS_OF = {
   slow: ['delivery', 'tanker', 'umzug', 'camper', 'van', 'postauto', 'parcel'],
   normal: ['car', 'kombi', 'kompakt', 'hatch', 'coupe', 'minivan', 'pickup', 'jeep', 'smart', 'taxi', 'ecar'],
   tail: ['car', 'kombi', 'coupe', 'muscle', 'jeep', 'pickup', 'offroad'],
   racer: ['sports', 'muscle', 'roadster', 'rally', 'hyper', 'nightracer', 'stockcar'],
 };
-const TYPES = [['slow', 0.2], ['normal', 0.45], ['tail', 0.18], ['racer', 0.17]];
-const COLORS = ['#c0392b', '#2563eb', '#f4f4f4', '#22232b', '#9aa0aa', '#16a34a', '#f59e0b', '#7c3aed', '#0e7490', '#b45309'];
+const TYPES = [['slow', 0.2], ['normal', 0.47], ['tail', 0.17], ['racer', 0.16]];
+const COLORS = [0xc0392b, 0x2563eb, 0xf4f4f4, 0x22232b, 0x9aa0aa, 0x16a34a, 0xf59e0b, 0x7c3aed, 0x0e7490, 0xb45309, 0xe5e7eb, 0x1f2937];
 const pick = a => a[Math.floor(Math.random() * a.length)];
+const LEN = { slow: 8, normal: 4.6, tail: 4.6, racer: 4.4 };
+const WANT = { slow: 22, normal: 35, tail: 53, racer: 56 }; // m/s: Lastwagen ~80 km/h, Normale ~125, Drängler ~190, Raser ~200
+const GAPT = { slow: 1.8, normal: 1.4, tail: 0.35, racer: 0.8 };
+const POOL = { slow: 6, normal: 16, tail: 6, racer: 6 }; // so viele echte 3D-Autos gleichzeitig (die nächsten)
+const BIN = 25, NBIN = Math.ceil(HW_LEN / BIN);
+const MAX_EXTRA = 650; // Zusatzautos für lange Staus
+const MAXI = 1200; // Klötze
+const wrapS = s => ((s % HW_LEN) + HW_LEN) % HW_LEN;
+const wrapDs = d => { d %= HW_LEN; if (d < -HW_LEN / 2) d += HW_LEN; if (d > HW_LEN / 2) d -= HW_LEN; return d; };
+const randType = () => { let r = Math.random(); for (const [t, w] of TYPES) if ((r -= w) < 0) return t; return 'normal'; };
 
-export function makeHighwayTraffic(scene, kinds, n = 48) {
+function newCar(type, dir, s, lane, extra = false) {
+  const want = WANT[type] + (Math.random() - 0.5) * 6;
+  return { type, dir, lane, lat: dir * LANES[lane], s, speed: want * 0.8, want, len: LEN[type], radius: LEN[type] * 0.48,
+    gapT: GAPT[type], laneT: Math.random() * 2, flashT: 0, honkT: 0, x: 0, z: 0, mesh: null, col: pick(COLORS), extra, ph: Math.floor(Math.random() * 3) };
+}
+
+export function makeHighwayTraffic(scene, kinds, n = 260) {
   const cars = [];
   for (let k = 0; k < n; k++) {
-    let r = Math.random(), type = 'normal';
-    for (const [t, w] of TYPES) { if ((r -= w) < 0) { type = t; break; } }
-    const kind = pick(KINDS_OF[type].filter(x => kinds[x])), v = { kind, color: kinds[kind].color || pick(COLORS), special: null };
-    const mesh = buildCar(v, kinds);
-    if (type === 'tail') { // Lichthupe: zwei helle Punkte vorne, nur beim Drängeln sichtbar
-      const fl = new THREE.Group(), m = new THREE.MeshBasicMaterial({ color: 0xffffff });
-      for (const z of [-0.6, 0.6]) { const b = new THREE.Mesh(new THREE.SphereGeometry(0.16, 8, 6), m); b.position.set(mesh.userData.length / 2, 0.7, z); fl.add(b); }
-      fl.visible = false; mesh.add(fl); mesh.userData.flash = fl;
-    }
-    // m/s: Lastwagen ~80 km/h, Normale ~125 (knapp unter dem Limit), Drängler ~190, Raser ~200 und mehr
-    const want = { slow: 22, normal: 35, tail: 53, racer: 56 }[type] + (Math.random() - 0.5) * 6;
-    const dir = k % 2 ? -1 : 1, lane = { slow: 0, normal: k % 3 === 0 ? 1 : 0, tail: 3, racer: 2 + (k % 2) }[type];
-    cars.push({ v, mesh, type, dir, lane, lat: dir * LANES[lane], s: Math.random() * HW_LEN, speed: want * 0.8, want, len: mesh.userData.length,
-      radius: mesh.userData.radius, gapT: { slow: 1.8, normal: 1.4, tail: 0.35, racer: 0.8 }[type], laneT: Math.random() * 2, flashT: 0, honkT: 0, x: 0, z: 0 });
-    scene.add(mesh);
+    const type = randType(), dir = k % 2 ? -1 : 1;
+    cars.push(newCar(type, dir, Math.random() * HW_LEN, { slow: 0, normal: k % 3 === 0 ? 1 : 0, tail: 3, racer: 2 + (k % 2) }[type]));
   }
+  cars.meshes = [];
+  // Vorrat an echten 3D-Autos je Art
+  cars.pool = {};
+  for (const type of Object.keys(POOL)) {
+    cars.pool[type] = [];
+    const list = KINDS_OF[type].filter(x => kinds[x]);
+    for (let k = 0; k < POOL[type]; k++) {
+      const kind = list[k % list.length], v = { kind, color: kinds[kind].color || '#' + pick(COLORS).toString(16).padStart(6, '0'), special: null };
+      const mesh = buildCar(v, kinds);
+      if (type === 'tail') { // Lichthupe: zwei helle Punkte vorne, nur beim Drängeln sichtbar
+        const fl = new THREE.Group(), m = new THREE.MeshBasicMaterial({ color: 0xffffff });
+        for (const z of [-0.6, 0.6]) { const b = new THREE.Mesh(new THREE.SphereGeometry(0.16, 8, 6), m); b.position.set(mesh.userData.length / 2, 0.7, z); fl.add(b); }
+        fl.visible = false; mesh.add(fl); mesh.userData.flash = fl;
+      }
+      mesh.visible = false; scene.add(mesh);
+      cars.pool[type].push(mesh); cars.meshes.push(mesh);
+    }
+  }
+  // weit weg: Klötze (Karosserie farbig, Kabine dunkel)
+  const box = new THREE.BoxGeometry(1, 1, 1).translate(0, 0.5, 0);
+  const body = new THREE.InstancedMesh(box, new THREE.MeshLambertMaterial({ color: 0xffffff }), MAXI);
+  const cab = new THREE.InstancedMesh(box, new THREE.MeshLambertMaterial({ color: 0x2b3440 }), MAXI);
+  for (const m of [body, cab]) { m.count = 0; m.frustumCulled = false; m.castShadow = m.receiveShadow = false; scene.add(m); }
+  body.setColorAt(0, new THREE.Color(0xffffff));
+  cars.far = { body, cab };
   if (kinds.police) { // ein Polizeiauto, das ab und zu einen Raser jagt (dir 0 = gerade nicht unterwegs)
     const mesh = buildCar({ kind: 'police', color: kinds.police.color, special: null }, kinds);
-    mesh.visible = false; scene.add(mesh);
-    cars.push({ mesh, type: 'cop', state: 'idle', t: 25 + Math.random() * 20, dir: 0, lane: 3, lat: 0, s: 0, speed: 0, want: 60, len: mesh.userData.length,
-      radius: mesh.userData.radius, gapT: 0.5, laneT: 0, flashT: 0, honkT: 0, x: 0, z: 0, target: null });
-    cars.cop = cars[cars.length - 1];
+    mesh.visible = false; scene.add(mesh); cars.meshes.push(mesh);
+    cars.cop = { mesh, own: true, type: 'cop', state: 'idle', t: 25 + Math.random() * 20, dir: 0, lane: 3, lat: 0, s: 0, speed: 0, want: 60, len: mesh.userData.length,
+      radius: mesh.userData.radius, gapT: 0.5, laneT: 0, flashT: 0, honkT: 0, x: 0, z: 0, target: null };
+    cars.push(cars.cop);
   }
   cars.rescue = []; // Krankenwagen und Feuerwehr für Unfälle (warten unsichtbar)
   for (const kind of ['ambulance', 'firetruck']) {
     if (!kinds[kind]) continue;
     const mesh = buildCar({ kind, color: kinds[kind].color, special: null }, kinds);
-    mesh.visible = false; scene.add(mesh);
-    const c = { mesh, type: 'rescue', state: 'idle', t: 0, dir: 0, lane: 2, lat: 0, s: 0, speed: 0, want: 30, len: mesh.userData.length,
+    mesh.visible = false; scene.add(mesh); cars.meshes.push(mesh);
+    const c = { mesh, own: true, type: 'rescue', state: 'idle', t: 0, dir: 0, lane: 2, lat: 0, s: 0, speed: 0, want: 30, len: mesh.userData.length,
       radius: mesh.userData.radius, gapT: 0.4, laneT: 0, flashT: 0, honkT: 0, x: 0, z: 0, k: 0 };
     cars.push(c); cars.rescue.push(c);
   }
@@ -244,10 +384,18 @@ export function makeHighwayTraffic(scene, kinds, n = 48) {
   const tri = new THREE.Mesh(new THREE.CircleGeometry(0.5, 3).rotateZ(Math.PI / 2), new THREE.MeshBasicMaterial({ color: 0xdc2626, side: THREE.DoubleSide }));
   smoke.visible = tri.visible = false; scene.add(smoke, tri);
   cars.props = { smoke, tri };
-  cars.acc = null; cars.accT = 50 + Math.random() * 30; // der erste Unfall nach knapp einer Minute auf der Autobahn
+  // Raststätte: ein paar parkierte Autos und Lastwagen (stehen nur da)
+  for (const [kind, x, u, yaw] of REST_PARKED) {
+    if (!kinds[kind]) continue;
+    const mesh = buildCar({ kind, color: kinds[kind].color || '#' + pick(COLORS).toString(16).padStart(6, '0'), special: null }, kinds);
+    mesh.position.set(REST.x + x, 0, REST.z + u); mesh.rotation.y = yaw; scene.add(mesh); cars.meshes.push(mesh);
+  }
+  cars.zones = []; cars.acc = null; cars.extras = 0; cars.meshed = [];
+  cars.accT = 60 + Math.random() * 30; // der erste Unfall nach gut einer Minute auf der Autobahn
+  cars.jamT = 100 + Math.random() * 60; // der erste lange Stau
+  cars.bins = [[], []].map(() => Array.from({ length: NBIN }, () => []));
   return cars;
 }
-const wrapDs = d => { d %= HW_LEN; if (d < -HW_LEN / 2) d += HW_LEN; if (d > HW_LEN / 2) d -= HW_LEN; return d; };
 
 // Polizei: wartet unsichtbar, taucht dann hinter dir auf und jagt einen Raser vor dir; hat sie ihn, winken beide
 // auf den Pannenstreifen und bleiben eine Weile stehen. Gibt die gewünschte Geschwindigkeit zurück (null = nicht unterwegs).
@@ -257,17 +405,18 @@ function stepCop(c, dt, cars, P, ahead, hooks) {
     if (c.t > 0 || !P) return null;
     let best = null, bd = Infinity;
     for (const r of cars) {
-      if (r.type !== 'racer' || r.dir !== P.dir || r.shoulder) continue;
+      if (r.type !== 'racer' || r.dir !== P.dir || r.shoulder || r.wreck) continue;
       const ds = wrapDs((r.s - P.s) * P.dir);
       if (ds > 30 && ds < 400 && ds < bd) { bd = ds; best = r; }
     }
     if (!best) { c.t = 8; return null; }
-    Object.assign(c, { state: 'chase', target: best, dir: P.dir, s: ((P.s - P.dir * 160) % HW_LEN + HW_LEN) % HW_LEN, lane: 3, speed: 60, t: 70, shoulder: false });
+    Object.assign(c, { state: 'chase', target: best, dir: P.dir, s: wrapS(P.s - P.dir * 160), lane: 3, speed: 60, t: 70, shoulder: false });
     c.lat = c.dir * LANES[3];
-    c.mesh.visible = true;
     hooks.msg('🚨 Die Polizei jagt einen Raser!', true);
   }
-  const R = c.target, gap = wrapDs((R.s - c.s) * c.dir) - (R.len + c.len) / 2;
+  const R = c.target;
+  if (R.dead && c.state !== 'leave') { c.state = 'leave'; c.t = 12; c.shoulder = false; }
+  const gap = wrapDs((R.s - c.s) * c.dir) - (R.len + c.len) / 2;
   if (c.state === 'chase') {
     if (gap < 70) c.lane = R.lane; // nah dran: hinter den Raser
     else if ((c.laneT -= dt) <= 0) { // sonst die Spur mit dem meisten Platz nehmen
@@ -279,7 +428,7 @@ function stepCop(c, dt, cars, P, ahead, hooks) {
       }
       c.lane = bl;
     }
-    if (gap < 14 && !(c.dir === 1 && rwZone(c)) && !(c.dir === 1 && rwZone(R))) { // erwischt (nicht in der Baustelle anhalten)
+    if (gap < 14 && !(c.dir === 1 && rwZone(c)) && !(c.dir === 1 && rwZone(R)) && !zoneOf(cars, R)) { // erwischt (nicht in Baustelle oder Stau anhalten)
       c.state = 'stop'; c.t = 16; R.shoulder = c.shoulder = true; c.speed = Math.min(c.speed, R.speed); // nicht am Raser vorbeischiessen
       if (P && Math.abs(wrapDs(c.s - P.s)) < 300) hooks.msg('🚓 Raser erwischt! Ab auf den Pannenstreifen.', true);
     } else if (c.t <= 0 || gap < -20) { c.state = 'leave'; c.t = 12; } // zu schnell weg oder überholt: aufgeben
@@ -296,34 +445,58 @@ function stepCop(c, dt, cars, P, ahead, hooks) {
   return 42;
 }
 
-// ---------- Unfall mit Stau und Rettungsgasse ----------
-// Ab und zu krachen weit vor dir zwei Autos zusammen (die zwei rechten Spuren sind zu). Davor staut es sich (Stop-and-go),
-// und alle bilden eine Rettungsgasse: ganz links an die Mitte, alle anderen nach rechts. Kurz nachdem du im Stau stehst,
-// kommen Krankenwagen und Feuerwehr mit Blaulicht durch die Gasse; wer sie blockiert, bekommt eine Busse (hooks.gasse).
-const JAM = 330;     // so lang ist der Stau vor der Unfallstelle (m)
+// ---------- Staus: nach einem Unfall oder einfach so (kilometerlang) ----------
+// Ein Stau ist eine Zone vor ihrem Kopf (s, Richtung dir, Länge len): darin Stop-and-go, und alle bilden eine
+// Rettungsgasse (ganz links an die Mitte, alle anderen nach rechts). Beim Unfall krachen weit vor dir zwei Autos
+// zusammen (die zwei rechten Spuren sind zu); kurz nachdem du im Stau stehst, kommen Krankenwagen und Feuerwehr mit
+// Blaulicht durch die Gasse; wer sie blockiert, bekommt eine Busse (hooks.gasse). Lange Staus lösen sich nach ein paar
+// Minuten wieder auf; die Zusatzautos verschwinden, sobald man sie nicht mehr sieht.
+const JAM = 330;     // so lang ist der Stau hinter einer Unfallstelle (m)
 const GASSE = 4.75;  // dort fahren die Retter durch (zwischen Überholspur und den anderen)
-const accDist = (A, c) => wrapDs((A.s - c.s) * A.dir); // > 0: der Unfall liegt vor c
-const inJam = (A, c) => A && c.dir === A.dir && A.phase !== 'clear' && accDist(A, c) > -12 && accDist(A, c) < JAM;
+const zoneDist = (Z, c) => wrapDs((Z.s - c.s) * Z.dir); // > 0: der Kopf liegt vor c
+function zoneOf(cars, c) {
+  for (const Z of cars.zones) if (Z.dir === c.dir) { const d = zoneDist(Z, c); if (d > -12 && d < Z.len) return Z; }
+  return null;
+}
 const gasseOff = c => c.lane === 3 ? -1.0 : 1.15; // in der Gasse: Überholspur zur Mitte, die anderen nach rechts
+const km = m => (Math.round(m / 100) / 10).toFixed(1).replace('.', ',');
 
+// Liegt ein Stück der Strecke (Richtung dir, von s0 rückwärts len Meter) schon in einem Stau oder in der Baustelle?
+function busy(cars, dir, s0, len) {
+  for (const Z of cars.zones) if (Z.dir === dir) {
+    const a = wrapDs((Z.s - s0) * dir); // Kopf des anderen relativ zu unserem Kopf (positiv = davor)
+    if (a > -len - 200 && a < Z.len + 200) return true;
+  }
+  if (dir === 1) { const d = wrapDs(RW.s1 - s0); if (d > -len - 400 && d < RW.s1 - RW.s0 + RW.taper + 300) return true; }
+  return false;
+}
+// Stau auffüllen: in allen Spuren Autos mit kleinem Abstand (zuerst die, die schon dort sind; dann Zusatzautos)
+function fillQueue(cars, Z, from = 10) {
+  const here = cars.filter(c => !c.own && c.dir === Z.dir && !c.wreck && !c.shoulder && zoneDist(Z, c) > -8 && zoneDist(Z, c) < Z.len + 10);
+  for (let lane = 0; lane < LANES.length; lane++) {
+    for (let d = from + Math.random() * 6; d < Z.len - 6;) {
+      const s = wrapS(Z.s - Z.dir * d);
+      let c = here.pop();
+      if (!c) { if (cars.extras >= MAX_EXTRA) break; c = newCar(randType(), Z.dir, s, lane, true); cars.push(c); cars.extras++; }
+      Object.assign(c, { s, lane, lat: Z.dir * (LANES[lane] + gasseOff({ lane })), speed: 0.5, laneT: 1 + Math.random() * 3 });
+      d += c.len + 3.5 + Math.random() * 4;
+    }
+  }
+}
 function startAccident(cars, P) {
-  const dir = P.dir, s = ((P.s + dir * 760) % HW_LEN + HW_LEN) % HW_LEN;
-  if (dir === 1) { const d = wrapDs(RW.s0 - RW.taper - s); if (d > -(RW.s1 - RW.s0 + RW.taper + 80) && d < JAM + 400) return false; } // nicht bei der Baustelle
-  const far = cars.filter(c => c.dir === dir && ['normal', 'slow', 'tail', 'racer'].includes(c.type) && !c.shoulder && !c.wreck
-    && c !== (cars.cop && cars.cop.target) && Math.abs(wrapDs(c.s - P.s)) > 430); // nur Autos, die du gerade nicht siehst
-  if (far.length < 8) return false;
-  for (let i = far.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [far[i], far[j]] = [far[j], far[i]]; }
-  const A = { s, dir, phase: 'jam', t: 0, wrecks: [], rescue: [], called: false, block: 0, warnT: 0, told: 0 };
+  const dir = P.dir, s = wrapS(P.s + dir * 760);
+  if (busy(cars, dir, s, JAM + 200)) return false;
+  const far = cars.filter(c => !c.own && c.dir === dir && !c.shoulder && !c.wreck && c !== (cars.cop && cars.cop.target)
+    && Math.abs(wrapDs(c.s - P.s)) > 430); // nur Autos, die du gerade nicht siehst
+  if (far.length < 2) return false;
+  const A = { kind: 'acc', s, dir, len: JAM, t: 0, phase: 'jam', wrecks: [], rescue: [], called: false, block: 0, warnT: 0, told: 0 };
   for (let k = 0; k < 2; k++) { // die zwei Unfallautos, schräg auf den rechten Spuren
-    const c = far.pop();
-    Object.assign(c, { wreck: { yaw: k ? -0.55 : 0.7 }, lane: k, lat: dir * LANES[k], s: ((s - dir * k * 5) % HW_LEN + HW_LEN) % HW_LEN, speed: 0 });
+    const c = far.splice(Math.floor(Math.random() * far.length), 1)[0];
+    Object.assign(c, { wreck: { yaw: k ? -0.55 : 0.7 }, lane: k, lat: dir * LANES[k], s: wrapS(s - dir * k * 5), speed: 0 });
     A.wrecks.push(c);
   }
-  far.slice(0, 16).forEach((c, i) => { // dahinter schon ein Stau
-    const lane = i % 4, row = Math.floor(i / 4);
-    Object.assign(c, { lane, lat: dir * (LANES[lane] + gasseOff({ lane })), s: ((s - dir * (16 + row * 11 + Math.random() * 4)) % HW_LEN + HW_LEN) % HW_LEN, speed: 0 });
-  });
-  cars.acc = A;
+  cars.zones.push(A); cars.acc = A;
+  fillQueue(cars, A, 16);
   return true;
 }
 function endAccident(cars) {
@@ -331,12 +504,27 @@ function endAccident(cars) {
   for (const c of A.wrecks) { c.wreck = null; c.laneT = 1 + Math.random() * 3; }
   for (const c of A.rescue) { c.state = 'leave'; c.t = 0; }
   cars.props.smoke.visible = cars.props.tri.visible = false;
+  cars.zones = cars.zones.filter(Z => Z !== A);
   cars.acc = null; cars.accT = 150 + Math.random() * 100;
+}
+// Langer Stau: entsteht weit weg (meist vor dir, damit du hineinfährst), 0,9 bis 2,5 km lang, hält ein paar Minuten
+function startJam(cars, P) {
+  const dir = Math.random() < 0.7 ? P.dir : -P.dir, len = 900 + Math.random() * 1600;
+  const s = dir === P.dir ? wrapS(P.s + dir * (650 + len + Math.random() * 900)) : wrapS(P.s + (Math.random() - 0.5) * HW_LEN);
+  if (busy(cars, dir, s, len)) return false;
+  if (dir !== P.dir) { // auf der Gegenseite: nicht direkt neben dir entstehen lassen
+    const d = zoneDist({ s, dir }, P);
+    if (d > -500 && d < len + 500) return false;
+  }
+  const Z = { kind: 'jam', s, dir, len, t: 0, dur: 160 + Math.random() * 160, told: 0 };
+  cars.zones.push(Z);
+  fillQueue(cars, Z);
+  return true;
 }
 function callRescue(cars, A, from) {
   A.called = true;
   cars.rescue.forEach((c, k) => {
-    Object.assign(c, { state: 'go', dir: A.dir, s: ((from - A.dir * k * 22) % HW_LEN + HW_LEN) % HW_LEN, lat: A.dir * GASSE, speed: 16, t: 0, k, passed: false });
+    Object.assign(c, { state: 'go', dir: A.dir, s: wrapS(from - A.dir * k * 22), lat: A.dir * GASSE, speed: 16, t: 0, k, passed: false });
     A.rescue.push(c);
   });
 }
@@ -344,7 +532,7 @@ function callRescue(cars, A, from) {
 function stepRescue(c, dt, A, P) {
   c.t += dt;
   if (c.state === 'go') {
-    const d = A ? accDist(A, c) - (6 + c.k * 12) : 0;
+    const d = A ? zoneDist(A, c) - (6 + c.k * 12) : 0;
     if (d <= 0.5) c.state = 'park';
     return Math.min(17, Math.sqrt(2 * 5 * Math.max(0, d)) + 0.3);
   }
@@ -353,33 +541,57 @@ function stepRescue(c, dt, A, P) {
   return 30;
 }
 
-// Ein Schritt: me = { x, z, heading, speed, len, radius, on } (on: steht auf der Autobahn),
+// Ein Schritt: me = { x, z, heading, speed, len, radius, on, see } (on: steht auf der Autobahn),
 // hooks = { honk, msg, bump, nearMiss, siren, gasse }
+const dummy = new THREE.Object3D(), tmpCol = new THREE.Color();
 export function stepHighway(cars, dt, t, me, cam, hooks) {
   let P = null;
   if (me.on) { // du als Hindernis (auf welcher Seite, welcher Spur, wie schnell in Fahrtrichtung)
     const p = hwProject(me.x, me.z), d = p.lat >= 0 ? 1 : -1, tp = hwPoint(p.s);
     P = { s: p.s, lat: p.lat, dir: d, speed: me.speed * (Math.cos(me.heading) * tp.tx + Math.sin(me.heading) * tp.tz) * d, len: me.len, me: true };
   }
-  const all = P ? cars.concat(P) : cars; // einmal pro Bild (nicht bei jeder Suche neu)
+  // Fächer füllen (einmal pro Bild)
+  const bins = cars.bins;
+  for (const B of bins) for (const b of B) b.length = 0;
+  for (const c of cars) if (c.dir) bins[c.dir > 0 ? 1 : 0][Math.floor(c.s / BIN) % NBIN].push(c);
+  if (P) bins[P.dir > 0 ? 1 : 0][Math.floor(P.s / BIN) % NBIN].push(P);
   const ahead = (c, lat, from = 0, range = 140) => { // nächstes Fahrzeug vor c auf der Spur lat (from < 0: auch knapp dahinter)
+    const B = bins[c.dir > 0 ? 1 : 0], b0 = Math.floor(c.s / BIN), k0 = from < 0 ? -Math.ceil(-from / BIN) - 1 : -1, k1 = Math.ceil(range / BIN) + 1;
     let best = null, bd = Infinity;
-    for (const o of all) {
-      if (o === c || o.dir !== c.dir || Math.abs(o.lat - lat) > 2.3) continue;
-      if (o.shoulder && !c.shoulder && Math.abs(o.lat) > 15.3) continue; // steht schon auf dem Pannenstreifen
-      const ds = wrapDs((o.s - c.s) * c.dir);
-      if (ds > from && ds < range && ds < bd) { bd = ds; best = o; }
+    for (let k = k0; k <= k1; k++) {
+      if (best && (k - 1) * BIN > bd) break; // weiter vorne kommt nichts Näheres mehr
+      for (const o of B[((b0 + c.dir * k) % NBIN + NBIN) % NBIN]) {
+        if (o === c || Math.abs(o.lat - lat) > 2.3) continue;
+        if (o.shoulder && !c.shoulder && Math.abs(o.lat) > 15.3) continue; // steht schon auf dem Pannenstreifen
+        const ds = wrapDs((o.s - c.s) * c.dir);
+        if (ds > from && ds < range && ds < bd) { bd = ds; best = o; }
+      }
     }
     return best ? { o: best, gap: bd - (c.len + best.len) / 2 } : null;
   };
-  // Unfall: starten, Retter rufen, aufräumen
+  // Unfall und lange Staus: starten, Retter rufen, aufräumen
+  if (P) {
+    if (!cars.acc && (cars.accT -= dt) <= 0 && !startAccident(cars, P)) cars.accT = 5;
+    if (!cars.zones.some(Z => Z.kind === 'jam') && (cars.jamT -= dt) <= 0 && !startJam(cars, P)) cars.jamT = 5;
+  }
+  for (const Z of cars.zones) {
+    Z.t += dt;
+    const dP = P && P.dir === Z.dir ? zoneDist(Z, P) : null;
+    if (dP !== null) {
+      if (dP > Z.len && dP < Z.len + 700 && !Z.told) { Z.told = 1; hooks.msg(Z.kind === 'acc' ? '⚠️ Unfall! Gleich Stau – Rettungsgasse bilden!' : '⚠️ Achtung: ' + km(Z.len) + ' km Stau!', true); }
+      if (dP > 0 && dP < Z.len && Z.told < 2) { Z.told = 2; hooks.msg('🚧 Stau! Rettungsgasse: ganz links nach links, alle anderen nach rechts.', true); }
+      if (dP < -15 && Z.told === 2) { Z.told = 3; hooks.msg('✅ Stauende – freie Fahrt!', true); }
+    }
+    if (Z.kind === 'jam' && Z.t > Z.dur) { // löst sich auf
+      Z.gone = true; cars.jamT = 200 + Math.random() * 160;
+      if (dP !== null && dP > -20 && dP < Z.len) hooks.msg('🚗 Der Stau löst sich auf!', true);
+    }
+  }
+  if (cars.zones.some(Z => Z.gone)) cars.zones = cars.zones.filter(Z => !Z.gone);
   let A = cars.acc;
-  if (!A && P && (cars.accT -= dt) <= 0) { if (startAccident(cars, P)) A = cars.acc; else cars.accT = 5; }
   if (A) {
-    A.t += dt; A.warnT -= dt;
-    const dP = P && P.dir === A.dir ? accDist(A, P) : null;
-    if (dP !== null && dP > 0 && dP < JAM + 300 && !A.told) { A.told = 1; hooks.msg('⚠️ Unfall! Gleich Stau – Rettungsgasse bilden!', true); }
-    if (dP !== null && dP > 0 && dP < JAM && A.told < 2) { A.told = 2; hooks.msg('🚧 Stau! Ganz links: nach links. Alle anderen: nach rechts.', true); }
+    A.warnT -= dt;
+    const dP = P && P.dir === A.dir ? zoneDist(A, P) : null;
     if (!A.called && cars.rescue.length) {
       if (dP !== null && dP > 0 && dP < JAM) { A.callT = (A.callT || 0) + dt; if (A.callT > 6) { callRescue(cars, A, P.s - A.dir * 230); hooks.msg('🚑 Blaulicht von hinten!', true); } }
       else if (A.t > 90) callRescue(cars, A, A.s - A.dir * (JAM + 200)); // du kommst nicht: sie kommen trotzdem
@@ -396,35 +608,43 @@ export function stepHighway(cars, dt, t, me, cam, hooks) {
     const p = at(A.s - A.dir * 90, A.dir * 16.9);
     tri.position.set(p.x, 0.45, p.z); tri.rotation.y = -Math.atan2(p.tz, p.tx) + Math.PI / 2;
   }
-  let siren = 0;
+  const see = me.see || 240, near = Math.min(150, see * 0.55), near2 = near * near, rel2 = (near + 25) ** 2, see2 = see * see;
+  const { body, cab } = cars.far;
+  let nFar = 0, siren = 0, dead = 0;
+  const vis = cars.vis || (cars.vis = []); vis.length = 0;
   const cop = cars.cop && cars.cop.state === 'chase' ? cars.cop : null;
+  const lodD2 = Math.max(700, see + 60) ** 2, frame = cars.frame = (cars.frame || 0) + 1;
   for (const c of cars) {
+    // weit weg (nicht zu sehen): nur jedes dritte Bild rechnen, dafür mit dreifachem Zeitschritt
+    const lx = c.x - cam.x, lz = c.z - cam.z, lod = !c.own && lx * lx + lz * lz > lodD2 && c.x !== 0;
+    if (lod && (frame + (c.ph || 0)) % 3) continue;
+    const cdt = lod ? dt * 3 : dt;
     let want = c.want;
-    if (c.type === 'cop' || c.type === 'rescue') {
-      want = c.type === 'cop' ? stepCop(c, dt, cars, P, ahead, hooks) : stepRescue(c, dt, A, P);
+    if (c.own) {
+      want = c.type === 'cop' ? stepCop(c, cdt, cars, P, ahead, hooks) : stepRescue(c, cdt, A, P);
       if (want === null) { c.mesh.visible = false; continue; }
       if (P && c.state !== 'leave' && c.state !== 'stop') siren = Math.max(siren, 1 - Math.hypot(me.x - c.x, me.z - c.z) / 260);
     }
     if (c.shoulder && c.type === 'racer') want = 0; // angehalten
     if (c.wreck) want = 0;
-    const jam = inJam(A, c) && c.type !== 'rescue';
+    const Z = c.type === 'rescue' || c.wreck ? null : zoneOf(cars, c), jam = !!Z;
     let lead = c.shoulder || c.wreck ? null : ahead(c, c.lat);
     if (lead && lead.o.me && c.type === 'rescue' && A && A.block > 12) lead = null; // nach der Busse drängelt er sich vorbei
     const safe = Math.max(c.type === 'rescue' ? 2 : 3, c.speed * c.gapT);
     let v = want;
     if (lead && lead.gap < safe + 25 && !(c.type === 'cop' && lead.o === c.target)) v = Math.min(v, Math.max(0, lead.o.speed + (lead.gap - safe) * 0.7));
-    // Stau vor dem Unfall: Stop-and-go, vorne am Unfall nur im Schritttempo vorbei; hinten rechtzeitig bremsen; Gaffer drüben
-    if (A && c.type !== 'rescue') {
-      const d = accDist(A, c);
-      if (c.dir === A.dir) {
-        if (jam) v = Math.min(v, d < 40 ? 5 : 0.8 + 3.6 * Math.max(0, Math.sin(t * 0.5 - d * 0.035)));
-        else if (d >= JAM && d < JAM + 160) v = Math.min(v, 3 + Math.sqrt(2 * 6 * (d - JAM)));
-      } else if (Math.abs(d) < 80) v = Math.min(v, 18);
+    // Stau: Stop-and-go (die Wellen laufen nach hinten), am Kopf geht es wieder los; hinten rechtzeitig bremsen;
+    // am Unfall nur im Schritttempo vorbei; bei einem Unfall schauen die Gaffer drüben
+    if (c.type !== 'rescue') for (const Y of cars.zones) {
+      const d = zoneDist(Y, c);
+      if (Y.dir !== c.dir) { if (Y.kind === 'acc' && Math.abs(d) < 80) v = Math.min(v, 18); continue; }
+      if (Y === Z) v = Math.min(v, (Y.kind === 'acc' && d < 40 ? 5 : 0.8 + 3.6 * Math.max(0, Math.sin(t * 0.5 - d * 0.035))) + (Y.kind === 'jam' && d < 60 ? (60 - d) * 0.5 : 0));
+      else if (d >= Y.len && d < Y.len + 160) v = Math.min(v, 3 + Math.sqrt(2 * 6 * (d - Y.len)));
     }
     // Gesperrte Spuren (Baustelle, Unfall): wer noch rechts ist, muss hinüber und notfalls davor anhalten
     let minL = 0, blockD = Infinity;
-    if (rwZone(c)) { minL = 2; blockD = c.s > RW.s0 - RW.taper && c.s < RW.s1 ? -1 : ((RW.s0 - RW.taper - 6 - c.s) % HW_LEN + HW_LEN) % HW_LEN; }
-    if (A && c.dir === A.dir && !c.wreck && c.type !== 'rescue') { const d = accDist(A, c); if (d > -12 && d < JAM + 160) { minL = 2; blockD = Math.min(blockD, d < 3 ? -1 : d - 9); } }
+    if (rwZone(c)) { minL = 2; blockD = c.s > RW.s0 - RW.taper && c.s < RW.s1 ? -1 : wrapS(RW.s0 - RW.taper - 6 - c.s); }
+    if (A && c.dir === A.dir && !c.wreck && c.type !== 'rescue') { const d = zoneDist(A, c); if (d > -12 && d < JAM + 160) { minL = 2; blockD = Math.min(blockD, d < 3 ? -1 : d - 9); } }
     if (c.lane < minL && c.type !== 'rescue') {
       if (blockD < 0) c.lane = minL; // steckt schon drin (z.B. beim Start)
       else v = Math.min(v, Math.sqrt(2 * 6 * Math.max(0, blockD)));
@@ -432,7 +652,7 @@ export function stepHighway(cars, dt, t, me, cam, hooks) {
     }
     if (cop && cop.dir === c.dir && c.laneT > 0.4) { const d = wrapDs((c.s - cop.s) * c.dir); if (d > 0 && d < 90) c.laneT = 0.4; } // Polizei hinten
     // Spurwechsel: überholen, wenn vorne einer bummelt; normale Autos gehen danach wieder nach rechts
-    if (c.type !== 'cop' && c.type !== 'rescue' && !c.shoulder && !c.wreck && (c.laneT -= dt) <= 0) {
+    if (!c.own && !c.shoulder && !c.wreck && (c.laneT -= cdt) <= 0) {
       c.laneT = c.type === 'racer' ? 0.6 : 1.5;
       const back = -Math.max(7, c.speed * 0.7), fwd = Math.max(10, c.speed * 1.3); // im Stau reicht eine kleine Lücke
       const free = l => l >= minL && l < LANES.length && !ahead(c, c.dir * LANES[l], back, fwd);
@@ -449,49 +669,81 @@ export function stepHighway(cars, dt, t, me, cam, hooks) {
     const lat = c.wreck ? c.lat : c.dir * (c.shoulder ? SHOULDER : c.type === 'rescue' && c.state !== 'leave' ? GASSE
       : LANES[c.lane] + (jam ? gasseOff(c) : 0));
     const quick = c.type === 'racer' || c.type === 'cop' || c.type === 'rescue';
-    c.speed += Math.max(-9 * dt, Math.min((quick ? 5 : 3) * dt, v - c.speed));
+    c.speed += Math.max(-9 * cdt, Math.min((quick ? 5 : 3) * cdt, v - c.speed));
     if (c.wreck) c.speed = 0;
-    c.s = ((c.s + c.dir * c.speed * dt) % HW_LEN + HW_LEN) % HW_LEN;
-    const dl = (lat - c.lat) * Math.min(1, dt * (quick ? 2.2 : 1.2));
+    c.s = wrapS(c.s + c.dir * c.speed * cdt);
+    const dl = (lat - c.lat) * Math.min(1, cdt * (quick ? 2.2 : 1.2));
     c.lat += dl;
     // Drängler: klebt hinten dran, blinkt mit dem Licht und hupt (bei dir besonders; im Stau nicht)
-    c.flashT -= dt; c.honkT -= dt;
+    c.flashT -= cdt; c.honkT -= cdt;
     if (c.type === 'tail' && !jam && lead && lead.gap < 14 && lead.o.speed < c.want - 2) {
       c.flashT = 0.25 + (Math.floor(t * 4) % 2) * 0.2;
       if (lead.o.me && c.honkT <= 0) { hooks.honk(c); c.honkT = 3 + Math.random() * 2; hooks.msg('😠 Ein Drängler klebt an dir!'); }
     }
-    if (c.mesh.userData.flash) c.mesh.userData.flash.visible = c.flashT > 0 && Math.floor(t * 8) % 2 === 0;
     const p = at(c.s, c.lat);
     c.x = p.x; c.z = p.z;
-    if (c.type === 'racer' && P && c.dir === P.dir && c.speed > P.speed + 15 && Math.hypot(me.x - c.x, me.z - c.z) < 9) hooks.msg('💨 Achtung, ein Raser!');
+    if (c.type === 'racer' && P && c.dir === P.dir && c.speed > P.speed + 15 && Math.abs(me.x - c.x) < 9 && Math.abs(me.z - c.z) < 9) hooks.msg('💨 Achtung, ein Raser!');
     // Retter hinter dir: stehst du in der Gasse? (kurz geht, zu lange gibt eine Busse); sind sie vorbei, gibt es ein Lob
     if (c.type === 'rescue' && c.state === 'go' && P && P.dir === c.dir && A) {
       const ds = wrapDs((P.s - c.s) * c.dir);
       if (ds > 0 && ds < 45 && Math.abs(P.lat - c.dir * GASSE) < 2.3) {
-        A.block += dt;
+        A.block += cdt;
         if (A.block > 1 && A.warnT <= 0) { A.warnT = 3; hooks.msg('🚑 Mach Platz! Fahr zur Seite – Rettungsgasse!', true); }
         if (A.block > 8 && !A.fined) { A.fined = true; hooks.gasse('block'); }
       }
-      if (ds < -3 && !c.passed) { c.passed = true; if (!A.fined && !A.praised && accDist(A, P) > 0 && accDist(A, P) < JAM + 50) { A.praised = true; hooks.gasse('ok'); } }
+      if (ds < -3 && !c.passed) { c.passed = true; if (!A.fined && !A.praised && zoneDist(A, P) > 0 && zoneDist(A, P) < JAM + 50) { A.praised = true; hooks.gasse('ok'); } }
     }
-    // du wirst angefahren oder fährst auf
-    const hit = P && Math.hypot(me.x - c.x, me.z - c.z) < (me.radius + c.radius) * 0.75;
-    if (hit) { hooks.bump(c); if (!c.wreck) c.speed *= 0.5; c.nmBad = 3; }
+    const dx = c.x - cam.x, dz = c.z - cam.z, d2 = dx * dx + dz * dz;
+    if (P && Math.abs(me.x - c.x) < 12 && Math.abs(me.z - c.z) < 12) {
+      // du wirst angefahren oder fährst auf
+      if (Math.hypot(me.x - c.x, me.z - c.z) < (me.radius + c.radius) * 0.75) { hooks.bump(c); if (!c.wreck) c.speed *= 0.5; c.nmBad = 3; }
+    }
     // knapp überholt (auf der Nebenspur, du deutlich schneller): Bonus
-    c.nmBad = (c.nmBad || 0) - dt;
-    if (P && c.dir === P.dir) {
+    if (c.nmBad > 0) c.nmBad -= cdt;
+    if (P && c.dir === P.dir && d2 < 2500) {
       const ds = wrapDs((c.s - P.s) * c.dir), side = Math.abs(c.lat - P.lat);
-      if (c.nmDs > 0 && ds <= 0 && side > 1.4 && side < 4.4 && P.speed > 24 && P.speed > c.speed + 5 && c.nmBad <= 0 && c.type !== 'cop' && c.type !== 'rescue') hooks.nearMiss(c, side);
+      if (c.nmDs > 0 && ds <= 0 && side > 1.4 && side < 4.4 && P.speed > 24 && P.speed > c.speed + 5 && !(c.nmBad > 0) && !c.own) hooks.nearMiss(c, side);
       c.nmDs = ds;
     } else c.nmDs = undefined;
-    const m = c.mesh, seen = Math.hypot(c.x - cam.x, c.z - cam.z) < (me.see || 240);
-    m.visible = seen;
-    if (!seen) continue;
-    m.position.set(c.x, 0, c.z);
-    m.rotation.y = -(Math.atan2(p.tz, p.tx) + (c.dir < 0 ? Math.PI : 0)) - dl * c.dir * 3 + (c.wreck ? c.wreck.yaw : 0);
-    for (const w of m.userData.wheels) w.rotation.z -= c.speed * dt / 0.35;
-    animateCar(m, t, null);
+    // Zusatzautos aus einem Stau verschwinden, sobald sie draussen sind und niemand hinschaut
+    if (c.extra && !jam && d2 > (see + 60) ** 2 && !c.wreck && c !== (cars.cop && cars.cop.target)) { c.dead = true; dead++; continue; } // ein Auto aus dem Vorrat gibt die Zeichnung unten zurück
+    // zeichnen (nach der Schleife): merken, wie weit weg und wie gedreht
+    if (d2 < see2) { c.yaw = -(Math.atan2(p.tz, p.tx) + (c.dir < 0 ? Math.PI : 0)) - dl * c.dir * 3 + (c.wreck ? c.wreck.yaw : 0); c.d2 = d2; c.cdt = cdt; vis.push(c); }
+    else if (c.own) c.mesh.visible = false;
   }
+  // Die nächsten Autos jeder Art bekommen ein echtes 3D-Auto aus dem Vorrat, alle anderen einen Klotz
+  vis.sort((a, b) => a.d2 - b.d2);
+  const left = { ...POOL }, chosen = new Set();
+  for (const c of vis) if (!c.own && c.d2 < near2 && left[c.type] > 0) { left[c.type]--; chosen.add(c); }
+  for (const c of cars.meshed) if (c.mesh && !chosen.has(c)) { c.mesh.visible = false; cars.pool[c.type].push(c.mesh); c.mesh = null; }
+  cars.meshed.length = 0;
+  for (const c of chosen) { if (!c.mesh) c.mesh = cars.pool[c.type].pop(); cars.meshed.push(c); }
+  for (const c of vis) {
+    const m = c.mesh, yaw = c.yaw;
+    if (m) {
+      m.visible = true;
+      m.position.set(c.x, 0, c.z);
+      m.rotation.y = yaw;
+      for (const w of m.userData.wheels) w.rotation.z -= c.speed * c.cdt / 0.35;
+      if (m.userData.flash) m.userData.flash.visible = c.flashT > 0 && Math.floor(t * 8) % 2 === 0;
+      animateCar(m, t, null);
+    } else if (nFar < MAXI) { // Klotz
+      const truck = c.type === 'slow', co = Math.cos(yaw), si = Math.sin(yaw);
+      dummy.rotation.set(0, yaw, 0);
+      dummy.position.set(c.x - (truck ? co * 0.9 : 0), 0.3, c.z + (truck ? si * 0.9 : 0));
+      dummy.scale.set(truck ? c.len * 0.75 : c.len, truck ? 2.6 : 0.8, truck ? 2.3 : 1.85);
+      dummy.updateMatrix(); body.setMatrixAt(nFar, dummy.matrix); body.setColorAt(nFar, tmpCol.setHex(c.col));
+      const off = truck ? c.len * 0.38 : -c.len * 0.06;
+      dummy.position.set(c.x + co * off, truck ? 0.3 : 1.1, c.z - si * off);
+      dummy.scale.set(truck ? c.len * 0.2 : c.len * 0.5, truck ? 2.2 : 0.62, truck ? 2.2 : 1.6);
+      dummy.updateMatrix(); cab.setMatrixAt(nFar, dummy.matrix);
+      nFar++;
+    }
+  }
+  body.count = cab.count = nFar;
+  body.instanceMatrix.needsUpdate = cab.instanceMatrix.needsUpdate = true;
+  if (body.instanceColor) body.instanceColor.needsUpdate = true;
+  if (dead) { let j = 0; for (const c of cars) if (!c.dead) cars[j++] = c; cars.length = j; cars.extras -= dead; }
   hooks.siren(siren);
 }
 
@@ -785,6 +1037,7 @@ export function slideInside(x, z, r, keys) {
     if (q.d < max + 4) { const k = max / (q.d || 1); return { x: q.p.x + (x - q.p.x) * k, z: q.p.z + (z - q.p.z) * k }; }
   }
   if (z > RAMP.z0 && z < RAMP.z1 && Math.abs(x) < RAMP.x1 + 4) return { x: Math.max(RAMP.x0 + r * 0.6 + 0.05, Math.min(RAMP.x1 - r * 0.6 - 0.05, x)), z };
+  if (inRestZone(x, z)) return null; // Raststätte: einfach zurück an die letzte gute Stelle
   const p = hwProject(x, z);
   if (Math.abs(p.lat) < WIDE + 2) {
     const hi = inRW(p.s, p.lat) ? Math.min(EDGE - r * 0.8, coneLat(p.s) - r * 0.6) - 0.05 : EDGE - r * 0.8 - 0.05; // Baustelle: an den Kegeln entlang

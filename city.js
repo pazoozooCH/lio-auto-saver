@@ -8,7 +8,7 @@ import { makeNoise, rng, smoothstep, surface, terrain, cloudDome } from './world
 import { createCarSound, crash, gearbox, horn, createSiren } from './sound.js';
 import { makeNetCars } from './netcars.js';
 import { makeChat } from './chat.js';
-import { buildHighway, outskirtsDist, hwDrivable, onHighway, makeHighwayTraffic, stepHighway, hwProject, hwPoint, HW, HW_LEN, HW_LIMIT,
+import { buildHighway, outskirtsDist, hwDrivable, onHighway, makeHighwayTraffic, stepHighway, hwProject, hwPoint, HW, HW_LEN, HW_LIMIT, REST, REST_ZONES,
   AREAS, buildAreas, stepAreas, groundShape, areaDrivable, inArea, lockedGate,
   PASS_AREA, buildPass, passGround, passDrivable, onPass, passTerrain, passNearest, inPassRegion, passPoints, SUMMIT, slideInside } from './outskirts.js';
 import { makeEffects, camView, cockpit, COCKPIT, CAM_NAMES, FLY_HTML, FLY_KEYS, flyCss, flyHelp, flyToggle, flyStep } from './fx.js';
@@ -202,6 +202,11 @@ function buildWorld() {
     color: (x, z, y, steep, c) => { c.lerpColors(gA, gB, NZ.fbm(x / 80, z / 80, 3)); c.lerp(rock, smoothstep(0.2, 0.4, steep)); } });
   land.material.normalScale.set(0.35, 0.35);
   scene.add(land);
+  // Süden: ein zweites Stück Gelände für die lange Autobahn und die Raststätte (gleiches Material, gleiches Raster)
+  const landS = terrain({ size: 2200, segments: 110, center: [0, 2200], height, detail: grassDetail, detailRepeat: 260,
+    color: (x, z, y, steep, c) => { c.lerpColors(gA, gB, NZ.fbm(x / 80, z / 80, 3)); c.lerp(rock, smoothstep(0.2, 0.4, steep)); } });
+  landS.material.dispose(); landS.material = land.material;
+  scene.add(landS);
 
   // Strassen, Kreuzungen, Mittellinien, Haltelinien, Zebrastreifen
   const roads = quads(1 / 8), lines = quads();
@@ -1154,9 +1159,10 @@ function stepPlaces(dt) {
   if (city.turbo > 0) city.turbo -= dt;
   // Tankstelle: unter dem Dach anhalten = volltanken (1 Münze pro 10 %) und Turbo-Benzin (30 s schneller);
   // Elektroautos laden an der grünen Ladesäule daneben. Ohne Münzen gratis.
-  const ev = isElectric(me.v.kind), zone = ev ? P.charge : P.gas, stopped = Math.abs(me.speed) < 1.5 && me.alt < 2 && !city.walk;
-  if (stopped && !ev && inZone(P.charge, x, z) && city.fuelT === 0) { showMsg('⛽ Benziner tanken unter dem roten Dach', 1.6); city.fuelT = -1; }
-  if (stopped && ev && inZone(P.gas, x, z) && city.fuelT === 0) { showMsg('⚡ Elektroauto: lade an der grünen Ladesäule', 1.6); city.fuelT = -1; }
+  const RZ = REST_ZONES, Pl = inZone(RZ.gas, x, z, 10) || inZone(RZ.charge, x, z, 10) ? RZ : P; // Tankstelle in der Stadt oder an der Raststätte
+  const ev = isElectric(me.v.kind), zone = ev ? Pl.charge : Pl.gas, stopped = Math.abs(me.speed) < 1.5 && me.alt < 2 && !city.walk;
+  if (stopped && !ev && inZone(Pl.charge, x, z) && city.fuelT === 0) { showMsg('⛽ Benziner tanken unter dem roten Dach', 1.6); city.fuelT = -1; }
+  if (stopped && ev && inZone(Pl.gas, x, z) && city.fuelT === 0) { showMsg('⚡ Elektroauto: lade an der grünen Ladesäule', 1.6); city.fuelT = -1; }
   if (stopped && inZone(zone, x, z)) {
     if (city.fuelT >= 0) {
       if (city.fuelT === 0) { showMsg(ev ? '⚡ Laden …' : '⛽ Tanken …', 1.6); city.filled = 0; }
@@ -1170,7 +1176,7 @@ function stepPlaces(dt) {
         window.beep && window.beep(660, 0.1, 'triangle', 0.06); window.beep && window.beep(990, 0.18, 'triangle', 0.06, 0.1);
       }
     }
-  } else if (!inZone(P.gas, x, z, 3) && !inZone(P.charge, x, z, 3)) city.fuelT = 0;
+  } else if (!inZone(Pl.gas, x, z, 3) && !inZone(Pl.charge, x, z, 3)) city.fuelT = 0;
   // Waschanlage: langsam durchfahren, Bürsten drehen schneller, Schaum; hinten raus = blitzblank
   const inWash = inZone(P.wash, x, z) && me.alt < 2;
   for (const b of P.wash.brushes) b.rotation.y += dt * (inWash ? 14 : 1.5);
@@ -2876,7 +2882,7 @@ function drawMinimapBase() {
 }
 // Draussen: Übersicht mit Stadt, Zufahrt und Autobahn
 function drawWideMap(g) {
-  const sc = (MAP - 12) / 2150, wx = x => MAP / 2 + (x + 50) * sc, wz = z => MAP / 2 + (z + 40) * sc, me = city.me;
+  const sc = (MAP - 12) / 3700, wx = x => MAP / 2 + x * sc, wz = z => MAP / 2 + (z - 820) * sc, me = city.me;
   g.fillStyle = 'rgba(32,62,38,0.92)'; g.fillRect(0, 0, MAP, MAP);
   const rect = (b, col) => { g.fillStyle = col; g.fillRect(wx(b.x0), wz(b.z0), (b.x1 - b.x0) * sc, (b.z1 - b.z0) * sc); };
   rect({ x0: -1100, x1: -702, z0: -700, z1: 700 }, '#1e5a8a'); // Wasser
@@ -2891,7 +2897,8 @@ function drawWideMap(g) {
   g.stroke();
   g.beginPath(); g.moveTo(wx(0), wz(HALF)); g.lineTo(wx(0), wz(HW.cz - HW.R)); g.stroke();
   g.fillStyle = '#fde047';
-  for (const c of city.hw) g.fillRect(wx(c.x) - 1.2, wz(c.z) - 1.2, 2.5, 2.5);
+  for (const c of city.hw) if (c.dir) g.fillRect(wx(c.x) - 1, wz(c.z) - 1, 2, 2);
+  g.fillStyle = '#f59e0b'; g.fillRect(wx(REST.x - 150), wz(REST.z + 20), 300 * sc, 110 * sc); // Raststätte
   g.fillStyle = '#ef4444'; g.strokeStyle = '#000'; g.lineWidth = 1.5;
   g.beginPath(); g.arc(wx(me.pos.x), wz(me.pos.z), 5, 0, Math.PI * 2); g.fill(); g.stroke();
 }
@@ -2983,7 +2990,7 @@ export function startCity({ player, kinds, topSpeed, onExit, pay = () => 0, earn
   parkLotCars();
   setupKeys();
   city.hw = makeHighwayTraffic(S.scene, kinds);
-  for (const h of city.hw) noShadow(h.mesh);
+  for (const m of city.hw.meshes) noShadow(m);
   setupDealer();
   // Fahrzeuge, die erst später auftauchen, schon jetzt einmal bauen (danach nur noch kopieren – sonst ruckelt es dann)
   for (const v of [...city.base, { kind: 'police', color: kinds.police.color }, { kind: 'sports', color: '#18181b' }, { kind: 'muscle', color: '#18181b' },
