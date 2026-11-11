@@ -1219,11 +1219,11 @@ function startLift(w) {
     w.chair = ch;
   }
   w.mesh.add(w.chair);
-  showMsg('🚡 Es geht hinauf!', 1.6);
+  showMsg('🚡 Es geht hinauf! Leertaste (DRIFT) = schneller', 2.2);
 }
 function stepLift(w, dt) {
   const L = w.lift, C = S.country, T = C.lift.towers, n = T.length - 1;
-  L.u = Math.min(1, L.u + dt * 9 / L.len);
+  L.u = Math.min(1, L.u + dt * (city.input.drift ? 36 : 9) / L.len); // Leertaste (oder DRIFT): viermal so schnell
   const f = Math.min(n - 1e-6, L.u * n), k = Math.floor(f), q = f - k, a = T[k], b = T[k + 1];
   w.x = a.x + (b.x - a.x) * q + C.lift.sx; w.z = a.z + (b.z - a.z) * q + C.lift.sz;
   w.gy = a.y + (b.y - a.y) * q - 2.9;
