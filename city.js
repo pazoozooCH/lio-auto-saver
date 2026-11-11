@@ -1722,16 +1722,16 @@ function skiOn(w) {
     for (const z of [-0.12, 0.12]) { const s = new THREE.Mesh(new THREE.BoxGeometry(1.8, 0.05, 0.11), m); s.position.set(0.15, 0.03, z); g.add(s); }
     w.skis = g;
   }
-  w.mesh.add(w.skis);
+  (w.mesh.userData.body || w.mesh).add(w.skis); // Ski drehen beim Salto mit
   w.ski = true; w.speed = 0;
   S.ui.hint.textContent = '⛷️ ⬅️ ➡️ lenken · ⬆️ anschieben · ⬇️ bremsen · X Ski aus (unten an der Talstation: X = Lift)';
   showMsg('⛷️ Ski an! Fahr hinunter – ⬅️➡️ lenken, ⬇️ bremsen', 2.6);
 }
 function skiOff(w) {
   w.ski = false; w.speed = 0;
-  if (w.skis) w.mesh.remove(w.skis);
+  if (w.skis && w.skis.parent) w.skis.parent.remove(w.skis);
   w.mesh.rotation.set(0, -w.h, 0);
-  S.ui.hint.textContent = '⬅️ ➡️ drehen · ⬆️ gehen · Leertaste rennen · X einsteigen';
+  S.ui.hint.textContent = '⬅️ ➡️ drehen · ⬆️ gehen · Leertaste rennen · E springen · Q Backflip · X einsteigen';
   showMsg('🚶 Ski aus', 1.2);
 }
 function stepSki(w, dt) {
@@ -1749,9 +1749,12 @@ function stepSki(w, dt) {
   if (allowedAt(nx, nz, 0.5)) { w.x = nx; w.z = nz; } else { v = 0; if (city.msgT <= 0) showMsg('⛷️ Hier geht es nicht weiter', 1.2); }
   w.speed = v; w.gy = G(w.x, w.z);
   if (Math.abs(v) > 8 && steer && Math.random() < dt * 30) S.fx.puff(w.x - fx, w.gy + 0.2, w.z - fz, 0, 0); // Schnee stäubt
-  w.mesh.position.set(w.x, w.gy, w.z); w.mesh.rotation.set(-steer * Math.min(0.4, Math.abs(v) / 40), -w.h, 0);
-  w.mesh.userData.legs.forEach(l => { l.rotation.z = 0.35; });
-  w.mesh.userData.arms.forEach((a, i) => { a.rotation.z = 0.5 + (input.gas ? Math.sin(city.t * 8 + i) * 0.5 : 0); });
+  stepAir(w, dt); // auf Ski: springen und Backflips!
+  w.mesh.position.set(w.x, w.gy + (w.jy || 0), w.z); w.mesh.rotation.set(-steer * Math.min(0.4, Math.abs(v) / 40), -w.h, 0);
+  if (!w.air && !(w.fallT > 0)) {
+    w.mesh.userData.legs.forEach(l => { l.rotation.z = 0.35; }); (w.mesh.userData.knees || []).forEach(k => { k.rotation.z = -0.6; });
+    w.mesh.userData.arms.forEach((a, i) => { a.rotation.z = 0.5 + (input.gas ? Math.sin(city.t * 8 + i) * 0.5 : 0); });
+  }
   const atLift = Math.hypot(w.x - LIFT.A.x, w.z - LIFT.A.z) < 14;
   if (atLift && !(w.target && w.target.lift)) showMsg('🚡 Talstation – X: nochmals hinauf', 1.6);
   w.target = atLift ? { lift: true } : null;
@@ -1801,10 +1804,10 @@ function leavePlane() {
   Object.assign(me, { speed: 0, vl: 0, alt: 0, fly: false });
   city.plane = null;
   S.ui.flyctl.hidden = true; S.ui.flybtn.hidden = !city.canFly;
-  const w = city.walk = { x: px, z: pz, h: me.heading, speed: 0, phase: 0, mesh: makePerson(), target: null };
+  const w = city.walk = { x: px, z: pz, h: me.heading, speed: 0, phase: 0, mesh: makePlayer(), target: null };
   w.mesh.position.set(w.x, 0, w.z); S.scene.add(w.mesh);
   S.ui.walkbtn.textContent = '🚗';
-  S.ui.hint.textContent = '⬅️ ➡️ drehen · ⬆️ gehen · Leertaste rennen · X einsteigen';
+  S.ui.hint.textContent = '⬅️ ➡️ drehen · ⬆️ gehen · Leertaste rennen · E springen · Q Backflip · X einsteigen';
   showMsg('🚶 Ausgestiegen – dein Auto steht noch, wo du es gelassen hast', 2.2);
 }
 function planeCrash() {
@@ -1893,11 +1896,11 @@ function leaveBoat() {
   Object.assign(me.pos, B.carPos); me.heading = B.carH;
   Object.assign(me, { speed: 0, vl: 0, alt: 0 });
   city.boat = null;
-  const w = city.walk = { x: -768, z: -420, h: 0, speed: 0, phase: 0, mesh: makePerson(), target: null };
+  const w = city.walk = { x: -768, z: -420, h: 0, speed: 0, phase: 0, mesh: makePlayer(), target: null };
   w.mesh.position.set(w.x, 0, w.z);
   S.scene.add(w.mesh);
   S.ui.walkbtn.textContent = '🚗';
-  S.ui.hint.textContent = '⬅️ ➡️ drehen · ⬆️ gehen · Leertaste rennen · X einsteigen';
+  S.ui.hint.textContent = '⬅️ ➡️ drehen · ⬆️ gehen · Leertaste rennen · E springen · Q Backflip · X einsteigen';
   showMsg('🚶 Am Steg ausgestiegen – geh zu deinem Auto', 2);
 }
 function onBale() {
@@ -2769,6 +2772,112 @@ function makePerson(shirtColor = 0x2563eb, hairColor = 0x5a3a1e, skinColor = 0xf
   g.userData = { legs, arms };
   return g;
 }
+// Deine Spielfigur (zu Fuss): Kappe, Gesicht mit Augen und Mund, Kapuzenpulli, Jeans, Turnschuhe; Knie und Ellbogen
+// biegen sich. Aufbau: root (Ort, Richtung) → spin (Drehpunkt in der Körpermitte, für Saltos) → body.
+function makePlayer() {
+  const root = new THREE.Group(), spin = new THREE.Group(), body = new THREE.Group();
+  root.add(spin); spin.position.y = 1.0; spin.add(body); body.position.y = -1.0;
+  const M = (color, r = 0.8, o = {}) => new THREE.MeshStandardMaterial({ color, roughness: r, ...o });
+  const skin = M(0xf2c9a0, 0.7), hood = M(0xdc2626, 0.85), hoodDark = M(0xb91c1c, 0.85), white = M(0xf8fafc, 0.6), jeans = M(0x1e3a8a, 0.9),
+    shoe = M(0xf8fafc, 0.5), sole = M(0x374151, 0.8), cap = M(0x1d4ed8, 0.7), hair = M(0x5a3a1e, 0.9), dark = M(0x111827, 0.4);
+  const add = (geo, m, x, y, z, parent = body) => { const o = new THREE.Mesh(geo, m); o.position.set(x, y, z); o.castShadow = true; parent.add(o); return o; };
+  const joint = (parent, x, y, z) => { const g = new THREE.Group(); g.position.set(x, y, z); parent.add(g); return g; };
+  const legs = [], knees = [], arms = [], elbows = [];
+  for (const sz of [-1, 1]) { // Beine: Oberschenkel, Knie, Unterschenkel, Turnschuh
+    const hip = joint(body, 0, 0.95, sz * 0.11); add(new THREE.CapsuleGeometry(0.085, 0.34, 4, 10), jeans, 0, -0.22, 0, hip);
+    const knee = joint(hip, 0, -0.45, 0); add(new THREE.CapsuleGeometry(0.075, 0.34, 4, 10), jeans, 0, -0.22, 0, knee);
+    add(new THREE.BoxGeometry(0.3, 0.1, 0.13), shoe, 0.05, -0.47, 0, knee); add(new THREE.BoxGeometry(0.31, 0.035, 0.14), sole, 0.05, -0.53, 0, knee);
+    add(new THREE.BoxGeometry(0.08, 0.02, 0.135), M(0xdc2626), 0.12, -0.42, 0, knee); // Streifen am Schuh
+    legs.push(hip); knees.push(knee);
+  }
+  // Pulli: Bauch, Brust, Tasche, Kapuze hinten, Schnüre
+  const torso = joint(body, 0, 0.98, 0);
+  add(new THREE.CapsuleGeometry(0.19, 0.36, 6, 14), hood, 0, 0.3, 0, torso).scale.set(0.78, 1, 1.18);
+  add(new THREE.BoxGeometry(0.03, 0.14, 0.24), hoodDark, 0.15, 0.17, 0, torso); // Bauchtasche
+  add(new THREE.SphereGeometry(0.15, 14, 10, 0, Math.PI * 2, 0, Math.PI / 2), hoodDark, -0.1, 0.55, 0, torso).rotation.z = 0.9; // Kapuze
+  for (const sz of [-0.05, 0.05]) add(new THREE.CylinderGeometry(0.008, 0.008, 0.16, 4), white, 0.15, 0.45, sz, torso);
+  add(new THREE.BoxGeometry(0.2, 0.12, 0.34), jeans, 0, 0.0, 0, torso); // Gurt/Hüfte
+  for (const sz of [-1, 1]) { // Arme: Schulter, Ellbogen, Unterarm, Hand
+    const sh = joint(torso, 0, 0.5, sz * 0.27); add(new THREE.CapsuleGeometry(0.062, 0.24, 4, 10), hood, 0, -0.16, 0, sh);
+    const el = joint(sh, 0, -0.33, 0); add(new THREE.CapsuleGeometry(0.057, 0.22, 4, 10), hood, 0, -0.14, 0, el);
+    add(new THREE.CylinderGeometry(0.062, 0.062, 0.04, 10), white, 0, -0.27, 0, el); // Bündchen
+    add(new THREE.SphereGeometry(0.06, 10, 8), skin, 0, -0.33, 0, el).scale.set(1, 1.15, 0.8);
+    arms.push(sh); elbows.push(el);
+  }
+  // Kopf mit Gesicht und Kappe (Schirm nach vorne)
+  const head = joint(torso, 0, 0.62, 0);
+  add(new THREE.CylinderGeometry(0.05, 0.06, 0.1, 10), skin, 0, 0.02, 0, head);
+  add(new THREE.SphereGeometry(0.13, 20, 16), skin, 0, 0.16, 0, head).scale.set(1, 1.08, 0.95);
+  for (const sz of [-1, 1]) {
+    add(new THREE.SphereGeometry(0.03, 10, 8), white, 0.11, 0.18, sz * 0.045, head).scale.set(0.6, 1, 1);
+    add(new THREE.SphereGeometry(0.017, 8, 6), dark, 0.13, 0.18, sz * 0.045, head);
+    add(new THREE.BoxGeometry(0.01, 0.012, 0.045), hair, 0.125, 0.225, sz * 0.048, head); // Augenbrauen
+    add(new THREE.SphereGeometry(0.032, 8, 6), skin, 0, 0.16, sz * 0.128, head).scale.set(0.6, 1, 0.5); // Ohren
+  }
+  add(new THREE.SphereGeometry(0.022, 8, 6), skin, 0.135, 0.15, 0, head); // Nase
+  const mouth = add(new THREE.TorusGeometry(0.035, 0.008, 6, 12, Math.PI), M(0x9f1239), 0.125, 0.105, 0, head); mouth.rotation.set(0, Math.PI / 2, Math.PI); // Lächeln
+  add(new THREE.SphereGeometry(0.137, 18, 10, 0, Math.PI * 2, 0, Math.PI / 2), cap, -0.005, 0.2, 0, head);
+  add(new THREE.BoxGeometry(0.16, 0.02, 0.2), cap, 0.15, 0.215, 0, head).rotation.z = -0.12; // Schirm
+  add(new THREE.SphereGeometry(0.02, 8, 6), white, 0, 0.335, 0, head); // Knopf oben
+  add(new THREE.SphereGeometry(0.135, 14, 8, 0, Math.PI * 2, Math.PI * 0.45, Math.PI * 0.25), hair, -0.01, 0.17, 0, head); // Haare unter der Kappe
+  root.userData = { legs, knees, arms, elbows, spin, body, torso, head };
+  return root;
+}
+// Gehen und Rennen: Beine mit Knien, Arme mit Ellbogen, Körper wippt und lehnt sich nach vorne; im Stand atmen
+function animatePlayer(w, dt) {
+  const U = w.mesh.userData;
+  if (!U.knees) { animatePerson(w, dt); return; }
+  if (w.air || w.fallT > 0) { w.mesh.position.set(w.x, (w.gy || 0) + (w.jy || 0), w.z); w.mesh.rotation.set(0, -w.h, 0); return; }
+  const sp = Math.abs(w.speed), run = sp > 4.5, dir = w.speed < 0 ? -1 : 1;
+  w.phase += sp * dt * (run ? 1.9 : 2.7);
+  const amp = Math.min(1, sp / 3) * (run ? 0.95 : 0.55);
+  U.legs.forEach((l, i) => { const s = Math.sin(w.phase + i * Math.PI); l.rotation.z = s * amp * dir; U.knees[i].rotation.z = -Math.max(0, -Math.cos(w.phase + i * Math.PI)) * amp * 1.5 - (run ? 0.12 : 0.03); });
+  U.arms.forEach((a, i) => { a.rotation.z = -Math.sin(w.phase + i * Math.PI) * amp * 0.9 * dir; a.rotation.x = (i ? -1 : 1) * 0.06; U.elbows[i].rotation.z = 0.25 + (run ? 1.0 : 0.25) * Math.min(1, sp / 3); });
+  const breathe = sp < 0.2 ? Math.sin(city.t * 2.2) * 0.01 : 0;
+  U.body.position.y = -1.0 + Math.abs(Math.sin(w.phase)) * 0.05 * amp + breathe;
+  U.torso.rotation.z = -(run ? 0.2 : 0.05 * amp);
+  U.head.rotation.y = sp < 0.2 ? Math.sin(city.t * 0.6) * 0.25 : 0; // umschauen, wenn man steht
+  U.spin.rotation.set(0, 0, 0);
+  w.mesh.position.set(w.x, (w.gy || 0) + (w.jy || 0), w.z); w.mesh.rotation.set(0, -w.h, 0);
+}
+// Springen und Tricks (zu Fuss und auf Ski): E / ▲ springen, Q / ▼ Backflip (rennend: Doppel-Backflip),
+// in der Luft ⬅️➡️ = drehen (360°). Nicht fertig gedreht = hingefallen.
+function stepAir(w, dt) {
+  const input = city.input, U = w.mesh.userData, up = !!input.up, down = !!input.down;
+  const upHit = up && !w.upPrev, downHit = down && !w.downPrev; w.upPrev = up; w.downPrev = down;
+  if (w.fallT > 0) { // hingefallen: kurz liegen, dann aufstehen
+    w.fallT -= dt; w.speed = 0;
+    U.spin.rotation.set(0, 0, w.fallT > 0.5 ? 1.45 : 1.45 * w.fallT / 0.5); w.jy = 0;
+    if (w.fallT <= 0) U.spin.rotation.set(0, 0, 0);
+    return;
+  }
+  if (!w.air && (upHit || downHit) && U.spin) {
+    const run = !!input.drift || Math.abs(w.speed) > 6, flip = downHit ? (run ? 2 : 1) * Math.PI * 2 : 0, vy = downHit ? (run ? 9.6 : 7.6) : (run ? 7 : 6);
+    w.air = { vy, y: 0, flip, rot: 0, spinY: 0, rate: flip / (2 * vy / 9.81 * 0.9) };
+    window.beep && window.beep(520, 0.06, 'triangle', 0.03);
+  }
+  const A = w.air;
+  if (!A) { w.jy = 0; return; }
+  A.vy -= 9.81 * dt; A.y += A.vy * dt;
+  if (A.flip) A.rot = Math.min(A.flip, A.rot + A.rate * dt);
+  else if (input.left || input.right) A.spinY += (input.right ? -1 : 1) * 10 * dt; // Pirouette
+  U.spin.rotation.set(0, A.spinY, A.rot);
+  if (A.flip) { // eng zusammen beim Salto
+    U.legs.forEach(l => { l.rotation.z = 1.7; }); U.knees.forEach(k => { k.rotation.z = -2.2; }); U.arms.forEach(a => { a.rotation.z = 1.0; }); U.elbows.forEach(e => { e.rotation.z = 1.3; });
+  } else { U.legs.forEach((l, i) => { l.rotation.z = i ? 0.35 : -0.2; }); U.knees.forEach(k => { k.rotation.z = -0.7; }); U.arms.forEach(a => { a.rotation.z = 2.5; }); U.elbows.forEach(e => { e.rotation.z = 0.2; }); }
+  w.jy = Math.max(0, A.y);
+  if (A.y <= 0 && A.vy < 0) { // Landung
+    w.air = null; w.jy = 0; U.spin.rotation.set(0, 0, 0);
+    const flipLeft = A.flip - A.rot, spins = Math.abs(A.spinY) / (Math.PI * 2), spinLeft = Math.abs(spins - Math.round(spins)) * Math.PI * 2;
+    if (flipLeft > 0.6 || (spins > 0.3 && spinLeft > 0.9)) { w.fallT = 1.4; showMsg('🤕 Autsch – hingefallen!', 1.4); crash(0.15, 'car'); return; }
+    let name = A.flip ? (A.flip > 7 ? '🤸 Doppel-Backflip!' : '🤸 Backflip!') : spins >= 0.7 ? '🌀 ' + Math.round(spins) * 360 + '°-Drehung!' : '';
+    if (!name) return;
+    city.tricks = (city.tricks || 0) + 1;
+    const coin = !city.net && city.tricks % 5 === 0 ? 1 : 0; if (coin) city.earn(coin);
+    showMsg(name + '  (' + city.tricks + ' Tricks)' + (coin ? '  +1 🪙' : ''), 1.6);
+    window.beep && window.beep(880, 0.08, 'triangle', 0.05);
+  }
+}
 // Gehen: Beine und Arme schwingen (p: x, z, h, speed, phase, mesh)
 function animatePerson(p, dt) {
   p.phase += Math.abs(p.speed) * dt * 2.4;
@@ -2791,13 +2900,13 @@ function toggleWalk() {
   if (Math.abs(me.speed) > 3 || me.alt > 0.5) { showMsg('Zuerst anhalten', 1.2); return; }
   Object.assign(me, { speed: 0, vl: 0, steer: 0, fly: false, landing: false, alt: 0 });
   const fx = Math.cos(me.heading), fz = Math.sin(me.heading), side = me.radius * 0.6 + 0.9; // links = Fahrerseite
-  const w = city.walk = { x: me.pos.x + fz * side + fx * 0.3, z: me.pos.z - fx * side + fz * 0.3, h: me.heading - Math.PI / 2, speed: 0, phase: 0, mesh: makePerson(), target: null };
+  const w = city.walk = { x: me.pos.x + fz * side + fx * 0.3, z: me.pos.z - fx * side + fz * 0.3, h: me.heading - Math.PI / 2, speed: 0, phase: 0, mesh: makePlayer(), target: null };
   w.mesh.position.set(w.x, 0, w.z);
   S.scene.add(w.mesh);
   if (me.mesh.userData.driver) me.mesh.userData.driver.visible = false; // der Fahrer ist ja ausgestiegen
   S.ui.walkbtn.textContent = '🚗';
   S.ui.flybtn.hidden = true;
-  S.ui.hint.textContent = '⬅️ ➡️ drehen · ⬆️ gehen · Leertaste rennen · X einsteigen';
+  S.ui.hint.textContent = '⬅️ ➡️ drehen · ⬆️ gehen · Leertaste rennen · E springen · Q Backflip · X einsteigen';
   showMsg('🚶 Ausgestiegen!', 1.4);
 }
 function getIn() {
@@ -2838,9 +2947,12 @@ function stepWalk(dt) {
   if (city.sleep || city.movie) return; // schläft oder schaut einen Film
   if (w.lift) { stepLift(w, dt); return; }
   if (w.ski) { stepSki(w, dt); return; }
-  w.h += ((input.right ? 1 : 0) - (input.left ? 1 : 0)) * 2.6 * dt;
-  const want = input.gas ? (input.drift ? 7 : 3.6) : input.brake ? -1.8 : 0;
-  w.speed += (want - w.speed) * Math.min(1, dt * 8);
+  stepAir(w, dt); // springen, Backflip, hinfallen
+  const steer = (input.right ? 1 : 0) - (input.left ? 1 : 0);
+  w.turn = (w.turn || 0) + (steer - (w.turn || 0)) * Math.min(1, dt * 10); // weich drehen
+  if (!w.air) w.h += w.turn * (Math.abs(w.speed) > 4.5 ? 2.2 : 3) * dt; // in der Luft dreht ⬅️➡️ die Figur (Pirouette)
+  const want = w.fallT > 0 ? 0 : input.gas ? (input.drift ? 8 : 3.8) : input.brake ? -2 : 0;
+  w.speed += (want - w.speed) * Math.min(1, dt * (w.air ? 1 : want ? 6 : 10));
   const fx = Math.cos(w.h), fz = Math.sin(w.h);
   w.x += fx * w.speed * dt; w.z += fz * w.speed * dt;
   const R = 0.35, push = (ox, oz, min) => {
@@ -2857,7 +2969,7 @@ function stepWalk(dt) {
   if (!allowedAt(w.x, w.z, 0.5)) { w.x = w.okX ?? w.x; w.z = w.okZ ?? w.z; } else { w.okX = w.x; w.okZ = w.z; }
   // Laufen: Beine und Arme schwingen
   w.gy = groundAt(w.x, w.z);
-  animatePerson(w, dt);
+  animatePlayer(w, dt);
   // Welches Auto ist nah genug zum Einsteigen? Das eigene oder eines in der eigenen Base
   let best = null, bd = Infinity;
   const d0 = Math.hypot(me.pos.x - w.x, me.pos.z - w.z) - me.radius * 0.6;
@@ -4601,7 +4713,7 @@ function updateHud(dt) {
   S.ui.dmgBar.style.width = Math.round(city.damage * 100) + '%';
   S.ui.kmh.textContent = Math.round(Math.abs(me.speed) * 3.6);
   S.ui.flybtn.textContent = me.fly && !me.landing ? '🛬' : '✈️';
-  S.ui.flyctl.hidden = city.plane ? (!city.plane.air && me.speed < 30) : (!me.fly || me.landing);
+  S.ui.flyctl.hidden = city.walk ? !!(city.walk.lift || city.sleep || city.movie) : city.plane ? (!city.plane.air && me.speed < 30) : (!me.fly || me.landing); // zu Fuss: ▲ springen, ▼ Backflip
   S.ui.cruise.hidden = !!(city.walk || city.plane);
   drawMinimap();
   if (!S.snd) return;
@@ -4631,7 +4743,7 @@ function render(dt) {
     camAhead.set(me.pos.x + fx * 25, y + 4, me.pos.z + fz * 25);
   } else if (w) { // zu Fuss: Kamera hinter dem Kopf
     const wx = Math.cos(w.h), wz = Math.sin(w.h);
-    const gy = w.gy || 0;
+    const gy = (w.gy || 0) + (w.jy || 0) * 0.6;
     camWant.set(w.x - wx * 4.2, gy + 2.4, w.z - wz * 4.2);
     camAhead.set(w.x + wx * 3, gy + 1.3, w.z + wz * 3);
     const KI = S.places.kino;

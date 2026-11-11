@@ -40,6 +40,8 @@ Browser-Spiel ohne Build: `index.html` + `game.js` (Spiellogik, Menüs und 2D-Ze
   Kino (6,4: Film auf der Leinwand, X bei den Sitzen), Stadion (5,6: Spiel 14–22 Uhr, `S.match`).
   Verkehr (`setupTrafficSpecials`/`trafficSpecial`): Postautos an Haltestellen, Schulbus mit Blinklicht (nicht überholen),
   Ambulanz-Einsätze (`city.amb`, Platz machen), nachts keine Lastwagen (`c.off`), dafür Strassenwischer.
+  Spielfigur zu Fuss: `makePlayer` (Gelenke für Knie/Ellbogen, `spin` für Saltos), `animatePlayer`; Tricks in `stepAir`
+  (E/▲ springen, Q/▼ Backflip, rennend Doppel-Backflip, in der Luft ⬅️➡️ Pirouette; auch auf Ski).
   Dort auch das eigene Autohaus: sechs feste Plätze (3 Drehteller draussen, 3 im Ausstellungsraum), Bestellungen bringt der
   Autotransporter (`stepDelivery`), Kunden mit Wunsch und Beratung (💬/T), Spielstand `autoRetterShop` (stock, orders). Oben am Stadtrand ist Platz für sechs Basen nebeneinander (nur für echte Spieler, sonst Wiese): bis zu 10 ausgesuchte
   Autos (`baseGarage` in `game.js`, Spielstand `autoRetterBase`), dort Auto wechseln; online je Spieler eine (`rooms/<CODE>/bases`).
