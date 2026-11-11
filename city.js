@@ -1015,8 +1015,9 @@ function spawnTraffic(kinds) {
 
 function placeOnSegment(c) {
   const [fx, fz] = DIRS[c.d];
-  c.x = node(c.i) + fx * c.s - fz * LANE;
-  c.z = node(c.j) + fz * c.s + fx * LANE;
+  const off = LANE + (c.side || 0); // side: zur Seite gefahren (Platz für die Ambulanz)
+  c.x = node(c.i) + fx * c.s - fz * off;
+  c.z = node(c.j) + fz * c.s + fx * off;
   c.h = Math.atan2(fz, fx);
 }
 
@@ -1050,7 +1051,7 @@ function followLimit(c, me) {
     const v = Math.max(0, gap * 1.3);
     if (v < lim) { lim = v; byMe = isMe; byWreck = isWreck || false; }
   };
-  for (const o of city.cars) if (o !== c) check(o.x, o.z, o.len, false, o.wreck > 0 || o.jam);
+  for (const o of city.cars) if (o !== c && !o.off && !(c.amb && o.side > 1)) check(o.x, o.z, o.len, false, o.wreck > 0 || o.jam); // Nacht-Lastwagen fehlen; die Ambulanz fährt an Platz machenden vorbei
   if (city.police) check(city.police.pos.x, city.police.pos.z, 5, false);
   if (city.truck && c !== city.truck) check(city.truck.x, city.truck.z, city.truck.len, false); // Lieferwagen
   if (me.alt < 2.5) check(me.pos.x, me.pos.z, me.len, true); // wer darüber fliegt, stört nicht
@@ -1072,6 +1073,8 @@ function stepTraffic(dt) {
       continue;
     }
     if (c.lot) { stepLot(c, dt); showCar(c, dt); continue; } // in der Blauen Zone
+    if (c.off) { c.mesh.visible = false; continue; } // nachts: Lastwagen stehen im Depot (tagsüber die Strassenwischer)
+    const special = trafficSpecial(c, dt); // Bus an der Haltestelle, Schulbus, Platz machen für die Ambulanz
     const B = S.places.blue;
     if (B && !c.turn && c.i === B.seg.i && c.j === B.seg.j && c.d === B.seg.d && c.s > 12 && c.s < 18 && !c.lotAsk && !c.rush && !c.reckless && c.len < 5.6) {
       c.lotAsk = true; // an der Einfahrt: hinein? (meist, wenn viel los ist; immer, wenn es extra dafür kam)
@@ -1101,6 +1104,8 @@ function stepTraffic(dt) {
     if (c.ghost > 0) c.ghost -= dt;
     else if (!c.rush && !c.reckless) limit = Math.min(limit, f.lim); // Raser bremsen nicht
     if (c.blocked > 0) { c.blocked -= dt; limit = 0; } // nach einem Rempler kurz stehen
+    if (special !== null) limit = Math.min(limit, special);
+    if (c.amb) { limit = f.byMe ? Math.min(c.cruise, f.lim) : c.turn ? c.cruise * 0.6 : c.cruise; c.ambBlock = f.byMe && f.lim < 2; } // Ambulanz: nur du kannst sie aufhalten
     // Wer wegen dir warten muss, hupt irgendwann
     c.waitMe = f.byMe && limit < 1 ? c.waitMe + dt : 0;
     c.honkT -= dt;
@@ -1172,6 +1177,129 @@ function parkStep(x, z) {
   else if (city.pkR != null) {
     city.pkL = Math.max(0, Math.min(3, Math.round(city.pkR + pkT(z)))); city.pkR = null;
     showMsg(city.pkL === 3 ? '🌇 Auf dem Dach – schöne Aussicht!' : city.pkL ? '🅿️ Ebene ' + city.pkL : '🅿️ Erdgeschoss', 1.4);
+  }
+}
+
+// ---------- Besonderer Verkehr ----------
+// Postautos halten an den Haltestellen 🚏 (Leute steigen ein). Der Schulbus hält ab und zu mit Blinklicht: nicht
+// überholen! Ab und zu kommt eine Ambulanz mit Blaulicht von hinten: alle fahren zur Seite; wer sie aufhält, bekommt
+// eine Busse. Nachts (22–5 Uhr) fahren keine Lastwagen, dafür die Strassenwischer.
+const TRUCKS = new Set(['delivery', 'garbage', 'parcel', 'bakery', 'tanker', 'umzug', 'icecream']);
+const isNight = () => { const m = clockMins(); return m >= 22 * 60 || m < 5 * 60; };
+function setupTrafficSpecials(kinds) {
+  city.stops = new Map(); city.stopList = [];
+  const used = new Set();
+  for (let tries = 0; tries < 200 && city.stopList.length < 14; tries++) { // Haltestellen auf zufälligen Strassenstücken
+    const i = Math.floor(Math.random() * (N + 1)), j = Math.floor(Math.random() * (N + 1)), d = Math.floor(Math.random() * 4);
+    if (!inGrid(i + DIRS[d][0], j + DIRS[d][1]) || used.has(i + ',' + j) || (d % 2 === 0 ? j === 0 : i === 0)) continue;
+    used.add(i + ',' + j);
+    const [fx, fz] = DIRS[d], s0 = 30, x = node(i) + fx * s0 - fz * (ROAD / 2 + 1.6), z = node(j) + fz * s0 + fx * (ROAD / 2 + 1.6);
+    const st = { i, j, d, s: s0, x, z, people: [], away: 0 };
+    if (!S.stopMeshes) S.stopMeshes = [];
+    const g = new THREE.Group(); g.position.set(x, 0.16, z); g.rotation.y = -Math.atan2(fz, fx); S.scene.add(g); S.stopMeshes.push(g);
+    const M = (c, o = {}) => new THREE.MeshStandardMaterial({ color: c, roughness: 0.6, ...o });
+    const roof = new THREE.Mesh(new THREE.BoxGeometry(4, 0.15, 1.8), M(0x1f2937)); roof.position.set(0, 2.5, 0.6); g.add(roof);
+    const back = new THREE.Mesh(new THREE.BoxGeometry(4, 2.3, 0.08), M(0x93c5fd, { transparent: true, opacity: 0.45 })); back.position.set(0, 1.3, 1.45); g.add(back);
+    const bench = new THREE.Mesh(new THREE.BoxGeometry(2.6, 0.12, 0.5), M(0x8b5a2b)); bench.position.set(0, 0.5, 1.1); g.add(bench);
+    const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.05, 2.8, 6), M(0x9ca3af)); pole.position.set(-2.4, 1.4, 0); g.add(pole);
+    const sg = S.sign('🚏', '#facc15', '#111827', 0.8, 0.8); sg.position.set(-2.4, 2.9, 0); g.add(sg);
+    for (let k = 0; k < 2; k++) { const pm = makePerson(SHIRTS[(i + k) % SHIRTS.length], HAIRS[(j + k) % HAIRS.length], SKINS[(i + j + k) % SKINS.length]);
+      pm.traverse(o => { o.castShadow = false; }); pm.position.set(-0.6 + k * 1.3, 0, 0.6); pm.rotation.y = -Math.PI / 2; g.add(pm); st.people.push(pm); }
+    city.stops.set(i + ',' + j + ',' + d, st); city.stopList.push(st);
+  }
+  const add = (kind, extra) => { if (!kinds[kind]) return null; let c;
+    for (let t = 0; t < 30; t++) { const i = Math.floor(Math.random() * N), j = 1 + Math.floor(Math.random() * (N - 1)); c = makeCar(kinds, i, j, 0, 15, { kind, color: kinds[kind].color, special: null }); break; }
+    placeOnSegment(c); Object.assign(c, extra); S.scene.add(c.mesh); city.cars.push(c); return c; };
+  for (let k = 0; k < 3; k++) add('postauto', { bus: true, cruise: 10 });
+  const sb = add('schoolbus', { school: true, cruise: 9, schoolT: 25 });
+  if (sb) { // Blinklichter und Stopp-Schild (nur beim Halten sichtbar)
+    const g = new THREE.Group(), red = new THREE.MeshBasicMaterial({ color: 0xff2020 }), L = sb.len / 2;
+    for (const [x, z] of [[L - 0.3, -0.7], [L - 0.3, 0.7], [-L + 0.3, -0.7], [-L + 0.3, 0.7]]) { const b = new THREE.Mesh(new THREE.SphereGeometry(0.16, 8, 6), red); b.position.set(x, 2.4, z); g.add(b); }
+    const arm = S.sign('STOP', '#dc2626', '#ffffff', 0.9, 0.9); arm.position.set(L * 0.5, 1.4, -1.35); arm.rotation.y = Math.PI / 2; g.add(arm);
+    g.visible = false; sb.mesh.add(g); sb.flash = g;
+  }
+  for (let k = 0; k < 2; k++) { const sw = add('sweeper', { sweeper: true, cruise: 5 }); if (sw) { // Bürsten vorne
+    const br = []; for (const z of [-0.8, 0.8]) { const b = new THREE.Mesh(new THREE.CylinderGeometry(0.45, 0.45, 0.25, 10), new THREE.MeshStandardMaterial({ color: 0xfacc15 })); b.position.set(sw.len / 2 - 0.2, 0.15, z); sw.mesh.add(b); br.push(b); } sw.brushes = br; } }
+  city.ambT = 120 + Math.random() * 90; city.amb = null;
+}
+// Gibt ein Höchsttempo zurück (oder null): Haltestelle, Schulbus, Platz machen
+function trafficSpecial(c, dt) {
+  const me = city.me;
+  if (c.yieldT > 0) { c.yieldT -= dt; c.side = Math.min(2.4, (c.side || 0) + dt * 2.5); if (!c.turn) placeOnSegment(c); return 0; }
+  if (c.side > 0) { c.side = Math.max(0, c.side - dt * 1.5); }
+  if (c.bus && !c.turn) {
+    if (c.busWait > 0) { c.busWait -= dt; if (c.busWait <= 0) c.busStop.away = 25; return 0; }
+    const st = city.stops.get(c.i + ',' + c.j + ',' + c.d);
+    if (st && st !== c.busLast && st.s - c.s > -0.5 && st.s - c.s < 14) {
+      if (st.s - c.s < 0.6) { c.busWait = 6; c.busLast = st; c.busStop = st; for (const p of st.people) p.visible = false; // einsteigen
+        if (Math.hypot(me.pos.x - c.x, me.pos.z - c.z) < 30 && city.msgT <= 0) showMsg('🚏 Das Postauto hält – Leute steigen ein', 1.6); return 0; }
+      return Math.sqrt(2 * 3 * Math.max(0, st.s - c.s - 0.5));
+    }
+  }
+  if (c.school) {
+    if (c.schoolStop > 0) {
+      c.schoolStop -= dt; c.flash.visible = Math.floor(city.t * 4) % 2 === 0;
+      // nicht überholen: du fährst vorbei, solange er blinkt
+      const fx = Math.cos(c.h), fz = Math.sin(c.h), dx = me.pos.x - c.x, dz = me.pos.z - c.z, along = dx * fx + dz * fz, side = Math.abs(dz * fx - dx * fz);
+      if (c.meAlong < -3 && along > 3 && side < 9 && !city.walk && me.alt < 2 && Math.abs(me.speed) > 2 && !city.ticket && !city.police) {
+        city.reason = { kind: 'school', text: '🚌 Schulbus mit Blinklicht überholt' }; giveTicket();
+      }
+      c.meAlong = along;
+      if (c.schoolStop <= 0) { c.flash.visible = false; c.schoolT = 35 + Math.random() * 25; }
+      return 0;
+    }
+    if (!c.turn && (c.schoolT -= dt) <= 0 && c.s > 12 && c.s < BLOCK - 22) { c.schoolStop = 8; c.meAlong = 0; const d = Math.hypot(me.pos.x - c.x, me.pos.z - c.z); if (d < 60) showMsg('🚌 Der Schulbus hält – warten, nicht überholen!', 2); }
+  }
+  return null;
+}
+function stepTrafficSpecials(dt) {
+  const me = city.me, night = isNight();
+  const cam = S.camera.position;
+  (city.stopList || []).forEach((st, k) => {
+    if (st.away > 0 && (st.away -= dt) <= 0) for (const p of st.people) p.visible = true;
+    S.stopMeshes[k].visible = Math.hypot(st.x - cam.x, st.z - cam.z) < city.see; // weit weg nicht zeichnen
+  });
+  for (const c of city.cars) { // Nachtfahrverbot / Strassenwischer nur nachts
+    const off = c.sweeper ? !night : night && TRUCKS.has(c.v.kind) && !c.lot;
+    if (off !== !!c.off) { c.off = off; if (!off) c.mesh.visible = true; }
+    if (c.sweeper && !c.off && c.mesh.visible) { for (const b of c.brushes) b.rotation.y += dt * 12; if (Math.random() < dt * 6) S.fx.puff(c.x + Math.cos(c.h) * c.len * 0.5, 0.3, c.z + Math.sin(c.h) * c.len * 0.5, 0, 0); }
+  }
+  if (night && TRUCKS.has(me.v.kind) && !city.walk && Math.abs(me.speed) > 2 && city.t - (city.truckMsgT || -99) > 60) { city.truckMsgT = city.t; showMsg('🚚 Nachtfahrverbot: Lastwagen fahren von 22 bis 5 Uhr nicht!', 2.6); }
+  // Ambulanz-Einsatz in der Stadt
+  const A = city.amb;
+  if (!A) {
+    if ((city.ambT -= dt) > 0 || city.walk || city.plane || city.boat || city.mission || Math.max(Math.abs(me.pos.x), Math.abs(me.pos.z)) > HALF) return;
+    city.ambT = 150 + Math.random() * 120;
+    const d = ((Math.round(me.heading / (Math.PI / 2)) % 4) + 4) % 4, [fx, fz] = DIRS[d];
+    let i, j, sMe;
+    if (fx) { j = Math.round(me.pos.z / BLOCK + N / 2); i = fx > 0 ? Math.floor(me.pos.x / BLOCK + N / 2) : Math.ceil(me.pos.x / BLOCK + N / 2); sMe = (me.pos.x - node(i)) * fx; }
+    else { i = Math.round(me.pos.x / BLOCK + N / 2); j = fz > 0 ? Math.floor(me.pos.z / BLOCK + N / 2) : Math.ceil(me.pos.z / BLOCK + N / 2); sMe = (me.pos.z - node(j)) * fz; }
+    if (!inGrid(i, j) || !inGrid(i + fx, j + fz) || sMe < 40 || sMe > BLOCK - 8) { city.ambT = 10; return; } // nur auf einem geraden Stück mit Platz dahinter
+    const c = makeCar(city.kinds, i, j, d, sMe - 34, { kind: 'ambulance', color: city.kinds.ambulance.color, special: null });
+    Object.assign(c, { amb: true, cruise: 15, speed: 12, ambT: 0, blockT: 0, passed: false });
+    placeOnSegment(c); S.scene.add(c.mesh); city.cars.push(c); city.amb = c;
+    if (!city.ambSiren && city.ambSiren !== null) city.ambSiren = createSiren();
+    showMsg('🚑 Blaulicht hinter dir – fahr zur Seite und lass sie vorbei!', 2.6);
+    return;
+  }
+  A.ambT += dt;
+  const dist = Math.hypot(me.pos.x - A.x, me.pos.z - A.z);
+  if (city.ambSiren) city.ambSiren.set(Math.max(0, 1 - dist / 200));
+  for (const c of city.cars) { // wer vor der Ambulanz fährt, macht Platz
+    if (c === A || c.off || c.lot || c.amb || c.wreck > 0) continue;
+    const fx = Math.cos(A.h), fz = Math.sin(A.h), dx = c.x - A.x, dz = c.z - A.z, along = dx * fx + dz * fz;
+    if (along > 0 && along < 40 && Math.abs(dz * fx - dx * fz) < 3 && Math.cos(c.h - A.h) > 0.5) c.yieldT = Math.max(c.yieldT || 0, 3);
+  }
+  if (A.ambBlock && !city.walk) {
+    A.blockT += dt;
+    if (A.blockT > 1 && city.msgT <= 0) showMsg('🚑 Mach Platz! Fahr rechts ran!', 1.4);
+    if (A.blockT > 6 && !A.fined && !city.ticket && !city.police) { A.fined = true; city.reason = { kind: 'amb', text: '🚑 Ambulanz aufgehalten' }; giveTicket(); }
+  }
+  const fx = Math.cos(A.h), fz = Math.sin(A.h), alongMe = (me.pos.x - A.x) * fx + (me.pos.z - A.z) * fz;
+  if (!A.passed && alongMe < -4 && dist < 25 && A.ambT > 2) { A.passed = true; if (!A.fined) { const c = city.net ? 0 : 5; if (c) city.earn(c); showMsg('👍 Gut Platz gemacht!' + (c ? '  +' + c + ' 🪙' : ''), 2); } }
+  if (A.ambT > 70 || (A.ambT > 8 && dist > 260)) { // Einsatz vorbei
+    S.scene.remove(A.mesh); city.cars.splice(city.cars.indexOf(A), 1); city.amb = null;
+    if (city.ambSiren) city.ambSiren.set(0);
   }
 }
 
@@ -2169,6 +2297,7 @@ function stepMe(dt) {
   }
   // Mit Autos zusammenstossen: du wirst weggeschoben, das andere Auto bleibt kurz stehen
   for (const c of city.cars) {
+    if (c.off) continue;
     const dx = me.pos.x - c.x, dz = me.pos.z - c.z, dd = Math.hypot(dx, dz), min = (R + c.mesh.userData.radius) * 0.8;
     if (dd < min && dd > 0.001 && me.alt < 2.5) {
       me.pos.x += dx / dd * (min - dd); me.pos.z += dz / dd * (min - dd);
@@ -2723,7 +2852,7 @@ function stepWalk(dt) {
     push(qx, qz, R);
   }
   for (const o of S.round) push(o.x, o.z, R + o.r);
-  for (const c of city.cars) push(c.x, c.z, R + c.mesh.userData.radius * 0.7); // Autos schieben einen weg
+  for (const c of city.cars) if (!c.off) push(c.x, c.z, R + c.mesh.userData.radius * 0.7); // Autos schieben einen weg
   push(me.pos.x, me.pos.z, R + me.radius * 0.6);
   if (!allowedAt(w.x, w.z, 0.5)) { w.x = w.okX ?? w.x; w.z = w.okZ ?? w.z; } else { w.okX = w.x; w.okZ = w.z; }
   // Laufen: Beine und Arme schwingen
@@ -3773,7 +3902,7 @@ function stepPolice(dt) {
 const speedFine = kmh => Math.max(10, (Math.floor(kmh / 10) - 8) * 10);
 function giveTicket() {
   city.fines++;
-  const R = city.reason || {}, amount = R.kind === 'speed' ? speedFine(R.kmh) : R.kind === 'gasse' ? 50 : R.kind === 'blue' ? 20 : R.kind === 'zebra' ? 30 : Math.min(50, 10 * city.fines), paid = city.pay(amount);
+  const R = city.reason || {}, amount = R.kind === 'speed' ? speedFine(R.kmh) : R.kind === 'gasse' ? 50 : R.kind === 'blue' ? 20 : R.kind === 'zebra' ? 30 : R.kind === 'school' ? 20 : R.kind === 'amb' ? 30 : Math.min(50, 10 * city.fines), paid = city.pay(amount);
   city.ticket = true;
   const T = S.ui.ticket;
   T.querySelector('.amount').textContent = paid ? paid + ' 🪙' : 'Verwarnung';
@@ -3794,8 +3923,8 @@ function closeTicket() {
   if (P) { P.state = 'leave'; P.t = 0; P.siren.set(0); }
   if ((city.reason || {}).jail) { city.reason = null; goToJail(); return; }
   const kind = (city.reason || {}).kind;
-  showMsg(kind === 'speed' ? 'Gute Fahrt! Und nicht zu schnell 😉' : kind === 'gasse' ? 'Bei Blaulicht immer Platz machen 🚑' : kind === 'blue' ? 'Parkscheibe nicht vergessen 🕐' : kind === 'zebra' ? 'Am Zebrastreifen immer anhalten 🚸' : 'Gute Fahrt! Und bei Rot anhalten 😉', 2);
-  if (kind === 'gasse' || kind === 'blue' || kind === 'zebra') city.reason = null;
+  showMsg(kind === 'speed' ? 'Gute Fahrt! Und nicht zu schnell 😉' : kind === 'gasse' ? 'Bei Blaulicht immer Platz machen 🚑' : kind === 'blue' ? 'Parkscheibe nicht vergessen 🕐' : kind === 'zebra' ? 'Am Zebrastreifen immer anhalten 🚸' : kind === 'school' ? 'Beim blinkenden Schulbus warten 🚌' : kind === 'amb' ? 'Bei Blaulicht immer Platz machen 🚑' : 'Gute Fahrt! Und bei Rot anhalten 😉', 2);
+  if (['gasse', 'blue', 'zebra', 'school', 'amb'].includes(kind)) city.reason = null;
 }
 function removePolice() {
   const P = city.police;
@@ -4241,6 +4370,7 @@ export function startCity({ player, kinds, topSpeed, onExit, pay = () => 0, earn
     });
   }
   city.pkL = 0; city.pkR = null; city.dOrder = null; city.movie = null;
+  setupTrafficSpecials(kinds);
   setupStadium();
   if (S.places.kino && !S.kinoCrowd) { // Leute vor dem Kino (abends)
     const K = S.places.kino; S.kinoCrowd = [];
@@ -4323,6 +4453,7 @@ function step(now) {
   stepTraffic(dt);
   stepBlue(dt);
   stepPeds(dt);
+  stepTrafficSpecials(dt);
   stepWorks(dt);
   stepHouse(dt);
   stepSleep(dt);
@@ -4563,6 +4694,8 @@ function endCity() {
   if (c.walk) S.scene.remove(c.walk.mesh);
   for (const cu of c.customers || []) S.scene.remove(cu.mesh);
   for (const p of c.peds || []) S.scene.remove(p.mesh);
+  for (const g of S.stopMeshes || []) S.scene.remove(g); S.stopMeshes = [];
+  if (c.ambSiren) c.ambSiren.stop();
   if (c.truck) S.scene.remove(c.truck.mesh);
   if (c.hw && c.hw.meshes) { // Autobahn: Vorrat, Klötze, Unfallstelle
     for (const m of c.hw.meshes) S.scene.remove(m);

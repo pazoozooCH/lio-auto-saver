@@ -35,6 +35,11 @@ Browser-Spiel ohne Build: `index.html` + `game.js` (Spiellogik, Menüs und 2D-Ze
   Fliegen: am Flughafen zu Fuss zum orangen Flugzeug (`S.areas.flyer`), X = einsteigen (`stepPlane`: rollen, ab ~150 km/h mit E/▲
   abheben, landen flach und langsam, sonst Bruch = zurück zur Piste). Tempomat über der km/h-Anzeige (`city.cruise`, C, + / −;
   höchstens die Höchstgeschwindigkeit des Autos). Stadtbild: Strassenbäume, Bänke, Läden mit Markisen, Balkone (Instanzen).
+  Stadtleben: Läden über `openPanel` (Tankstellen-Snacks `gasShop`, Lackieren `paint`, Tuning `tuning` → `dealer.mod` in game.js
+  speichert Farbe/Tuning, Drive-in `order`/`pickup`). Parkhaus (Block 4,2: `parkY`/`parkStep`/`parkBlocked`, Ebenen `city.pkL`),
+  Kino (6,4: Film auf der Leinwand, X bei den Sitzen), Stadion (5,6: Spiel 14–22 Uhr, `S.match`).
+  Verkehr (`setupTrafficSpecials`/`trafficSpecial`): Postautos an Haltestellen, Schulbus mit Blinklicht (nicht überholen),
+  Ambulanz-Einsätze (`city.amb`, Platz machen), nachts keine Lastwagen (`c.off`), dafür Strassenwischer.
   Dort auch das eigene Autohaus: sechs feste Plätze (3 Drehteller draussen, 3 im Ausstellungsraum), Bestellungen bringt der
   Autotransporter (`stepDelivery`), Kunden mit Wunsch und Beratung (💬/T), Spielstand `autoRetterShop` (stock, orders). Oben am Stadtrand ist Platz für sechs Basen nebeneinander (nur für echte Spieler, sonst Wiese): bis zu 10 ausgesuchte
   Autos (`baseGarage` in `game.js`, Spielstand `autoRetterBase`), dort Auto wechseln; online je Spieler eine (`rooms/<CODE>/bases`).
