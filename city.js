@@ -276,6 +276,8 @@ function buildWorld() {
       const s2 = sign('⚡ LADEN', '#16a34a', '#ffffff', 5, 1.2); s2.position.set(cx + 17 + side * 0.03, 2.6, cz - 6); s2.rotation.y = side * Math.PI / 2; decor.add(s2);
     }
     places.charge = { x: cx + 14.5, z: cz - 6, w: 5, d: 14 };
+    places.gasShop = { x: cx, z: cz + 6.5, w: 10, d: 4.5 }; // vor dem Shop anhalten: Snacks
+    for (const side of [0, 1]) { const s3 = sign('🛒 SHOP · SNACKS', '#f59e0b', '#111827', 7, 1.2); s3.position.set(cx, 5.4, cz + 8.9 - side * 0.05); s3.rotation.y = side ? Math.PI : 0; decor.add(s3); }
   }
   function buildWash(cx, cz) { // Waschanlage: Tunnel mit drehenden Bürsten, man fährt der Länge nach durch
     box(44, 0.04, 14, tarmac, cx, 0.18, cz);
@@ -293,6 +295,11 @@ function buildWorld() {
     const s1 = sign('🫧 WASCHANLAGE', '#0ea5e9', '#ffffff', 12, 2); s1.position.set(cx, 6.7, cz - 4.9); decor.add(s1);
     const s2 = sign('🫧 WASCHANLAGE', '#0ea5e9', '#ffffff', 12, 2); s2.position.set(cx, 6.7, cz + 4.9); decor.add(s2);
     places.wash = { x: cx, z: cz, w: 16, d: 8, brushes };
+    // Lackiererei hinter der Waschanlage: anhalten = neue Farbe aussuchen
+    box(8, 0.05, 10, mat({ color: 0xe5e7eb, roughness: 0.6 }), cx + 16, 0.21, cz);
+    for (const [k, c] of [[-3, 0xef4444], [-1, 0xfacc15], [1, 0x22c55e], [3, 0x3b82f6]]) box(0.8, 0.8, 0.8, mat({ color: c }), cx + 21, 0.6, cz + k); // Farbkübel
+    for (const side of [0, 1]) { const s3 = sign('🎨 LACKIEREN', '#7c3aed', '#ffffff', 6, 1.2); s3.position.set(cx + 16, 4, cz - 5.2 - side * 0.05); s3.rotation.y = side ? Math.PI : 0; decor.add(s3); }
+    places.paint = { x: cx + 16, z: cz, w: 8, d: 10 };
   }
   function buildPizza(cx, cz) { // Pizzeria mit gestreifter Markise; abgeholt wird vorne an der Strasse
     const shop = wallBox(18, 6, 12, walls[1], 8); shop.position.set(cx, 3.16, cz + 4); decor.add(shop);
@@ -353,6 +360,12 @@ function buildWorld() {
     decor.add(marks.mesh(lineMat));
     for (let k = 0; k < 8; k++) bays.push({ x: cx - 13.2 + 1.65 + k * 3.3, z: bz, h: Math.PI / 2 }); // vorwärts hinein: Schnauze nach +z
     places.lot = { bays };
+    // Tuning: Platz neben der Halle mit Reifenstapeln und Werkzeug
+    box(8, 0.05, 10, mat({ color: 0x334155, roughness: 0.7 }), cx - 16, 0.21, cz + 11);
+    const tire = mat({ color: 0x111827, roughness: 0.9 });
+    for (let k = 0; k < 4; k++) { const t = new THREE.Mesh(new THREE.TorusGeometry(0.42, 0.2, 8, 16).rotateX(Math.PI / 2), tire); t.position.set(cx - 20.6, 0.4 + k * 0.4, cz + 7); decor.add(t); }
+    for (const side of [0, 1]) { const s3 = sign('🔧 TUNING', '#111827', '#facc15', 6, 1.2); s3.position.set(cx - 16, 4, cz + 5.8 - side * 0.05); s3.rotation.y = side ? Math.PI : 0; decor.add(s3); }
+    places.tuning = { x: cx - 16, z: cz + 11, w: 8, d: 10 };
   }
   // Blaue Zone: Parkplatz mit blauen Feldern (Reihe A vorne mit Einfahrt in der Mitte, Reihe B hinten), Schild und
   // Anzeige „frei / besetzt“. Die Autos kommen aus dem Verkehr auf der Strasse davor (stepLot) und fahren wieder dorthin.
@@ -1007,6 +1020,91 @@ function showCar(c, dt) {
   m.rotation.y = -c.h;
   for (const w of m.userData.wheels) w.rotation.z -= (c.lot && c.lot.state === 'back' ? -1 : 1) * c.speed * dt / 0.35;
   animateCar(m, city.t, null);
+}
+
+// ---------- Läden in der Stadt (Snacks, Lackieren, Tuning, Drive-in) ----------
+// Ein Fenster für alles: openPanel({ title, rows: () => [{ id, label, price, note, done }], buy(id) }). Geht auf, wenn man
+// in einer Zone anhält (oder zu Fuss hineingeht), und zu, wenn man wegfährt. Online geschlossen (keine Münzen).
+function openPanel(P) { city.panel = P; drawPanel(); }
+function closePanel() { city.panel = null; S.ui.dealpanel.hidden = true; }
+function drawPanel() {
+  const P = city.panel, p = S.ui.dealpanel, coins = city.dealer.coins();
+  p.textContent = '';
+  const h = document.createElement('h3'); h.textContent = P.title + ' · du hast ' + coins + ' 🪙';
+  const grid = document.createElement('div'); grid.className = 'cars';
+  for (const r of P.rows()) {
+    const b = document.createElement('button'), dot = document.createElement('i'), name = document.createElement('span'), pr = document.createElement('small');
+    b.dataset.pi = r.id; b.disabled = !!r.done || coins < r.price;
+    if (r.color) dot.style.background = r.color; else dot.style.display = 'none';
+    name.textContent = r.label + (r.note ? ' · ' + r.note : '');
+    pr.textContent = r.done ? '✓' : r.price ? r.price + ' 🪙' : 'gratis';
+    b.append(dot, name, pr); grid.append(b);
+  }
+  const row = document.createElement('div'); row.className = 'row';
+  const close = document.createElement('button'); close.dataset.act = 'close'; close.textContent = '✕ Schliessen';
+  row.append(close); p.append(h, grid, row); p.hidden = false;
+}
+function onPanelClick(b) {
+  if (!city.panel) return false;
+  if (b.dataset.act === 'close') { closePanel(); return true; }
+  if (b.dataset.pi !== undefined) { city.panel.buy(b.dataset.pi); if (city.panel) drawPanel(); }
+  return true;
+}
+// Neues Aussehen fürs eigene Auto (Farbe oder Tuning): im Fahrzeugpark speichern und neu bauen
+function modMe(change, price, text) {
+  const me = city.me, res = city.dealer.mod(me.v.id, change, price);
+  if (typeof res === 'string') { showMsg(res, 1.8); return; }
+  const v = { ...res, name: me.v.name }, mesh = buildCar(v, city.kinds);
+  mesh.rotation.order = 'YZX';
+  S.scene.remove(me.mesh); S.scene.add(mesh);
+  Object.assign(me, carStats(v, mesh, city.kinds, city.topSpeed), { v, mesh });
+  S.ui.ps.textContent = '⚡ ' + v.ps + ' PS';
+  if (city.cruise) showCruise();
+  showMsg(text, 2);
+  window.beep && window.beep(784, 0.12, 'triangle', 0.07);
+}
+const PAINT = [['#dc2626', 'Rot'], ['#f97316', 'Orange'], ['#facc15', 'Gelb'], ['#16a34a', 'Grün'], ['#0ea5e9', 'Hellblau'], ['#1d4ed8', 'Blau'],
+  ['#7c3aed', 'Violett'], ['#ec4899', 'Pink'], ['#f8fafc', 'Weiss'], ['#9ca3af', 'Silber'], ['#111827', 'Schwarz'], ['#78350f', 'Braun']];
+const SNACKS = [['choc', '🍫 Schoggi', 3, 'Turbo 20 s', 20], ['drink', '🥤 Energy-Drink', 8, 'Turbo 60 s', 60], ['ice', '🍦 Glace', 2, 'fein!', 0], ['hotdog', '🌭 Hotdog', 4, 'Turbo 25 s', 25]];
+const DRIVE = [['burger', '🍔 Burger', 6, 'Turbo 30 s', 30], ['fries', '🍟 Pommes', 4, 'Turbo 15 s', 15], ['cola', '🥤 Cola', 3, 'Turbo 10 s', 10], ['menu', '🍱 Menü (alles)', 11, 'Turbo 60 s', 60]];
+function stationPanel(id) {
+  const me = city.me, K = city.kinds;
+  if (id === 'gasShop') return { title: '🛒 Tankstellen-Shop', rows: () => SNACKS.map(([k, label, price, note]) => ({ id: k, label, price, note })),
+    buy: k => { const it = SNACKS.find(x => x[0] === k); if (city.pay(it[2]) < it[2]) return; if (it[4]) city.turbo = Math.max(city.turbo, it[4]); showMsg(it[1] + ' gekauft! ' + (it[4] ? '🚀 Turbo ' + it[4] + ' s' : it[3]), 2); } };
+  if (id === 'paint') return { title: '🎨 Lackieren (' + ((K[me.v.kind] || {}).name || '') + ')', rows: () => PAINT.map(([c, name]) => ({ id: c, label: name, price: 20, color: c, done: (me.v.color || '').toLowerCase() === c })),
+    buy: c => modMe({ color: c }, 20, '🎨 Frisch lackiert: ' + PAINT.find(x => x[0] === c)[1] + '!') };
+  if (id === 'tuning') return { title: '🔧 Tuning (' + ((K[me.v.kind] || {}).name || '') + ')', rows: () => {
+      const T = city.dealer.tuneInfo(), t = me.v.tune || {}, out = [];
+      for (const r of T.rows) {
+        if (r.id === 'plate') continue; // Nummernschild: im Tuning-Menü (dort kann man schreiben)
+        if (r.id === 'wheels' || r.id === 'spoiler') out.push({ id: r.id, label: r.label, note: r.note, price: t[r.id] ? 0 : r.price, done: false, color: null, off: !!t[r.id] });
+        else if (r.id === 'finish') for (const f of r.choices) out.push({ id: 'finish:' + f, label: '✨ ' + T.finish[f].name + '-Lack', price: T.finish[f].price, color: T.finish[f].color, done: t.finish === f });
+        else for (const ch of r.choices) out.push({ id: r.id + ':' + ch, label: r.label + ' ' + (r.id === 'sticker' ? T.stickers[ch] : ''), price: r.price, color: r.id === 'neon' ? ch : null, done: t[r.id] === ch });
+      }
+      return out.map(o => o.off ? { ...o, label: o.label + ' ausbauen', note: '' } : o);
+    },
+    buy: k => {
+      const T = city.dealer.tuneInfo(), t = me.v.tune || {}, [part, val] = k.split(':');
+      if (part === 'wheels' || part === 'spoiler') {
+        const row = T.rows.find(r => r.id === part);
+        if (t[part]) modMe({ tune: { [part]: null } }, 0, '🔧 ' + row.label + ' ausgebaut');
+        else modMe({ tune: { [part]: true } }, row.price, '🔧 ' + row.label + ' eingebaut! ' + row.note);
+      } else if (part === 'finish') modMe({ tune: { finish: val } }, T.finish[val].price, '✨ ' + T.finish[val].name + '-Lack!');
+      else modMe({ tune: { [part]: val } }, T.rows.find(r => r.id === part).price, '🔧 ' + T.rows.find(r => r.id === part).label + ' eingebaut!');
+    } };
+  return null;
+}
+// In den Zonen anhalten: Fenster auf; wegfahren: zu
+function stepStations() {
+  const me = city.me, w = city.walk, x = w ? w.x : me.pos.x, z = w ? w.z : me.pos.z, P = S.places;
+  let here = null;
+  for (const id of ['gasShop', 'paint', 'tuning']) if (inZone(P[id], x, z) && (w ? id === 'gasShop' : Math.abs(me.speed) < 1 && me.alt < 2)) here = id;
+  if (here && city.station !== here) {
+    city.station = here;
+    if (!city.dealer) showMsg('🌐 Online sind die Läden geschlossen', 1.6);
+    else if (!city.plane && !city.boat) openPanel(stationPanel(here));
+  }
+  if (!here && city.station && !inZone(P[city.station], x, z, 3)) { city.station = null; if (city.panel) closePanel(); }
 }
 
 // ---------- Eigenes Haus ----------
@@ -2493,6 +2591,7 @@ function drawDealer() {
 function onDealerClick(e) {
   const b = e.target.closest('button');
   if (!b || b.disabled || !city || !city.dealer) return;
+  if (onPanelClick(b)) return;
   if (onHouseClick(b)) return;
   if (b.dataset.act === 'close') { closeDealer(); return; }
   if (onShopClick(b)) return;
@@ -3951,6 +4050,7 @@ function step(now) {
   stepWorks(dt);
   stepHouse(dt);
   stepSleep(dt);
+  stepStations();
   stepAccidents(dt);
   stepHw(dt);
   if (S.areas.pass && S.areas.pass.flag && Math.hypot(S.camera.position.x - SUMMIT.x, S.camera.position.z - SUMMIT.z) < 400) waveFlag(S.areas.pass.flag, city.t); // Fahne auf dem Gipfel

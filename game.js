@@ -3980,6 +3980,26 @@ const cityDealer = {
     return value;
   },
   value: id => { const v = fleet.find(f => f.id === id); return v ? vehicleValue(v) : 0; },
+  // Aus der Stadt (Waschanlage, Tuning-Werkstatt): Farbe oder Tuning ändern; speichert das Auto im Fahrzeugpark.
+  // change = { color } oder { tune: { teil: wert | null } }; gibt das geänderte Auto zurück oder einen Grund (Text)
+  mod(id, change, price) {
+    const v = fleet.find(f => f.id === id);
+    if (!v) return 'Dieses Auto gehört nicht dir';
+    if (wallet < price) return 'Dir fehlen ' + (price - wallet) + ' Münzen';
+    wallet -= price;
+    if (change.color) v.color = change.color;
+    if (change.tune) {
+      const t = v.tune || (v.tune = {});
+      for (const [k, val] of Object.entries(change.tune)) {
+        if (val === null) { if (TUNE_PS[k] && t[k]) v.ps = Math.max(5, v.ps - TUNE_PS[k]); delete t[k]; }
+        else { if (TUNE_PS[k] && !t[k]) v.ps += TUNE_PS[k]; t[k] = val; }
+      }
+    }
+    storeJSON('autoRetterFleet', fleet);
+    storeJSON('autoRetterCoins', wallet);
+    return JSON.parse(JSON.stringify(v));
+  },
+  tuneInfo: () => ({ rows: TUNE_ROWS, finish: FINISH, ps: TUNE_PS, stickers: STICKER_ICON }),
 };
 
 function startCityMode() {
