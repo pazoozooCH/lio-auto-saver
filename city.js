@@ -806,6 +806,7 @@ function buildWorld() {
   buildHighway({ group: decor, asphaltMat, lineMat, sign, grassMat }); // Autobahn im Süden (outskirts.js)
   const areas = buildAreas({ group: decor, scene, asphaltMat, lineMat, sign }); // Hafen und Flughafen
   const country = buildCountry({ scene, group: decor, asphaltMat, grassMat, sign, natural, makePerson }); // Bauernhof, Strand, Skigebiet
+  round.push(...(country.round || [])); // Tannen und Felsen am Berg sind fest
   solid.push(...areas.solids);
   areas.pass = buildPass({ scene, group: decor, asphaltMat, lineMat, sign, natural, // Passstrasse im Norden
     terrainMesh: o => terrain({ ...o, detail: grassDetail, detailRepeat: 100 }) });
@@ -1232,8 +1233,8 @@ function stepLift(w, dt) {
   w.mesh.userData.arms.forEach(a => { a.rotation.z = 0.3; });
   if (L.u >= 1) { // oben: aussteigen, Ski an
     w.lift = null; w.mesh.remove(w.chair);
-    const back = Math.atan2(T[0].z - T[n].z, T[0].x - T[n].x), s0 = T[n - 1]; // beim obersten Mast beginnt die Abfahrt (ab da geht es nur noch hinunter)
-    w.x = s0.x - C.lift.sx * 3; w.z = s0.z - C.lift.sz * 3; w.h = back; w.speed = 2;
+    const back = Math.atan2(T[0].z - T[n].z, T[0].x - T[n].x); // die Abfahrt beginnt nach der Kuppe oben (ab da geht es nur noch hinunter)
+    w.x = T[0].x + (T[n].x - T[0].x) * 0.54 - C.lift.sx * 3; w.z = T[0].z + (T[n].z - T[0].z) * 0.54 - C.lift.sz * 3; w.h = back; w.speed = 3;
     skiOn(w);
   }
 }

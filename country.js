@@ -7,7 +7,7 @@
 //   Sessellift mit fahrenden Sesseln, Skifahrer, die im Zickzack hinunterfahren, Skihütte.
 // Koordinaten wie in city.js (x nach Osten, z nach Süden). Bodenhöhe am Berg: passTerrain (wie das feine Gelände).
 import * as THREE from 'three';
-import { passPoints, passGround, passTerrain, SUMMIT } from './outskirts.js';
+import { passPoints, passGround, passTerrain, passNearest, SUMMIT } from './outskirts.js';
 
 const box = (b, x, z, m = 0) => x > b.x0 + m && x < b.x1 - m && z > b.z0 + m && z < b.z1 - m;
 const boxDist = (x, z, b) => {
@@ -38,7 +38,7 @@ const BOAT_HOME = { x: -780, z: -420, h: Math.PI };
 const KIOSK = { x0: -676, x1: -666, z0: -306, z1: -298 };
 
 // ---------- Skigebiet ----------
-const LIFT_A = { x: 290, z: -650 }, LIFT_B = { x: 95, z: -895 }; // Tal- und Bergstation
+const LIFT_A = { x: 290, z: -650 }, LIFT_B = { x: 85, z: -955 }; // Tal- und Bergstation (die Bergstation weit genug neben der Passstrasse)
 const SNOW_ROAD = 55; // ab dieser Höhe liegt Schnee auf der Passstrasse
 
 export const RIDES_INFO = { tractor: { ...TRACTOR, v: { id: 'farm-tractor', kind: 'tractor', color: '#3fa34d', ps: 95, name: 'Traktor' } } };
@@ -79,6 +79,18 @@ export const BOAT_Y = -1.1; // Wasseroberfläche liegt bei −1,2 (outskirts.js)
 
 // ---------- Bauen ----------
 const M = (color, o = {}) => new THREE.MeshStandardMaterial({ color, roughness: 0.8, ...o });
+function mergeGeos(list) { // einfache Formen zu einer zusammenfügen (alle mit Index, Position, Normale, UV)
+  const pos = [], nor = [], uv = [], idx = []; let off = 0;
+  for (const g0 of list) {
+    const g = g0.index ? g0 : g0; const P = g.attributes.position, Nn = g.attributes.normal, U = g.attributes.uv;
+    for (let i = 0; i < P.count; i++) { pos.push(P.getX(i), P.getY(i), P.getZ(i)); nor.push(Nn.getX(i), Nn.getY(i), Nn.getZ(i)); uv.push(U.getX(i), U.getY(i)); }
+    const I = g.index; for (let i = 0; i < I.count; i++) idx.push(I.getX(i) + off);
+    off += P.count;
+  }
+  const out = new THREE.BufferGeometry();
+  out.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); out.setAttribute('normal', new THREE.Float32BufferAttribute(nor, 3)); out.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2)); out.setIndex(idx);
+  return out;
+}
 function canvasTex(w, h, draw, rep = 1) {
   const c = document.createElement('canvas'); c.width = w; c.height = h; draw(c.getContext('2d'));
   const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; t.wrapS = t.wrapT = THREE.RepeatWrapping; t.repeat.set(rep, rep); return t;
@@ -178,7 +190,12 @@ export function buildCountry({ scene, group, asphaltMat, grassMat, sign, natural
   const ground = (x, z) => Math.max(passTerrain(x, z, natural(x, z)), passGround(x, z));
   const towers = [], n = Math.ceil(Math.hypot(LIFT_B.x - LIFT_A.x, LIFT_B.z - LIFT_A.z) / 55);
   for (let k = 0; k <= n; k++) {
-    const x = LIFT_A.x + (LIFT_B.x - LIFT_A.x) * k / n, z = LIFT_A.z + (LIFT_B.z - LIFT_A.z) * k / n, y = ground(x, z);
+    let f = k / n; // Masten nicht auf die Strasse: nötigenfalls ein Stück verschieben
+    for (const df of [0, 0.03, -0.03, 0.06, -0.06, 0.09, -0.09]) {
+      const g = Math.min(1, Math.max(0, k / n + df));
+      if (passNearest(LIFT_A.x + (LIFT_B.x - LIFT_A.x) * g, LIFT_A.z + (LIFT_B.z - LIFT_A.z) * g).d > 14) { f = g; break; }
+    }
+    const x = LIFT_A.x + (LIFT_B.x - LIFT_A.x) * f, z = LIFT_A.z + (LIFT_B.z - LIFT_A.z) * f, y = ground(x, z);
     add(new THREE.CylinderGeometry(0.35, 0.5, 11, 8), grey, x, y + 5.5, z);
     const arm = add(new THREE.BoxGeometry(0.4, 0.4, 5), grey, x, y + 11, z); arm.rotation.y = -Math.atan2(LIFT_B.z - LIFT_A.z, LIFT_B.x - LIFT_A.x);
     towers.push({ x, y: y + 11, z });
@@ -194,7 +211,9 @@ export function buildCountry({ scene, group, asphaltMat, grassMat, sign, natural
     out.chairs.push({ mesh: c, u: k / 18 });
   }
   for (const [p, text, bg] of [[LIFT_A, '🚡 SESSELLIFT', '#1d4ed8'], [LIFT_B, '⛷️ SKIHÜTTE', '#7c2d12']]) {
-    const y = ground(p.x, p.z), hx = p.x - dirX / dl * 8, hz = p.z - dirZ / dl * 8 * (p === LIFT_A ? 1 : -1);
+    let hx = p.x, hz = p.z, bestD = -1; // Hütte neben der Station, möglichst weit weg von der Strasse
+    for (let a = 0; a < 8; a++) { const x = p.x + Math.cos(a * Math.PI / 4) * 13, z = p.z + Math.sin(a * Math.PI / 4) * 13, d = passNearest(x, z).d; if (d > bestD) { bestD = d; hx = x; hz = z; } }
+    const y = ground(hx, hz);
     const hut = add(new THREE.BoxGeometry(9, 4, 7), wood, hx, y + 2, hz); hut.rotation.y = -Math.atan2(dirZ, dirX);
     const rf = add(new THREE.ConeGeometry(7, 3, 4), M(0xf8fafc), hx, y + 5.5, hz); rf.rotation.y = Math.PI / 4 - Math.atan2(dirZ, dirX);
     signPair(text, bg, '#ffffff', 6, 1.2, hx, y + 7.8, hz, 0);
@@ -207,6 +226,50 @@ export function buildCountry({ scene, group, asphaltMat, grassMat, sign, natural
     out.skiers.push({ mesh: pm, u: k / 9, side: (k % 2 ? 1 : -1) * (8 + k * 2), ph: k });
   }
   out.ground = ground;
+  // Am Berg: Tannen (oben verschneit), Felsen, rot-weisse Schneestangen und Schneewälle an der Strasse
+  {
+    const rnd = (() => { let q = 7; return () => (q = (q * 16807) % 2147483647) / 2147483647; })();
+    const lx = LIFT_B.x - LIFT_A.x, lz = LIFT_B.z - LIFT_A.z, ll = Math.hypot(lx, lz);
+    const pisteD = (x, z) => { const t = Math.max(0, Math.min(1, ((x - LIFT_A.x) * lx + (z - LIFT_A.z) * lz) / (ll * ll))); return Math.hypot(x - LIFT_A.x - lx * t, z - LIFT_A.z - lz * t); };
+    const firs = [], rocks = [];
+    for (let tries = 0; tries < 6000 && firs.length < 520; tries++) {
+      const x = -400 + rnd() * 800, z = -1100 + rnd() * 790;
+      if (passNearest(x, z).d < 12 || Math.hypot(x - SUMMIT.x, z - SUMMIT.z) < SUMMIT.r + 8 || pisteD(x, z) < 48) continue; // nicht auf Strasse, Gipfel, Piste
+      const y = ground(x, z);
+      if (y > 118) continue; // ganz oben wächst nichts
+      if (rnd() < 0.18) rocks.push([x, y, z, 0.8 + rnd() * 2.2]); else firs.push([x, y, z, 0.7 + rnd() * 0.8]);
+    }
+    const dummy = new THREE.Object3D(), col = new THREE.Color();
+    const fir = new THREE.ConeGeometry(2.2, 4.2, 8); fir.translate(0, 2.1, 0);
+    const parts = [fir.clone().translate(0, 1.2, 0), fir.clone().scale(0.78, 0.8, 0.78).translate(0, 3.6, 0), fir.clone().scale(0.52, 0.6, 0.52).translate(0, 5.6, 0)];
+    const firGeo = mergeGeos(parts);
+    const firM = new THREE.InstancedMesh(firGeo, M(0xffffff, { roughness: 0.9, flatShading: true }), firs.length);
+    const trunkM = new THREE.InstancedMesh(new THREE.CylinderGeometry(0.25, 0.35, 1.6, 6).translate(0, 0.8, 0), M(0x5b4030), firs.length);
+    firs.forEach(([x, y, z, sc], k) => {
+      dummy.position.set(x, y - 0.2, z); dummy.rotation.set(0, rnd() * 6, 0); dummy.scale.set(sc, sc * (0.9 + rnd() * 0.3), sc); dummy.updateMatrix();
+      firM.setMatrixAt(k, dummy.matrix); trunkM.setMatrixAt(k, dummy.matrix);
+      const snow = Math.min(1, Math.max(0, (y - 45) / 30)); // je höher, desto weisser
+      firM.setColorAt(k, col.setHex(0x2f5d2a).lerp(new THREE.Color(0xe8eef5), snow * 0.75));
+    });
+    firM.castShadow = true; firM.receiveShadow = true; scene.add(firM, trunkM);
+    const rockM = new THREE.InstancedMesh(new THREE.DodecahedronGeometry(1, 0), M(0x7c7f86, { roughness: 1, flatShading: true }), rocks.length);
+    rocks.forEach(([x, y, z, sc], k) => { dummy.position.set(x, y + sc * 0.3, z); dummy.rotation.set(rnd() * 3, rnd() * 6, rnd() * 3); dummy.scale.set(sc * 1.3, sc, sc * 1.1); dummy.updateMatrix(); rockM.setMatrixAt(k, dummy.matrix); });
+    rockM.castShadow = true; scene.add(rockM);
+    // Schneestangen (rot mit weisser Spitze) und Schneewälle am Strassenrand, wo Schnee liegt
+    const pts = passPoints(), poles = [], banks = [];
+    for (let k = 0; k < pts.length - 1; k += 3) {
+      const a = pts[k], b = pts[k + 1], y = passGround(a.x, a.z), tl = Math.hypot(b.x - a.x, b.z - a.z) || 1, nx = -(b.z - a.z) / tl, nz = (b.x - a.x) / tl;
+      if (y < 30) continue;
+      for (const sd of [-1, 1]) { poles.push([a.x + nx * sd * 6.4, y, a.z + nz * sd * 6.4]); if (y > SNOW_ROAD - 5) banks.push([a.x + nx * sd * 7.4, y, a.z + nz * sd * 7.4, Math.atan2(b.z - a.z, b.x - a.x)]); }
+    }
+    const poleM = new THREE.InstancedMesh(new THREE.CylinderGeometry(0.06, 0.06, 2, 6).translate(0, 1, 0), M(0xdc2626), poles.length);
+    const tipM = new THREE.InstancedMesh(new THREE.CylinderGeometry(0.065, 0.065, 0.4, 6).translate(0, 2.2, 0), M(0xf8fafc), poles.length);
+    poles.forEach(([x, y, z], k) => { dummy.position.set(x, y, z); dummy.rotation.set(0, 0, 0); dummy.scale.set(1, 1, 1); dummy.updateMatrix(); poleM.setMatrixAt(k, dummy.matrix); tipM.setMatrixAt(k, dummy.matrix); });
+    const bankM = new THREE.InstancedMesh(new THREE.SphereGeometry(1, 10, 6), M(0xf4f7fb, { roughness: 0.95 }), banks.length);
+    banks.forEach(([x, y, z, h], k) => { dummy.position.set(x, y, z); dummy.rotation.set(0, -h, 0); dummy.scale.set(4.2, 0.9, 1.3); dummy.updateMatrix(); bankM.setMatrixAt(k, dummy.matrix); });
+    bankM.receiveShadow = true; scene.add(poleM, tipM, bankM);
+    out.round = [...firs.map(([x, , z, sc]) => ({ x, z, r: 0.5 * sc, h: 8 * sc })), ...rocks.map(([x, , z, sc]) => ({ x, z, r: sc * 1.1, h: sc * 1.4 }))]; // fest (city.js)
+  }
   // Schnee auf der Passstrasse (oben): weisses Band über der Fahrbahn
   const pts = passPoints(), snowRows = [], snowM = M(0xf4f7fb, { transparent: true, opacity: 0.75, roughness: 0.9, polygonOffset: true, polygonOffsetFactor: -3, polygonOffsetUnits: -3 });
   let run = [];
