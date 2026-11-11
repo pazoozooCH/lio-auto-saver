@@ -997,6 +997,11 @@ export function buildAreas({ group, scene, asphaltMat, lineMat, sign }) {
     const p = plane(0xffffff, col); p.rotation.y = Math.PI / 2; p.position.set(x, 0, -30); scene.add(p);
     solids.push({ x0: x - 2.5, x1: x + 2.5, z0: -48, z1: -10, h: 6 }); // nur der Rumpf ist fest (unter den Flügeln kann man durch)
   }
+  // Dein Flugzeug (orange): zu Fuss hingehen und X (city.js: enterPlane)
+  const fm = plane(0xffffff, 0xf59e0b); fm.rotation.order = 'YZX'; fm.userData = { wheels: [], length: 40, radius: 8, body: fm };
+  out.flyer = { mesh: fm, x: 615, z: -32, h: -Math.PI / 2, home: { x: 615, z: -32, h: -Math.PI / 2 }, start: { x: RUNWAY.x0 + 30, z: RUNWAY.z, h: 0 } };
+  fm.position.set(615, 0, -32); fm.rotation.y = Math.PI / 2; scene.add(fm);
+  for (const side of [0, 1]) { const s1 = sign('✈️ FLIEGEN – zu Fuss hin, X', '#f59e0b', '#111827', 9, 1.4); s1.position.set(615, 9, -4 - side * 0.05); s1.rotation.y = side ? Math.PI : 0; group.add(s1); }
   out.jet = { mesh: plane(0xf8fafc, 0x16a34a), t: -10, x: RUNWAY.x0 + 20, y: 0, v: 0 };
   scene.add(out.jet.mesh);
   return out;

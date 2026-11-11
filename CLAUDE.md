@@ -32,6 +32,9 @@ Browser-Spiel ohne Build: `index.html` + `game.js` (Spiellogik, Menüs und 2D-Ze
   Freies Gelände: neben den Strassen darf man überall fahren (`allowedAt` + `offroadWhy` in outskirts.js: nicht ins Wasser,
   nicht über Autobahn-Leitplanken, nicht in gesperrte Gebiete); `groundAt` = Bodenhöhe genau wie das Gelände-Netz.
   Skifahren: zu Fuss zur Talstation (`LIFT` in country.js), X = Sessellift (`stepLift`), oben Ski an (`stepSki`).
+  Fliegen: am Flughafen zu Fuss zum orangen Flugzeug (`S.areas.flyer`), X = einsteigen (`stepPlane`: rollen, ab ~150 km/h mit E/▲
+  abheben, landen flach und langsam, sonst Bruch = zurück zur Piste). Tempomat über der km/h-Anzeige (`city.cruise`, C, + / −;
+  höchstens die Höchstgeschwindigkeit des Autos). Stadtbild: Strassenbäume, Bänke, Läden mit Markisen, Balkone (Instanzen).
   Dort auch das eigene Autohaus: sechs feste Plätze (3 Drehteller draussen, 3 im Ausstellungsraum), Bestellungen bringt der
   Autotransporter (`stepDelivery`), Kunden mit Wunsch und Beratung (💬/T), Spielstand `autoRetterShop` (stock, orders). Oben am Stadtrand ist Platz für sechs Basen nebeneinander (nur für echte Spieler, sonst Wiese): bis zu 10 ausgesuchte
   Autos (`baseGarage` in `game.js`, Spielstand `autoRetterBase`), dort Auto wechseln; online je Spieler eine (`rooms/<CODE>/bases`).

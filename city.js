@@ -398,8 +398,11 @@ function buildWorld() {
     const imat = (color, e = 0.28) => mat({ color, emissive: color, emissiveIntensity: e, roughness: 0.8 }); // drinnen etwas aufgehellt (kein Licht nötig)
     box(23.4, 0.15, 15.4, imat(0xfaf7f0, 0.5), cx - 8, 3.7, cz); // Decke
     box(23.4, 0.06, 15.4, imat(0xb07d4f, 0.22), cx - 8, 0.2, cz); // Holzboden
-    for (const ddx of [-9, -4, 4, 9]) box(2.2, 1.6, 0.05, win, cx - 8 + ddx, 2.2, Z0 + T + 0.03); // Fenster auch von innen
-    for (const ddx of [-9, -3, 3, 9]) box(2.2, 1.6, 0.05, win, cx - 8 + ddx, 2.2, Z1 - T - 0.03);
+    const inW = imat(0xf3ece0, 0.4); // helle Wände innen
+    box(23.3, 3.5, 0.04, inW, cx - 8, 1.95, Z1 - T - 0.02); box(0.04, 3.5, 15.3, inW, X0 + T + 0.02, 1.95, cz); box(0.04, 3.5, 15.3, inW, X1 - T - 0.02, 1.95, cz);
+    box(dl - T, 3.5, 0.04, inW, X0 + T + (dl - T) / 2, 1.95, Z0 + T + 0.02); box(dr - T, 3.5, 0.04, inW, X1 - T - (dr - T) / 2, 1.95, Z0 + T + 0.02);
+    for (const ddx of [-9, -4, 4, 9]) box(2.2, 1.6, 0.04, win, cx - 8 + ddx, 2.2, Z0 + T + 0.08); // Fenster auch von innen
+    for (const ddx of [-9, -3, 3, 9]) box(2.2, 1.6, 0.04, win, cx - 8 + ddx, 2.2, Z1 - T - 0.08);
     // Einrichtung: Bett (hinten links), Wohnzimmer (Sofa, Fernseher), Esstisch, Küche (rechts)
     const fab = imat(0x3b82f6), sheet = imat(0xf8fafc, 0.35), dark = imat(0x1f2937, 0.15), woodI = imat(0x8b5a2b), sofaM = imat(0x9a3412, 0.25), green = imat(0x16a34a);
     const bed = { x: X0 + 3, z: Z1 - 2.6 };
@@ -560,16 +563,20 @@ function buildWorld() {
     places.bases[s] = { x: cx, z: cz, w: 49, d: 49, bays, group, setSign, sign: '', root, lawn, walls, on: true };
     setBaseOn(places.bases[s], false);
   }
+  const shops = [], balcs = [], street = []; // Ladenfronten, Balkone, Bänke (am Schluss als Instanzen)
   const roofTiles = [mat({ color: 0x9b3b2b, roughness: 0.85 }), mat({ color: 0x5a4e4a, roughness: 0.85 }), mat({ color: 0xb4532a, roughness: 0.85 })];
   const homeWalls = [['#f3eadb', '#7a6a55'], ['#e8d9b8', '#5b4a35'], ['#dfe7ea', '#4a5560'], ['#f0d9d0', '#7a4a3a']]
     .map(([wall, frame]) => { const f = facade(wall, frame, r); return mat({ map: f, emissive: 0xffffff, emissiveMap: f.glow, emissiveIntensity: 0, roughness: 0.8 }); });
-  const block = 50, inner = 44;
+  const block = 50, inner = 44, curbMat = mat({ color: 0xc9ccd1, roughness: 0.9 });
   const trees = [];
   for (let bi = 0; bi < N; bi++) for (let bj = 0; bj < N; bj++) {
     const cx = (node(bi) + node(bi + 1)) / 2, cz = (node(bj) + node(bj + 1)) / 2;
     const slab = new THREE.Mesh(new THREE.BoxGeometry(block, 0.16, block), paveMat);
     slab.position.set(cx, 0.08, cz); slab.receiveShadow = true;
     decor.add(slab);
+    for (const [x, z, w, d] of [[cx, cz - 24.85, 50, 0.3], [cx, cz + 24.85, 50, 0.3], [cx - 24.85, cz, 0.3, 50], [cx + 24.85, cz, 0.3, 50]]) { // Randstein
+      const c = new THREE.Mesh(new THREE.BoxGeometry(w, 0.2, d), curbMat); c.position.set(x, 0.1, z); c.receiveShadow = true; decor.add(c);
+    }
     const key = bi + ',' + bj;
     if (key === plaza) { buildPlaza(decor, cx, cz, round); continue; }
     if (baseOf(key) >= 0) { buildBase(cx, cz, baseOf(key)); continue; }
@@ -613,9 +620,18 @@ function buildWorld() {
     }
     // Häuser: 2 × 2 Bauplätze; in der Mitte der Stadt höher (Skyline)
     const center = 1 - Math.hypot(cx, cz) / (HALF * 1.3);
+    for (const k of [-16, -8, 8, 16]) for (const [tx, tz] of [[cx + k, cz - 22.2], [cx + k, cz + 22.2], [cx - 22.2, cz + k], [cx + 22.2, cz + k]])
+      trees.push([tx, 0.16, tz, 0.55 + r() * 0.2]); // Strassenbäume auf dem Trottoir
+    for (const k of [-12, 12]) street.push([cx + k, cz - 22.6, 0], [cx + k, cz + 22.6, Math.PI], [cx - 22.6, cz + k, Math.PI / 2], [cx + 22.6, cz + k, -Math.PI / 2]); // Bänke
     for (const ox of [-11, 11]) for (const oz of [-11, 11]) {
       const w = 14 + r() * 5, d = 14 + r() * 5, hgt = 7 + r() * (8 + 42 * Math.max(0, center) ** 1.4);
       const bx = cx + ox, bz = cz + oz;
+      // Läden im Erdgeschoss (zur Strasse): Schaufenster und farbige Markise; niedrigere Häuser mit Balkonen
+      const sx = Math.sign(ox), sz = Math.sign(oz);
+      shops.push([bx + sx * (w / 2 + 0.05), bz, d - 3, Math.PI / 2], [bx, bz + sz * (d / 2 + 0.05), w - 3, 0]);
+      if (hgt < 26) for (let fy = 4.6; fy < hgt - 1.5; fy += 3.2) for (const f of [-0.3, 0, 0.3]) {
+        balcs.push([bx + sx * (w / 2 + 0.55), 0.16 + fy, bz + f * d, Math.PI / 2, sx], [bx + f * w, 0.16 + fy, bz + sz * (d / 2 + 0.55), 0, sz]);
+      }
       const b = wallBox(w, hgt, d, walls[Math.floor(r() * walls.length)]);
       b.position.set(bx, 0.16 + hgt / 2, bz);
       decor.add(b);
@@ -639,6 +655,28 @@ function buildWorld() {
     if (Math.max(Math.abs(tx), Math.abs(tz)) < HALF + ROAD / 2 + 12 || groundShape(tx, tz).d < 14 || countryDist(tx, tz) < 14 || (inPassRegion(tx, tz) && passNearest(tx, tz).d < 16)) continue; // nicht auf Strassen und Plätzen
     trees.push([tx, height(tx, tz), tz, 0.9 + r() * 0.9]);
     k++;
+  }
+  // Ladenfronten (Schaufenster + Markise), Balkone, Bänke: je ein Zeichen-Befehl für alle
+  {
+    const dummy = new THREE.Object3D(), acol = new THREE.Color(), awnCols = [0xdc2626, 0x16a34a, 0x2563eb, 0xf59e0b, 0x7c3aed, 0x0e7490, 0xdb2777, 0x1f2937];
+    const inst = (geo, material, list, place) => {
+      const im = new THREE.InstancedMesh(geo, material, list.length);
+      list.forEach((it, k) => { place(it, dummy); dummy.updateMatrix(); im.setMatrixAt(k, dummy.matrix); });
+      im.castShadow = false; im.receiveShadow = true; scene.add(im); return im; // kleine Teile: kein eigener Schatten (spart Zeit)
+    };
+    inst(new THREE.BoxGeometry(1, 2.6, 0.12), mat({ color: 0x1e293b, metalness: 0.6, roughness: 0.1, emissive: 0xffe2a8, emissiveIntensity: 0.15 }), shops,
+      ([x, z, len, ry], d) => { d.position.set(x, 1.6, z); d.rotation.set(0, ry, 0); d.scale.set(len, 1, 1); });
+    const awn = inst(new THREE.BoxGeometry(1, 0.12, 1.6), mat({ color: 0xffffff, roughness: 0.8 }), shops,
+      ([x, z, len, ry], d) => { d.position.set(x, 3.15, z); d.rotation.set(0, ry, 0); d.scale.set(len * 0.95, 1, 1); });
+    shops.forEach((it, k) => awn.setColorAt(k, acol.setHex(awnCols[k % awnCols.length])));
+    inst(new THREE.BoxGeometry(2.4, 0.12, 1.1), mat({ color: 0xd6d3d1, roughness: 0.85 }), balcs,
+      ([x, y, z, ry], d) => { d.position.set(x, y, z); d.rotation.set(0, ry, 0); d.scale.set(1, 1, 1); });
+    inst(new THREE.BoxGeometry(2.4, 0.5, 0.06), mat({ color: 0x334155, metalness: 0.5, roughness: 0.4 }), balcs,
+      ([x, y, z, ry, out], d) => { d.position.set(x + (ry ? out * 0.52 : 0), y + 0.3, z + (ry ? 0 : out * 0.52)); d.rotation.set(0, ry, 0); }); // Geländer aussen
+    const benchM = mat({ color: 0x8b5a2b, roughness: 0.8 });
+    inst(new THREE.BoxGeometry(1.8, 0.1, 0.5), benchM, street, ([x, z, ry], d) => { d.position.set(x, 0.62, z); d.rotation.set(0, ry, 0); });
+    inst(new THREE.BoxGeometry(1.8, 0.45, 0.08), benchM, street, ([x, z, ry], d) => { d.position.set(x - Math.sin(ry) * 0.22, 0.9, z - Math.cos(ry) * 0.22); d.rotation.set(0, ry, 0); });
+    inst(new THREE.CylinderGeometry(0.25, 0.22, 0.8, 10), mat({ color: 0x166534, roughness: 0.6 }), street, ([x, z, ry], d) => { d.position.set(x + Math.cos(ry) * 1.6, 0.56, z - Math.sin(ry) * 1.6); d.rotation.set(0, 0, 0); }); // Abfalleimer
   }
   const trunkM = new THREE.InstancedMesh(new THREE.CylinderGeometry(0.22, 0.35, 3, 6), mat({ color: 0x5b4030, roughness: 1 }), trees.length);
   const crownM = new THREE.InstancedMesh(new THREE.IcosahedronGeometry(2.4, 1), mat({ color: 0xffffff, roughness: 0.95, flatShading: true }), trees.length);
@@ -1242,6 +1280,120 @@ function stepSki(w, dt) {
   S.ui.kmh.textContent = Math.round(Math.abs(v) * 3.6);
 }
 
+// ---------- Tempomat ----------
+// Über der km/h-Anzeige: 🎯 ein/aus (C), − / + in 10er-Schritten. Eingeschaltet fährt das Auto selber bis zu diesem
+// Tempo und nie schneller; Bremsen bremst. Wie hoch man ihn stellen kann, hängt vom Auto ab (seine Höchstgeschwindigkeit).
+const cruiseMax = () => Math.max(20, Math.floor(city.me.maxV * 3.6 / 10) * 10);
+function cruiseCmd(c) {
+  if (!city || !city.cruise) return;
+  const C = city.cruise, max = cruiseMax();
+  if (c === '+') C.kmh = Math.min(max, C.kmh + 10);
+  else if (c === '-') C.kmh = Math.max(20, C.kmh - 10);
+  else { C.on = !C.on; showMsg(C.on ? '🎯 Tempomat an: höchstens ' + C.kmh + ' km/h' : '🎯 Tempomat aus', 1.4); }
+  if (c !== 'on' && C.kmh === max && c === '+') showMsg('🎯 Mehr geht mit diesem Auto nicht (' + max + ' km/h)', 1.6);
+  showCruise();
+}
+function showCruise() {
+  const C = city.cruise;
+  C.kmh = Math.min(C.kmh, cruiseMax());
+  S.ui.cruiseVal.textContent = C.kmh;
+  S.ui.cruiseOn.classList.toggle('on', C.on);
+}
+
+// ---------- Fliegen (Flughafen, ab 12 Schlüsseln) ----------
+// Zu Fuss zum orangen Flugzeug, X: einsteigen. Gas = schneller rollen, ab ~150 km/h mit E / ▲ abheben. In der Luft:
+// ⬅️➡️ Kurve (das Flugzeug legt sich hinein), E/Q bzw. ▲▼ steigen/sinken, Gas/Bremse schneller/langsamer.
+// Landen: langsam (unter 270 km/h), flach sinken und Flügel gerade auf ebenem Boden. Sonst Bruchlandung = zurück zum Flughafen.
+function enterPlane() {
+  const me = city.me, F = S.areas.flyer;
+  city.plane = { car: me.mesh, carPos: { x: me.pos.x, z: me.pos.z }, carH: me.heading, air: false, vy: 0, roll: 0, pitch: 0, crashT: 0, told: false };
+  me.mesh = F.mesh;
+  Object.assign(me.pos, { x: F.x, z: F.z }); me.heading = F.h;
+  Object.assign(me, { speed: 0, vl: 0, steer: 0, fly: false, landing: false, alt: 0 });
+  S.ui.flybtn.hidden = true;
+  showMsg('✈️ Gas: zur Piste rollen und schnell werden – dann E / ▲ zum Abheben', 3);
+}
+function leavePlane() {
+  const me = city.me, P = city.plane, F = S.areas.flyer;
+  F.x = me.pos.x; F.z = me.pos.z; F.h = me.heading; // bleibt stehen, wo du es abstellst
+  me.mesh = P.car;
+  const px = me.pos.x - Math.sin(me.heading) * 9, pz = me.pos.z + Math.cos(me.heading) * 9; // neben dem Flugzeug aussteigen
+  Object.assign(me.pos, P.carPos); me.heading = P.carH;
+  Object.assign(me, { speed: 0, vl: 0, alt: 0, fly: false });
+  city.plane = null;
+  S.ui.flyctl.hidden = true; S.ui.flybtn.hidden = !city.canFly;
+  const w = city.walk = { x: px, z: pz, h: me.heading, speed: 0, phase: 0, mesh: makePerson(), target: null };
+  w.mesh.position.set(w.x, 0, w.z); S.scene.add(w.mesh);
+  S.ui.walkbtn.textContent = '🚗';
+  S.ui.hint.textContent = '⬅️ ➡️ drehen · ⬆️ gehen · Leertaste rennen · X einsteigen';
+  showMsg('🚶 Ausgestiegen – dein Auto steht noch, wo du es gelassen hast', 2.2);
+}
+function planeCrash() {
+  const P = city.plane, me = city.me;
+  P.crashT = 2.5; me.speed = 0;
+  crash(1, 'car');
+  for (let k = 0; k < 14; k++) S.fx.puff(me.pos.x + (Math.random() - 0.5) * 12, me.alt + Math.random() * 5, me.pos.z + (Math.random() - 0.5) * 12, 0, 0);
+  showMsg('💥 Bruchlandung! Das Flugzeug wird zurück zum Flughafen gebracht', 2.6);
+}
+function solidTop(x, z) { let h = 0; for (const b of S.solid) if (x > b.x0 && x < b.x1 && z > b.z0 && z < b.z1) h = Math.max(h, b.h || 6); return h; }
+function stepPlane(dt) {
+  const me = city.me, P = city.plane, input = city.input, m = me.mesh, F = S.areas.flyer;
+  const steer = (input.right ? 1 : 0) - (input.left ? 1 : 0);
+  if (P.crashT > 0) { // nach der Bruchlandung: zurück an den Anfang der Piste
+    if ((P.crashT -= dt) <= 0) {
+      Object.assign(me.pos, { x: F.start.x, z: F.start.z }); me.heading = F.start.h;
+      Object.assign(P, { air: false, vy: 0, roll: 0, pitch: 0 }); me.alt = 0; me.fly = false; me.speed = 0;
+    }
+    return;
+  }
+  const fx = Math.cos(me.heading), fz = Math.sin(me.heading);
+  if (!P.air) { // am Boden rollen
+    if (input.gas) me.speed = Math.min(85, Math.max(0, me.speed) + (me.speed < 20 ? 6 : 9) * dt);
+    else if (input.brake) me.speed = me.speed > 0 ? Math.max(0, me.speed - 14 * dt) : Math.max(-3, me.speed - 2 * dt);
+    else me.speed -= Math.sign(me.speed) * Math.min(Math.abs(me.speed), 1.5 * dt);
+    me.heading += steer * Math.min(0.7, 9 / Math.max(9, Math.abs(me.speed))) * dt * Math.sign(me.speed || 1);
+    const nx = me.pos.x + Math.cos(me.heading) * me.speed * dt, nz = me.pos.z + Math.sin(me.heading) * me.speed * dt;
+    if (allowedAt(nx, nz, 3)) { me.pos.x = nx; me.pos.z = nz; } else { if (Math.abs(me.speed) > 10) crash(0.4, 'car'); me.speed = 0; }
+    me.alt = 0; P.roll *= 0.9; P.pitch *= 0.9;
+    if (me.speed > 42) {
+      if (input.up) { P.air = true; P.vy = 7; P.liftT = 2; me.alt = 1; me.fly = true; showMsg('✈️ Abgehoben! ⬅️➡️ Kurve · E/Q oder ▲▼ steigen/sinken', 2.6); }
+      else if (!P.told) { P.told = true; showMsg('⬆️ Jetzt E oder ▲ drücken – abheben!', 2); }
+    }
+    S.ui.flyctl.hidden = me.speed < 30;
+  } else { // in der Luft
+    if (input.gas) me.speed = Math.min(120, me.speed + 8 * dt); else if (input.brake) me.speed = Math.max(40, me.speed - 10 * dt);
+    P.roll += (steer * 0.7 - P.roll) * Math.min(1, dt * 2);
+    me.heading += P.roll * 0.8 * dt;
+    const want = ((input.up ? 1 : 0) - (input.down ? 1 : 0)) * 16;
+    P.vy += (want - P.vy) * Math.min(1, dt * 1.5);
+    me.alt = Math.min(600, me.alt + P.vy * dt);
+    P.pitch = Math.atan2(P.vy, me.speed) * 1.4;
+    let nx = me.pos.x + Math.cos(me.heading) * me.speed * dt, nz = me.pos.z + Math.sin(me.heading) * me.speed * dt;
+    if (nx < -1080 || nx > 1080 || nz < -1080 || nz > 3280) { // Ende der Welt: umkehren
+      me.heading += Math.PI * dt * 0.8; nx = me.pos.x; nz = me.pos.z;
+      if (city.msgT <= 0) showMsg('🌍 Ende der Welt – kehr um!', 1.4);
+    }
+    me.pos.x = nx; me.pos.z = nz;
+    const floor = Math.max(groundAt(nx, nz), solidTop(nx, nz));
+    P.liftT = (P.liftT || 0) - dt;
+    if (P.liftT > 0) me.alt = Math.max(me.alt, floor + 1); // gerade abgehoben: noch nicht wieder landen
+    else if (me.alt <= floor + 0.6) { // Boden berührt: landen oder Bruch
+      const flat = solidTop(nx, nz) === 0 && allowedAt(nx, nz, 3) && Math.abs(groundAt(nx + fx * 10, nz + fz * 10) - groundAt(nx, nz)) < 1;
+      if (flat && P.vy > -7 && Math.abs(P.roll) < 0.35 && me.speed < 76) {
+        Object.assign(P, { air: false, vy: 0 }); me.fly = false; me.alt = 0;
+        const c = city.net ? 0 : 5; if (c) city.earn(c);
+        showMsg('🛬 Gelandet! Gut gemacht' + (c ? '  +' + c + ' 🪙' : '') + ' – anhalten und X zum Aussteigen', 2.6);
+      } else { me.alt = floor; planeCrash(); return; }
+    }
+    S.ui.flyctl.hidden = false;
+  }
+  const y = me.alt + (P.air ? 0 : groundAt(me.pos.x, me.pos.z));
+  city.gy = P.air ? 0 : y;
+  m.position.set(me.pos.x, y, me.pos.z);
+  m.rotation.set(P.roll, -me.heading, P.pitch);
+  S.ui.kmh.textContent = Math.round(Math.abs(me.speed) * 3.6);
+}
+
 // ---------- Boot (Strand) ----------
 // Zu Fuss auf den Steg und einsteigen: das Auto bleibt am Strand stehen, man fährt mit dem Boot (city.boat) auf dem
 // Wasser. Zurück am Steg mit 🚪 aussteigen und zu Fuss zum Auto.
@@ -1590,7 +1742,8 @@ function stepMe(dt) {
   if (!stopped) city.me.pullT = 0;
   if (stopped && city.me.fly) city.me.landing = true; // die Polizei holt dich herunter
   const me = city.me, input = stopped ? pullOver(me, dt) : city.input; // von der Polizei angehalten: rechts ranfahren
-  const gas = input.gas, brake = input.brake, hand = !!input.drift && !stopped && !me.fly; // Handbremse zum Driften
+  const cr = city.cruise && city.cruise.on && input === city.input; // Tempomat: fährt selber (ausser beim Bremsen)
+  const brake = input.brake, gas = input.gas || (cr && !brake), hand = !!input.drift && !stopped && !me.fly; // Handbremse zum Driften
   const steerTarget = (input.left ? -1 : 0) + (input.right ? 1 : 0);
   me.steer += (steerTarget - me.steer) * Math.min(1, dt * 7);
   me.surface = me.fly ? 'asphalt' : surfaceAt(me.pos.x, me.pos.z);
@@ -1599,6 +1752,7 @@ function stepMe(dt) {
   const SURF = { grass: 0.55, sand: offroad ? 0.8 : 0.5, mud: offroad ? 0.75 : 0.32, gravel: 0.85, snow: 0.8, water: 1 };
   let maxV = (me.fly ? me.maxV * FLY_SPEED : me.maxV * (SURF[me.surface] || 1)) * boost;
   if (city.boat && !city.walk) maxV = Math.min(maxV, 22); // Boot: bis 80 km/h
+  if (city.cruise && city.cruise.on) maxV = Math.min(maxV, city.cruise.kmh / 3.6); // Tempomat: nie schneller
   if (me.surface === 'mud' && Math.abs(me.speed) > 2 && Math.random() < dt * 25) S.fx.puff(me.pos.x + (Math.random() - 0.5) * 2, 0.6, me.pos.z + (Math.random() - 0.5) * 2, 0, 0); // Matsch spritzt
   if (city.boat && Math.abs(me.speed) > 3 && Math.random() < dt * 20) { const bx = Math.cos(me.heading), bz = Math.sin(me.heading); S.fx.puff(me.pos.x - bx * 3, BOAT_Y - 2.4, me.pos.z - bz * 3, 0, 0); } // Gischt
   if (city.damage > 0.5) maxV *= 1 - 0.8 * (city.damage - 0.5); // kaputter Motor: bis 40 % langsamer
@@ -2095,6 +2249,7 @@ function switchCar(v) {
   city.damage = 0; city.scratches = [];
   city.gears = gearbox(v.kind);
   city.gripBoost = (city.kinds[v.kind] && city.kinds[v.kind].grip) || 1;
+  if (city.cruise) showCruise(); // anderes Auto: höchstens so schnell, wie es kann
   city.canFly = !!(city.kinds[v.kind] && city.kinds[v.kind].fly);
   S.ui.flybtn.hidden = !city.canFly;
   S.ui.ps.textContent = '⚡ ' + v.ps + ' PS';
@@ -2142,6 +2297,7 @@ function toggleWalk() {
   if (!city) return;
   if (city.walk) { getIn(); return; }
   const me = city.me;
+  if (city.plane) { if (!city.plane.air && Math.abs(me.speed) < 3 && !(city.plane.crashT > 0)) leavePlane(); else showMsg('✈️ Zuerst landen und anhalten', 1.6); return; }
   if (city.boat) { if (nearPier(me.pos.x, me.pos.z) && Math.abs(me.speed) < 5) leaveBoat(); else showMsg('🚤 Fahr zurück zum Steg, dort kannst du aussteigen', 1.8); return; }
   if (city.police || city.ticket || city.pulled > 0) { showMsg('🚔 Nicht jetzt – die Polizei!', 1.4); return; }
   if (tagState()) { showMsg('🏃 Nicht während Fangis', 1.4); return; }
@@ -2166,6 +2322,7 @@ function getIn() {
   S.scene.remove(w.mesh);
   city.walk = null;
   if (t.boat) enterBoat();
+  else if (t.plane) enterPlane();
   else if (t.ride) { // Fahrzeug tauschen: dein Auto bleibt stehen, wo es ist (und man kann wieder zurücktauschen)
     const me = city.me, R = t.ride, old = { v: me.v, x: me.pos.x, z: me.pos.z, h: me.heading };
     switchCar(R.v);
@@ -2229,10 +2386,12 @@ function stepWalk(dt) {
   }
   if (!city.boat && nearPier(w.x, w.z) && Math.hypot(w.x - BOAT_HOME.x, w.z - BOAT_HOME.z) < 12.5) { best = { boat: true }; bd = 0; } // Boot am Steg
   if (Math.hypot(w.x - LIFT.A.x, w.z - LIFT.A.z) < 14) { best = { lift: true }; bd = 0; } // Sessellift (Talstation)
+  const FL = S.areas.flyer;
+  if (FL && !city.plane && Math.hypot(w.x - FL.x, w.z - FL.z) < 16) { best = { plane: true }; bd = 0; } // Flugzeug
   const HB = S.places.house && S.places.house.bed;
   if (HB && city.house.owned && Math.hypot(w.x - HB.x, w.z - HB.z) < 3) { best = { bed: true }; bd = 0; } // Bett im eigenen Haus
-  if (best && (!w.target || w.target.v !== best.v || !!w.target.boat !== !!best.boat || !!w.target.lift !== !!best.lift || !!w.target.bed !== !!best.bed))
-    showMsg(best.bed ? '🛏️ Bett – X: schlafen' : best.lift ? '🚡 Sessellift – X: einsteigen und hinauffahren' : best.boat ? '🚤 Boot – einsteigen' : best.v ? '🔑 ' + ((city.kinds[best.v.kind] || {}).name || '') + ' – 🚗 einsteigen' : '🚗 Einsteigen?', 1.2);
+  if (best && (!w.target || w.target.v !== best.v || !!w.target.boat !== !!best.boat || !!w.target.lift !== !!best.lift || !!w.target.bed !== !!best.bed || !!w.target.plane !== !!best.plane))
+    showMsg(best.plane ? '✈️ Flugzeug – X: einsteigen und fliegen' : best.bed ? '🛏️ Bett – X: schlafen' : best.lift ? '🚡 Sessellift – X: einsteigen und hinauffahren' : best.boat ? '🚤 Boot – einsteigen' : best.v ? '🔑 ' + ((city.kinds[best.v.kind] || {}).name || '') + ' – 🚗 einsteigen' : '🚗 Einsteigen?', 1.2);
   w.target = best;
   S.ui.walkbtn.classList.toggle('ready', !!best);
 }
@@ -3051,7 +3210,7 @@ function stepRules(dt) {
   S.ui.speed.classList.toggle('over', !!city.limit && kmh > city.limit + 5 && me.alt < 2);
   const F = S.flash; // Blitz verglüht
   if (F.visible && (F.material.opacity -= dt * 4) <= 0) F.visible = false;
-  if (me.alt > 2.5 || city.walk || POLICE_KINDS.includes(me.v.kind)) return;
+  if (me.alt > 2.5 || city.walk || city.plane || POLICE_KINDS.includes(me.v.kind)) return;
   const hx = Math.cos(me.heading), hz = Math.sin(me.heading);
   for (const c of S.speedCams) {
     const dx = me.pos.x - c.x, dz = me.pos.z - c.z, along = dx * c.fx + dz * c.fz, side = Math.abs(dz * c.fx - dx * c.fz);
@@ -3317,6 +3476,10 @@ const CSS = `
   background: rgba(0,0,0,.55); border-radius: 14px; padding: 6px 16px; font-weight: 800; font-size: 26px; }
 #city .speed small { display: block; font-size: 13px; font-weight: 600; opacity: .8; }
 #city .speed.over { background: rgba(185,28,28,.85); }
+#city .cruise { position: absolute; bottom: 86px; left: 50%; transform: translateX(-50%); display: flex; gap: 4px; }
+#city .cruise[hidden] { display: none; }
+#city .cruise button { background: rgba(0,0,0,.55); color: #fff; border: 2px solid rgba(255,255,255,.3); border-radius: 10px; font: 800 16px system-ui, sans-serif; padding: 4px 10px; touch-action: manipulation; }
+#city .cruise .cron.on { background: #16a34a; border-color: #86efac; }
 #city .limit { position: absolute; bottom: 18px; left: calc(50% - 128px); width: 46px; height: 46px; border-radius: 50%; background: #fff;
   border: 7px solid #d61f1f; color: #111; font: 900 20px system-ui, sans-serif; letter-spacing: -1px; display: flex; align-items: center; justify-content: center; }
 #city .limit[hidden], #city .jailbar[hidden], #city .fuel[hidden] { display: none; }
@@ -3452,6 +3615,7 @@ function buildDom() {
       <p class="jailnote" hidden>🔒 Über 140 km/h: 3 Minuten Gefängnis!</p>
       <button class="pay">Okay 👍</button></div></div>
     <div class="speed"><span class="kmh">0</span> km/h<small class="ps"></small></div>
+    <div class="cruise" title="Tempomat (C ein/aus, + und − einstellen)"><button data-cr="-">−</button><button data-cr="on" class="cron">🎯 <b>80</b></button><button data-cr="+">+</button></div>
     <div class="limit" hidden></div>
     <div class="fuel" hidden><b></b><span><i></i></span></div>
     <div class="fuel dmg" hidden><b>🔧</b><span><i></i></span></div>
@@ -3467,7 +3631,7 @@ function buildDom() {
   document.body.appendChild(root);
   const $ = s => root.querySelector(s);
   const ui = { root, kmh: $('.kmh'), ps: $('.ps'), msg: $('.msg'), hint: $('.hint'), minimap: $('.minimap'), ctls: [...root.querySelectorAll('.ctl')],
-    speed: $('.speed'), limit: $('.limit'), fuel: $('.fuel'), fuelIcon: $('.fuel b'), fuelBar: $('.fuel i'), dmg: $('.dmg'), dmgBar: $('.dmg i'), jail: $('.jailbar'), jailtime: $('.jailbar .jt'), bail: $('.bail'), flash: $('.flash'), flybtn: $('.flybtn'), flyctl: $('.flyctl'), basebtn: $('.basebtn'), walkbtn: $('.walkbtn'), basepanel: $('.basepanel'), dealpanel: $('.dealpanel'), talkpanel: $('.talkpanel'), talkbtn: $('.talkbtn'), shopbtn: $('.shopbtn'),
+    speed: $('.speed'), cruise: $('.cruise'), cruiseVal: $('.cruise b'), cruiseOn: $('.cruise .cron'), limit: $('.limit'), fuel: $('.fuel'), fuelIcon: $('.fuel b'), fuelBar: $('.fuel i'), dmg: $('.dmg'), dmgBar: $('.dmg i'), jail: $('.jailbar'), jailtime: $('.jailbar .jt'), bail: $('.bail'), flash: $('.flash'), flybtn: $('.flybtn'), flyctl: $('.flyctl'), basebtn: $('.basebtn'), walkbtn: $('.walkbtn'), basepanel: $('.basepanel'), dealpanel: $('.dealpanel'), talkpanel: $('.talkpanel'), talkbtn: $('.talkbtn'), shopbtn: $('.shopbtn'),
     chase: $('.chase'), ticket: $('.ticket'), drift: $('.drift'), clock: $('.clock'),
     tagbtn: $('.tagbtn'), tagbar: $('.tagbar'),
     jobs: $('.jobs'), jobpanel: $('.jobpanel'), goal: $('.goal'), arrow: $('.goal .arrow'), gtext: $('.goal .gtext') };
@@ -3499,6 +3663,7 @@ function buildDom() {
   $('.basebtn').addEventListener('pointerdown', e => { e.preventDefault(); toggleBase(); });
   ui.basepanel.addEventListener('click', onBaseClick);
   ui.dealpanel.addEventListener('click', onDealerClick);
+  ui.cruise.addEventListener('click', e => { const b = e.target.closest('button'); if (b) { cruiseCmd(b.dataset.cr); b.blur(); } });
   ui.talkpanel.addEventListener('click', onTalkClick);
   $('.talkbtn').addEventListener('pointerdown', e => { e.preventDefault(); startTalk(); });
   $('.shopbtn').addEventListener('pointerdown', e => { e.preventDefault(); openDealer(); });
@@ -3517,7 +3682,7 @@ function buildDom() {
 }
 
 function toggleFly() {
-  if (!city || !city.canFly || city.walk || city.jail) return;
+  if (!city || !city.canFly || city.walk || city.jail || city.plane || city.boat) return;
   const me = city.me;
   if (!me.fly && (city.pulled > 0 || city.ticket || (city.police && city.police.state === 'stop'))) return;
   flyToggle(me, me.alt);
@@ -3545,6 +3710,8 @@ function onKey(e) {
   if (e.code === 'KeyB' && e.type === 'keydown' && !e.repeat) { toggleBase(); e.preventDefault(); return; }
   if (e.code === 'KeyX' && e.type === 'keydown' && !e.repeat) { toggleWalk(); e.preventDefault(); return; }
   if (e.code === 'KeyT' && e.type === 'keydown' && !e.repeat) { startTalk(); e.preventDefault(); return; }
+  if (e.type === 'keydown' && (e.code === 'KeyC' || e.key === '+' || e.key === '-')) { // Tempomat (Taste + und − je nach Tastatur)
+    cruiseCmd(e.code === 'KeyC' ? 'on' : e.key === '-' ? '-' : '+'); e.preventDefault(); return; }
   const k = KEYS[e.code];
   if (!k) return;
   city.input[k] = e.type === 'keydown';
@@ -3707,6 +3874,7 @@ export function startCity({ player, kinds, topSpeed, onExit, pay = () => 0, earn
   city.works = null; city.worksT = 30 + Math.random() * 40;
   city.house = loadHouse(); city.houseOpen = false; showHouse();
   city.rides = []; city.boat = null; city.bales = 0;
+  city.cruise = { on: false, kmh: Math.min(80, cruiseMax()) }; showCruise();
   const TR = RIDES_INFO.tractor;
   if (kinds.tractor) { // Traktor auf dem Bauernhof: zu Fuss hin und einsteigen
     const mesh = buildCar({ ...TR.v, special: null }, kinds); mesh.position.set(TR.x, 0, TR.z); mesh.rotation.y = -TR.h;
@@ -3763,7 +3931,7 @@ function step(now) {
   stepDayNight(dt);
   stepWeather(dt);
   if (city.pulled > 0) city.pulled -= dt;
-  if (city.walk) stepWalk(dt); else stepMe(dt);
+  if (city.walk) stepWalk(dt); else if (city.plane) stepPlane(dt); else stepMe(dt);
   stepJail();
   stepRules(dt);
   stepDamage(dt);
@@ -3921,7 +4089,8 @@ function updateHud(dt) {
   S.ui.dmgBar.style.width = Math.round(city.damage * 100) + '%';
   S.ui.kmh.textContent = Math.round(Math.abs(me.speed) * 3.6);
   S.ui.flybtn.textContent = me.fly && !me.landing ? '🛬' : '✈️';
-  S.ui.flyctl.hidden = !me.fly || me.landing;
+  S.ui.flyctl.hidden = city.plane ? (!city.plane.air && me.speed < 30) : (!me.fly || me.landing);
+  S.ui.cruise.hidden = !!(city.walk || city.plane);
   drawMinimap();
   if (!S.snd) return;
   let near = null, nd = Infinity;
@@ -3944,7 +4113,11 @@ function render(dt) {
   const me = city.me, cam = S.camera, w = city.walk;
   const fx = Math.cos(me.heading), fz = Math.sin(me.heading);
   const back = 8.5 + Math.abs(me.speed) * 0.03;
-  if (w) { // zu Fuss: Kamera hinter dem Kopf
+  if (city.plane && !w) { // Flugzeug: weit hinten und oben
+    const pb = 46 + Math.abs(me.speed) * 0.1, y = me.mesh.position.y;
+    camWant.set(me.pos.x - fx * pb, Math.max(y + 11, groundAt(me.pos.x - fx * pb, me.pos.z - fz * pb) + 4), me.pos.z - fz * pb);
+    camAhead.set(me.pos.x + fx * 25, y + 4, me.pos.z + fz * 25);
+  } else if (w) { // zu Fuss: Kamera hinter dem Kopf
     const wx = Math.cos(w.h), wz = Math.sin(w.h);
     const gy = w.gy || 0;
     camWant.set(w.x - wx * 4.2, gy + 2.4, w.z - wz * 4.2);
@@ -3979,6 +4152,10 @@ function render(dt) {
 function endCity() {
   removePolice();
   endWorks();
+  if (city.plane) { // Flugzeug zurück an seinen Platz
+    const F = S.areas.flyer; Object.assign(F, F.home); F.mesh.position.set(F.x, 0, F.z); F.mesh.rotation.set(0, -F.h, 0);
+    city.me.mesh = city.plane.car; city.plane = null;
+  }
   if (city.boat) { // Boot zurück an den Steg, Auto wieder als eigenes Auto
     S.scene.remove(city.boat.car);
     S.country.boat.position.set(BOAT_HOME.x, BOAT_Y, BOAT_HOME.z); S.country.boat.rotation.set(0, -BOAT_HOME.h, 0);
