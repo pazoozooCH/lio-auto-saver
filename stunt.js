@@ -346,13 +346,15 @@ function stepMe(dt) {
   // --- auf dem Boden ---
   const steerTarget = (input.left ? -1 : 0) + (input.right ? 1 : 0);
   me.steer += (steerTarget - me.steer) * Math.min(1, dt * 7);
+  const brakeDrift = !!input.brake && steerTarget !== 0 && me.speed > 10; // Bremse + Lenken = driften (statt Handbremse)
+  const brk = input.brake && !brakeDrift;
   if (input.gas) {
     if (me.speed < 0) me.speed = Math.min(0, me.speed + BRAKE * dt);
     else me.speed += me.acc * Math.max(0, 1 - me.speed / me.maxV) * dt;
-  } else if (!input.brake) me.speed -= Math.sign(me.speed) * Math.min(Math.abs(me.speed), 1.8 * dt);
-  if (input.brake) me.speed = me.speed > 0 ? Math.max(0, me.speed - BRAKE * dt) : Math.max(-8, me.speed - 6 * dt);
+  } else if (!brk) me.speed -= Math.sign(me.speed) * Math.min(Math.abs(me.speed), 1.8 * dt);
+  if (brk) me.speed = me.speed > 0 ? Math.max(0, me.speed - BRAKE * dt) : Math.max(-8, me.speed - 6 * dt);
   // Driften (wie in der Stadt): Handbremse lässt das Heck ausbrechen, das Auto rutscht quer weiter
-  const hand = !!input.drift;
+  const hand = !!input.drift || brakeDrift;
   if (hand) me.speed -= Math.sign(me.speed) * Math.min(Math.abs(me.speed), 3.5 * dt);
   if ((hand && Math.abs(me.speed) > 8) || Math.abs(me.vl) > 3.5) me.driftMode = true;
   else if (Math.abs(me.vl) < 1.2 || Math.abs(me.speed) < 5) me.driftMode = false;
@@ -677,12 +679,11 @@ function buildDom() {
     <div class="air"></div>
     <div class="msg"></div>
     <div class="speed"><span class="kmh">0</span> km/h<small class="ps"></small></div>
-    <div class="hint">⬅️ ➡️ lenken (in der Luft: Schraube) · ⬆️ Gas (Salto vorwärts) · ⬇️ Bremse (Salto rückwärts) · Leertaste driften · R Neustart</div>
+    <div class="hint">⬅️ ➡️ lenken (in der Luft: Schraube) · ⬆️ Gas (Salto vorwärts) · ⬇️ Bremse (Salto rückwärts) · Bremse + lenken = driften · R Neustart</div>
     <button class="ctl" data-k="left" style="left:16px">◀</button>
     <button class="ctl" data-k="right" style="left:124px">▶</button>
     <button class="ctl brake" data-k="brake" style="right:124px">BREMSE<br>↺</button>
     <button class="ctl gas" data-k="gas" style="right:16px">GAS<br>↻</button>
-    <button class="ctl hand" data-k="drift" style="right:70px; bottom:120px">DRIFT</button>
     ${FLY_HTML}`;
   document.body.appendChild(root);
   const $ = s => root.querySelector(s);

@@ -1697,11 +1697,11 @@ function startLift(w) {
     w.chair = ch;
   }
   w.mesh.add(w.chair);
-  showMsg('🚡 Es geht hinauf! Leertaste (DRIFT) = schneller', 2.2);
+  showMsg('🚡 Es geht hinauf! Gas oder ▲ halten = schneller', 2.2);
 }
 function stepLift(w, dt) {
   const L = w.lift, C = S.country, T = C.lift.towers, n = T.length - 1;
-  L.u = Math.min(1, L.u + dt * (city.input.drift ? 36 : 9) / L.len); // Leertaste (oder DRIFT): viermal so schnell
+  L.u = Math.min(1, L.u + dt * (city.input.drift || city.input.up || city.input.gas ? 36 : 9) / L.len); // Leertaste, ▲ oder Gas: viermal so schnell
   const f = Math.min(n - 1e-6, L.u * n), k = Math.floor(f), q = f - k, a = T[k], b = T[k + 1];
   w.x = a.x + (b.x - a.x) * q + C.lift.sx; w.z = a.z + (b.z - a.z) * q + C.lift.sz;
   w.gy = a.y + (b.y - a.y) * q - 2.9;
@@ -1731,7 +1731,7 @@ function skiOff(w) {
   w.ski = false; w.speed = 0;
   if (w.skis && w.skis.parent) w.skis.parent.remove(w.skis);
   w.mesh.rotation.set(0, -w.h, 0);
-  S.ui.hint.textContent = '⬅️ ➡️ drehen · ⬆️ gehen · Leertaste rennen · E springen · Q Backflip · X einsteigen';
+  S.ui.hint.textContent = '⬅️ ➡️ drehen · ⬆️ gehen (lange = rennen) · E springen · Q Backflip · X einsteigen';
   showMsg('🚶 Ski aus', 1.2);
 }
 function stepSki(w, dt) {
@@ -1807,7 +1807,7 @@ function leavePlane() {
   const w = city.walk = { x: px, z: pz, h: me.heading, speed: 0, phase: 0, mesh: makePlayer(), target: null };
   w.mesh.position.set(w.x, 0, w.z); S.scene.add(w.mesh);
   S.ui.walkbtn.textContent = '🚗';
-  S.ui.hint.textContent = '⬅️ ➡️ drehen · ⬆️ gehen · Leertaste rennen · E springen · Q Backflip · X einsteigen';
+  S.ui.hint.textContent = '⬅️ ➡️ drehen · ⬆️ gehen (lange = rennen) · E springen · Q Backflip · X einsteigen';
   showMsg('🚶 Ausgestiegen – dein Auto steht noch, wo du es gelassen hast', 2.2);
 }
 function planeCrash() {
@@ -1900,7 +1900,7 @@ function leaveBoat() {
   w.mesh.position.set(w.x, 0, w.z);
   S.scene.add(w.mesh);
   S.ui.walkbtn.textContent = '🚗';
-  S.ui.hint.textContent = '⬅️ ➡️ drehen · ⬆️ gehen · Leertaste rennen · E springen · Q Backflip · X einsteigen';
+  S.ui.hint.textContent = '⬅️ ➡️ drehen · ⬆️ gehen (lange = rennen) · E springen · Q Backflip · X einsteigen';
   showMsg('🚶 Am Steg ausgestiegen – geh zu deinem Auto', 2);
 }
 function onBale() {
@@ -2225,7 +2225,9 @@ function stepMe(dt) {
   if (stopped && city.me.fly) city.me.landing = true; // die Polizei holt dich herunter
   const me = city.me, input = stopped ? pullOver(me, dt) : city.input; // von der Polizei angehalten: rechts ranfahren
   const cr = city.cruise && city.cruise.on && input === city.input; // Tempomat: fährt selber (ausser beim Bremsen)
-  const brake = input.brake, gas = input.gas || (cr && !brake), hand = !!input.drift && !stopped && !me.fly; // Handbremse zum Driften
+  // Driften: Bremse + Lenken bei Tempo (oder Leertaste als Handbremse); dann bremst die Bremse nicht voll, das Heck bricht aus
+  const brakeDrift = !!input.brake && (input.left || input.right) && me.speed > 10 && !stopped && !me.fly;
+  const brake = input.brake && !brakeDrift, gas = input.gas || (cr && !brake), hand = (!!input.drift || brakeDrift) && !stopped && !me.fly;
   const steerTarget = (input.left ? -1 : 0) + (input.right ? 1 : 0);
   me.steer += (steerTarget - me.steer) * Math.min(1, dt * 7);
   me.surface = me.fly ? 'asphalt' : surfaceAt(me.pos.x, me.pos.z);
@@ -2749,7 +2751,7 @@ function switchCar(v) {
 }
 
 // ---------- Aussteigen und zu Fuss gehen ----------
-// 🚪 oder X: anhalten, aussteigen (links, auf der Fahrerseite), herumlaufen (⬆️ gehen, Leertaste/DRIFT rennen) und
+// 🚪 oder X: anhalten, aussteigen (links, auf der Fahrerseite), herumlaufen (⬆️ gehen, lange halten oder Leertaste = rennen) und
 // wieder einsteigen: ins eigene Auto oder in ein Auto der eigenen Base. Online sehen die anderen nur das parkierte Auto.
 function makePerson(shirtColor = 0x2563eb, hairColor = 0x5a3a1e, skinColor = 0xf2c9a0) {
   const g = new THREE.Group(), M = (color, r = 0.8) => new THREE.MeshStandardMaterial({ color, roughness: r });
@@ -2906,7 +2908,7 @@ function toggleWalk() {
   if (me.mesh.userData.driver) me.mesh.userData.driver.visible = false; // der Fahrer ist ja ausgestiegen
   S.ui.walkbtn.textContent = '🚗';
   S.ui.flybtn.hidden = true;
-  S.ui.hint.textContent = '⬅️ ➡️ drehen · ⬆️ gehen · Leertaste rennen · E springen · Q Backflip · X einsteigen';
+  S.ui.hint.textContent = '⬅️ ➡️ drehen · ⬆️ gehen (lange = rennen) · E springen · Q Backflip · X einsteigen';
   showMsg('🚶 Ausgestiegen!', 1.4);
 }
 function getIn() {
@@ -2951,7 +2953,8 @@ function stepWalk(dt) {
   const steer = (input.right ? 1 : 0) - (input.left ? 1 : 0);
   w.turn = (w.turn || 0) + (steer - (w.turn || 0)) * Math.min(1, dt * 10); // weich drehen
   if (!w.air) w.h += w.turn * (Math.abs(w.speed) > 4.5 ? 2.2 : 3) * dt; // in der Luft dreht ⬅️➡️ die Figur (Pirouette)
-  const want = w.fallT > 0 ? 0 : input.gas ? (input.drift ? 8 : 3.8) : input.brake ? -2 : 0;
+  w.gasT = input.gas ? (w.gasT || 0) + dt : 0; // Gas lange halten = rennen (auch ohne Leertaste)
+  const want = w.fallT > 0 ? 0 : input.gas ? (input.drift || w.gasT > 1.2 ? 8 : 3.8) : input.brake ? -2 : 0;
   w.speed += (want - w.speed) * Math.min(1, dt * (w.air ? 1 : want ? 6 : 10));
   const fx = Math.cos(w.h), fz = Math.sin(w.h);
   w.x += fx * w.speed * dt; w.z += fz * w.speed * dt;
@@ -4176,7 +4179,7 @@ ${flyCss('city')}#city .basebtn { position: absolute; top: 76px; left: 12px; wid
   background: rgba(0,0,0,.45); padding: 4px 12px; border-radius: 10px; white-space: nowrap; }
 `;
 
-const HINT = '⬅️ ➡️ lenken · ⬆️ Gas · ⬇️ Bremse/rückwärts · Leertaste driften · H hupen · X aussteigen';
+const HINT = '⬅️ ➡️ lenken · ⬆️ Gas · ⬇️ Bremse/rückwärts · Bremse + lenken = driften · H hupen · X aussteigen';
 function buildDom() {
   const style = document.createElement('style');
   style.textContent = CSS;
@@ -4231,7 +4234,6 @@ function buildDom() {
     <button class="ctl" data-k="right" style="left:124px">▶</button>
     <button class="ctl brake" data-k="brake" style="right:124px">BREMSE</button>
     <button class="ctl gas" data-k="gas" style="right:16px">GAS</button>
-    <button class="ctl hand" data-k="drift" style="right:70px; bottom:120px">DRIFT</button>
     ${FLY_HTML}`;
   document.body.appendChild(root);
   const $ = s => root.querySelector(s);

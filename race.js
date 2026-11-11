@@ -729,12 +729,11 @@ function buildDom() {
     <div class="mirror"></div>
     <div class="msg"></div>
     <div class="speed"><span class="kmh">0</span> km/h<small class="ps"></small></div>
-    <div class="hint">⬅️ ➡️ lenken · ⬆️ Gas · ⬇️ Bremse · Leertaste driften</div>
+    <div class="hint">⬅️ ➡️ lenken · ⬆️ Gas · ⬇️ Bremse · Bremse + lenken = driften</div>
     <button class="ctl left" data-k="left" style="left:16px">◀</button>
     <button class="ctl right" data-k="right" style="left:124px">▶</button>
     <button class="ctl brake" data-k="brake" style="right:124px">BREMSE</button>
     <button class="ctl gas" data-k="gas" style="right:16px">GAS</button>
-    <button class="ctl hand" data-k="drift" style="right:70px; bottom:120px">DRIFT</button>
     ${FLY_HTML}`;
   document.body.appendChild(root);
   const $ = sel => root.querySelector(sel);
@@ -927,7 +926,8 @@ function step(dt) {
 
   // --- Spieler: lenken, Gas, Bremse ---
   const driving = !me.finished;
-  const gas = driving && input.gas, brake = driving && input.brake, hand = driving && !!input.drift && !me.fly; // Handbremse zum Driften
+  const brakeDrift = driving && !!input.brake && (input.left || input.right) && me.speed > 12 && !me.fly; // Bremse + Lenken = driften
+  const gas = driving && input.gas, brake = driving && input.brake && !brakeDrift, hand = driving && (!!input.drift || brakeDrift) && !me.fly; // Handbremse zum Driften
   const steerTarget = driving ? (input.left ? -1 : 0) + (input.right ? 1 : 0) : 0;
   me.steer += (steerTarget - me.steer) * Math.min(1, dt * 7);
   const lat = (me.pos.x - T.pts[me.idx].x) * T.nor[me.idx].x + (me.pos.z - T.pts[me.idx].z) * T.nor[me.idx].z;
