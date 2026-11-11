@@ -11,7 +11,7 @@ import { makeNetCars } from './netcars.js';
 import { makeChat } from './chat.js';
 import { buildHighway, outskirtsDist, hwDrivable, onHighway, makeHighwayTraffic, stepHighway, hwProject, hwPoint, HW, HW_LEN, HW_LIMIT, REST, REST_ZONES, makePath, pathAt, turnTo,
   AREAS, buildAreas, stepAreas, groundShape, areaDrivable, inArea, lockedGate, offroadWhy,
-  PASS_AREA, buildPass, passGround, passDrivable, onPass, passTerrain, passNearest, inPassRegion, passPoints, SUMMIT, slideInside } from './outskirts.js';
+  PASS_AREA, buildPass, passGround, passDrivable, onPass, passTerrain, passNearest, inPassRegion, passPoints, SUMMIT, slideInside, waveFlag } from './outskirts.js';
 import { makeEffects, camView, cockpit, COCKPIT, CAM_NAMES, FLY_HTML, FLY_KEYS, flyCss, flyHelp, flyToggle, flyStep } from './fx.js';
 
 const N = 8;                    // Blöcke pro Seite
@@ -3953,6 +3953,7 @@ function step(now) {
   stepSleep(dt);
   stepAccidents(dt);
   stepHw(dt);
+  if (S.areas.pass && S.areas.pass.flag && Math.hypot(S.camera.position.x - SUMMIT.x, S.camera.position.z - SUMMIT.z) < 400) waveFlag(S.areas.pass.flag, city.t); // Fahne auf dem Gipfel
   stepCountry(S.country, dt, { t: city.t, me: { x: city.me.pos.x, z: city.me.pos.z }, cam: S.camera.position, tractor: city.me.v.kind === 'tractor' && !city.walk, onBale });
   stepAreas(S.areas, dt, city.keys.size, {
     start: () => { if (Math.hypot(city.me.pos.x - 600, city.me.pos.z + 150) < 450) showMsg('✈️ Ein Flugzeug startet!', 1.8); },

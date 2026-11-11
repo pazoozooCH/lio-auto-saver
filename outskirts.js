@@ -1130,10 +1130,16 @@ export function buildPass({ scene, group, asphaltMat, lineMat, sign, natural, te
   const plat = new THREE.Mesh(new THREE.CircleGeometry(SUMMIT.r, 40).rotateX(-Math.PI / 2), asphaltMat);
   plat.position.set(SUMMIT.x, PASS_TOP + 0.05, SUMMIT.z); plat.receiveShadow = true; group.add(plat);
   const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.12, 9, 8), rail); pole.position.set(SUMMIT.x + 12, PASS_TOP + 4.5, SUMMIT.z - 14); group.add(pole);
-  const flag = new THREE.Mesh(new THREE.PlaneGeometry(3, 2), new THREE.MeshStandardMaterial({ color: 0xd52b1e, side: THREE.DoubleSide }));
-  flag.position.set(SUMMIT.x + 13.5, PASS_TOP + 8, SUMMIT.z - 14); scene.add(flag);
-  const cross = new THREE.Mesh(new THREE.BoxGeometry(0.02, 0.4, 1.2), new THREE.MeshBasicMaterial({ color: 0xffffff })); cross.position.set(SUMMIT.x + 13.5, PASS_TOP + 8, SUMMIT.z - 13.99);
-  const cross2 = new THREE.Mesh(new THREE.BoxGeometry(0.02, 1.2, 0.4), cross.material); cross2.position.copy(cross.position); scene.add(cross, cross2);
+  // Schweizer Fahne: quadratisch, rot mit weissem Kreuz (Balken 6/32 breit, Kreuz 20/32 lang), weht im Wind (waveFlag)
+  const fc = document.createElement('canvas'); fc.width = fc.height = 256;
+  const fg = fc.getContext('2d'); fg.fillStyle = '#da291c'; fg.fillRect(0, 0, 256, 256);
+  fg.fillStyle = '#ffffff'; fg.fillRect(48, 104, 160, 48); fg.fillRect(104, 48, 48, 160);
+  const ft = new THREE.CanvasTexture(fc); ft.colorSpace = THREE.SRGBColorSpace;
+  const flag = new THREE.Mesh(new THREE.PlaneGeometry(2.6, 2.6, 12, 4).translate(1.3, 0, 0), new THREE.MeshStandardMaterial({ map: ft, side: THREE.DoubleSide, roughness: 0.9 }));
+  flag.position.set(SUMMIT.x + 12.12, PASS_TOP + 7.6, SUMMIT.z - 14); flag.castShadow = true; scene.add(flag);
+  flag.userData.base = Float32Array.from(flag.geometry.attributes.position.array);
+  const knob = new THREE.Mesh(new THREE.SphereGeometry(0.2, 10, 8), new THREE.MeshStandardMaterial({ color: 0xd4af37, metalness: 0.7, roughness: 0.3 }));
+  knob.position.set(SUMMIT.x + 12, PASS_TOP + 9.1, SUMMIT.z - 14); group.add(knob);
   const kiosk = new THREE.Mesh(new THREE.BoxGeometry(6, 3.5, 4), new THREE.MeshStandardMaterial({ color: 0x92400e })); kiosk.position.set(SUMMIT.x - 14, PASS_TOP + 1.75, SUMMIT.z - 10); group.add(kiosk);
   const roof = new THREE.Mesh(new THREE.BoxGeometry(7, 0.4, 5), new THREE.MeshStandardMaterial({ color: 0x7f1d1d })); roof.position.set(SUMMIT.x - 14, PASS_TOP + 3.7, SUMMIT.z - 10); group.add(roof);
   for (const side of [0, 1]) {
@@ -1145,6 +1151,12 @@ export function buildPass({ scene, group, asphaltMat, lineMat, sign, natural, te
 
 // An einer Leitplanke entlangrutschen statt hängen zu bleiben: die nächste erlaubte Stelle auf der Fahrbahn
 // (Passstrasse, Autobahn, Zufahrt) – oder null, wenn man gar nicht auf einer dieser Strassen ist
+// Fahne wehen lassen: je weiter vom Mast, desto mehr Welle
+export function waveFlag(flag, t) {
+  const P = flag.geometry.attributes.position, B = flag.userData.base;
+  for (let i = 0; i < P.count; i++) { const x = B[i * 3], y = B[i * 3 + 1]; P.setZ(i, Math.sin(x * 2.2 - t * 5 + y * 0.4) * 0.18 * (x / 2.6)); }
+  P.needsUpdate = true; flag.geometry.computeVertexNormals();
+}
 export function slideInside(x, z, r, keys) {
   if (keys >= PASS_AREA.need && inRegion(x, z) && Math.hypot(x - SUMMIT.x, z - SUMMIT.z) > SUMMIT.r - r) {
     const q = passNearest(x, z), max = PASS_W - r * 0.5 - 0.05;
