@@ -3476,8 +3476,9 @@ const CSS = `
   background: rgba(0,0,0,.55); border-radius: 14px; padding: 6px 16px; font-weight: 800; font-size: 26px; }
 #city .speed small { display: block; font-size: 13px; font-weight: 600; opacity: .8; }
 #city .speed.over { background: rgba(185,28,28,.85); }
-#city .cruise { position: absolute; bottom: 86px; left: 50%; transform: translateX(-50%); display: flex; gap: 4px; }
+#city .cruise { position: absolute; bottom: 124px; left: 50%; transform: translateX(-50%); display: flex; gap: 4px; z-index: 3; } /* über der Anleitung (.hint, bottom 86px) */
 #city .cruise[hidden] { display: none; }
+@media (max-width: 760px) { #city .cruise { left: 16px; transform: none; bottom: 216px; } } /* Handy: links über den Lenk- und Flugknöpfen */
 #city .cruise button { background: rgba(0,0,0,.55); color: #fff; border: 2px solid rgba(255,255,255,.3); border-radius: 10px; font: 800 16px system-ui, sans-serif; padding: 4px 10px; touch-action: manipulation; }
 #city .cruise .cron.on { background: #16a34a; border-color: #86efac; }
 #city .limit { position: absolute; bottom: 18px; left: calc(50% - 128px); width: 46px; height: 46px; border-radius: 50%; background: #fff;
