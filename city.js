@@ -26,7 +26,7 @@ const CYCLE = 22;               // Ampelzyklus in Sekunden
 const TRAFFIC = 46;             // so viele Autos fahren herum
 const SEE = 140;                // weiter weg werden Autos nicht gezeichnet
 const DIRS = [[1, 0], [0, 1], [-1, 0], [0, -1]]; // +x, +z, −x, −z
-const SPECIAL = { '2,5': 'gas', '5,2': 'wash', '5,5': 'pizza', '2,2': 'jail', '6,3': 'workshop', '1,3': 'dealer', '6,6': 'hospital', '3,6': 'blue', '7,5': 'house' }; // Blöcke mit Tankstelle, Waschanlage, Pizzeria, Gefängnis, Werkstatt, Autohändler, Spital, Blauer Zone
+const SPECIAL = { '2,5': 'gas', '5,2': 'wash', '5,5': 'pizza', '2,2': 'jail', '6,3': 'workshop', '1,3': 'dealer', '6,6': 'hospital', '3,6': 'blue', '7,5': 'house', '4,2': 'park' }; // Blöcke mit Tankstelle, Waschanlage, Pizzeria, Gefängnis, Werkstatt, Autohändler, Spital, Blauer Zone
 // Basen: sechs Blöcke nebeneinander am oberen Stadtrand, Platz s im Block (s + 1, 0); Einfahrt von der Strasse, an der man startet
 const BASES = 6, BASE_CARS = 10, BASE_COLORS = ['#ef4444', '#3b82f6', '#22c55e', '#f59e0b', '#a855f7', '#ec4899'];
 const baseOf = key => { const [i, j] = key.split(',').map(Number); return j === 0 && i >= 1 && i <= BASES ? i - 1 : -1; };
@@ -481,6 +481,38 @@ function buildWorld() {
     places.house = { x: cx, z: cz, box: { x: cx + 14, z: cz - 5, w: 10, d: 12 }, mailbox: { x: cx - 2, z: cz - 20, w: 6, d: 5 }, door, doorSolid, open: 0, items, forSale, mine, win,
       hinge, frontSolid, fopen: 0, inside, bed, front: { x: dx0, z: Z0 } };
   }
+  // Parkhaus: Erdgeschoss + 3 Ebenen (alle 3,5 m), Rampen übereinander rechts hinten (fahren nach Süden hinauf),
+  // Einfahrt im Süden. Höhe und Ebene rechnet parkY/parkStep (die Rampe wählt man durch Hineinfahren).
+  function buildPark(cx, cz) {
+    const LV = PK_LV, F = { x0: cx - 23, x1: cx + 23, z0: cz - 23, z1: cz + 23 }, RS = { x0: cx + 14, x1: cx + 22, z0: cz - 15, z1: cz + 15 };
+    box(46, 0.04, 46, tarmac, cx, 0.18, cz);
+    const conc = mat({ color: 0xb8bcc2, roughness: 0.9 }), dark = mat({ color: 0x6b7280, roughness: 0.9 }), yel = mat({ color: 0xfacc15 });
+    const lineM = mat({ color: 0xf8fafc, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 });
+    for (let L = 1; L <= 3; L++) { // Decks (mit Loch für die Rampen)
+      const y = L * LV - 0.15;
+      box(37, 0.3, 46, conc, cx - 4.5, y, cz);
+      for (const zz of [cz - 19, cz + 19]) box(9, 0.3, 8, conc, cx + 18.5, y, zz);
+      for (const [x0, x1, z0, z1] of [[F.x0, F.x1, F.z0, F.z0 + 0.4], [F.x0, F.x1, F.z1 - 0.4, F.z1], [F.x0, F.x0 + 0.4, F.z0, F.z1], [F.x1 - 0.4, F.x1, F.z0, F.z1]])
+        box(x1 - x0, 1, z1 - z0, conc, (x0 + x1) / 2, L * LV + 0.5, (z0 + z1) / 2); // Brüstung
+      box(0.3, 0.3, 26, yel, RS.x0 - 0.2, L * LV + 0.15, cz); // gelbe Kante zur Rampe
+      for (let k = 0; k < 7; k++) box(0.12, 0.02, 5, lineM, cx - 20 + k * 3, L * LV + 0.02, cz - 15); // Parkfelder
+      box(30, 0.08, 0.6, mat({ color: 0xfff7d6, emissive: 0xfff7d6, emissiveIntensity: 0.9 }), cx - 6, L * LV - 0.32, cz); // Licht unter dem Deck
+    }
+    const rl = Math.hypot(30, LV), ra = Math.atan2(LV, 30);
+    for (let r = 0; r <= 2; r++) { const m = box(8, 0.3, rl, dark, cx + 18, (r + 0.5) * LV - 0.1, cz); m.rotation.x = -ra; }
+    for (const [x, z] of [[cx - 14, cz - 10], [cx - 14, cz + 10], [cx + 1, cz - 10], [cx + 1, cz + 10], [cx + 13, cz - 19], [cx + 13, cz + 19]]) {
+      box(0.8, 3 * LV, 0.8, conc, x, 1.5 * LV, z); round.push({ x, z, r: 0.5, h: 3 * LV + 1 });
+    }
+    // Wände unten (Süden mit Einfahrt in der Mitte)
+    box(46, 3.2, 0.4, conc, cx, 1.8, F.z0 + 0.2, true); box(0.4, 3.2, 46, conc, F.x0 + 0.2, 1.8, cz, true); box(0.4, 3.2, 46, conc, F.x1 - 0.2, 1.8, cz, true);
+    box(15, 3.2, 0.4, conc, cx - 15.5, 1.8, F.z1 - 0.2, true); box(15, 3.2, 0.4, conc, cx + 15.5, 1.8, F.z1 - 0.2, true);
+    for (const side of [0, 1]) { const s1 = sign('🅿️ PARKHAUS · Rampe hinten rechts', '#1d4ed8', '#ffffff', 10, 1.4); s1.position.set(cx, 4.3, F.z1 + 0.3 + side * 0.05); s1.rotation.y = side ? Math.PI : 0; decor.add(s1); }
+    for (let L = 1; L <= 3; L++) { const sg = sign(L === 3 ? '🌇 DACH' : 'Ebene ' + L, '#1d4ed8', '#ffffff', 2.6, 0.8); sg.position.set(cx + 13, L * LV + 2, cz + 18.5); sg.rotation.y = -Math.PI / 2; decor.add(sg); }
+    // Parkierte Autos auf jeder Ebene (fest auf ihrer Ebene, siehe parkBlocked)
+    const parked = [];
+    for (let L = 0; L <= 3; L++) for (const k of [0, 3, 5]) if ((L + k) % 2 === 0 || L === 0) parked.push({ x: cx - 18.5 + k * 3, z: cz - 15, L, h: Math.PI / 2 });
+    places.park = { F, RS, parked, cx, cz };
+  }
   function buildDealer(cx, cz) { // Autohändler: Glas-Ausstellungsraum, davor drei Drehteller mit Gebrauchtwagen
     box(46, 0.04, 46, tarmac, cx, 0.18, cz);
     const glass = mat({ color: 0x9cc7e6, metalness: 0.3, roughness: 0.05, transparent: true, opacity: 0.35 }), frame = mat({ color: 0x1f2937 });
@@ -593,7 +625,7 @@ function buildWorld() {
     const key = bi + ',' + bj;
     if (key === plaza) { buildPlaza(decor, cx, cz, round); continue; }
     if (baseOf(key) >= 0) { buildBase(cx, cz, baseOf(key)); continue; }
-    if (SPECIAL[key]) { ({ gas: buildGas, wash: buildWash, pizza: buildPizza, jail: buildJail, workshop: buildWorkshop, dealer: buildDealer, hospital: buildHospital, blue: (x, z) => buildBlue(x, z, bi, bj), house: buildHouse })[SPECIAL[key]](cx, cz); continue; }
+    if (SPECIAL[key]) { ({ gas: buildGas, wash: buildWash, pizza: buildPizza, jail: buildJail, workshop: buildWorkshop, dealer: buildDealer, hospital: buildHospital, blue: (x, z) => buildBlue(x, z, bi, bj), house: buildHouse, park: buildPark })[SPECIAL[key]](cx, cz); continue; }
     if (parks.has(key)) { // Park: Wiese mit Wegkreuz und Bäumen
       const g = quads(1 / 4), h = inner / 2, p = 1.6;
       g.add(cx - h, cz - h, cx - p, cz - p, 0.17); g.add(cx + p, cz - h, cx + h, cz - p, 0.17);
@@ -1020,6 +1052,43 @@ function showCar(c, dt) {
   m.rotation.y = -c.h;
   for (const w of m.userData.wheels) w.rotation.z -= (c.lot && c.lot.state === 'back' ? -1 : 1) * c.speed * dt / 0.35;
   animateCar(m, city.t, null);
+}
+
+// ---------- Parkhaus ----------
+// city.pkL = Ebene (0 unten … 3 Dach), city.pkR = auf welcher Rampe (r: von Ebene r nach r+1) oder null.
+// Grosse Höhensprünge sind verboten (so wirken Deck-Kanten und Rampenseiten wie Wände, und man fällt nicht hinunter).
+const PK_LV = 3.5;
+const pkIn = (x, z) => { const P = S.places.park; return !!P && x > P.F.x0 && x < P.F.x1 && z > P.F.z0 && z < P.F.z1; };
+const pkStrip = (x, z) => { const R = S.places.park.RS; return x > R.x0 && x < R.x1 && z > R.z0 - 0.5 && z < R.z1 + 0.5; };
+const pkT = z => { const R = S.places.park.RS; return Math.max(0, Math.min(1, (z - R.z0) / (R.z1 - R.z0))); };
+function pkChoose(t, y) {
+  let best = 0, bd = 1e9;
+  for (const r of [city.pkL || 0, (city.pkL || 0) - 1]) if (r >= 0 && r <= 2) { const d = Math.abs((r + t) * PK_LV - y); if (d < bd) { bd = d; best = r; } }
+  return best;
+}
+function parkY(x, z) { // Bodenhöhe im Parkhaus
+  if (pkStrip(x, z)) { const t = pkT(z), r = city.pkR != null ? city.pkR : pkChoose(t, city.gy || 0); return (r + t) * PK_LV; }
+  return (city.pkL || 0) * PK_LV;
+}
+function parkBlocked(x, z) {
+  const inside = pkIn(x, z);
+  if (!inside) return (city.pkL || 0) > 0 || city.pkR != null; // oben nicht über die Brüstung hinaus
+  let y, L = city.pkL || 0;
+  if (pkStrip(x, z)) { const t = pkT(z), r = city.pkR != null ? city.pkR : pkChoose(t, city.gy || 0); y = (r + t) * PK_LV; }
+  else if (city.pkR != null) { L = Math.max(0, Math.min(3, Math.round(city.pkR + pkT(z)))); y = L * PK_LV; }
+  else y = L * PK_LV;
+  if (Math.abs(y - (city.gy || 0)) > 0.8) return true;
+  for (const c of S.places.park.parked) if (c.L === L && Math.abs(x - c.x) < 1.1 + city.me.radius * 0.6 && Math.abs(z - c.z) < 2.4 + city.me.radius * 0.6) return true;
+  return false;
+}
+function parkStep(x, z) {
+  if (!pkIn(x, z)) { city.pkL = 0; city.pkR = null; city.pkTold = false; return; }
+  if (!city.pkTold) { city.pkTold = true; showMsg('🅿️ Parkhaus – die Rampe ist hinten rechts', 1.8); }
+  if (pkStrip(x, z)) { if (city.pkR == null) city.pkR = pkChoose(pkT(z), city.gy || 0); }
+  else if (city.pkR != null) {
+    city.pkL = Math.max(0, Math.min(3, Math.round(city.pkR + pkT(z)))); city.pkR = null;
+    showMsg(city.pkL === 3 ? '🌇 Auf dem Dach – schöne Aussicht!' : city.pkL ? '🅿️ Ebene ' + city.pkL : '🅿️ Erdgeschoss', 1.4);
+  }
 }
 
 // ---------- Läden in der Stadt (Snacks, Lackieren, Tuning, Drive-in) ----------
@@ -1936,6 +2005,11 @@ function stepMe(dt) {
     me.alt = flyStep(me, input, dt, me.alt, floor, FLY_MAX);
     if (me.landing && me.alt <= 0.03) { me.fly = me.landing = false; me.alt = 0; showMsg('🛬 Gelandet', 1.2); }
   }
+  if (S.places.park && !me.fly && parkBlocked(me.pos.x, me.pos.z)) { // Parkhaus: Deck-Kante, Rampenseite, parkiertes Auto
+    me.pos.x = city.okPos.x; me.pos.z = city.okPos.z;
+    if (Math.abs(me.speed) > 8 && city.crashT <= 0) { crash(0.3, 'car'); city.crashT = 0.5; }
+    me.speed *= -0.2; me.vl = 0;
+  }
   // Am Stadtrand ist Schluss – ausser auf der Autobahn (dort halten die Leitplanken einen auf der Fahrbahn)
   const slide = allowedAt(me.pos.x, me.pos.z, me.radius) ? null : slideInside(me.pos.x, me.pos.z, me.radius, city.keys.size);
   if (slide && allowedAt(slide.x, slide.z, me.radius)) { // an der Leitplanke entlang schrammen
@@ -1971,6 +2045,7 @@ function stepMe(dt) {
   }
   city.inCross = inX;
   // Am Berg: Boden unter dem Auto, Neigung vorne/hinten, bergab rollt es schneller
+  if (S.places.park && !me.fly) parkStep(me.pos.x, me.pos.z);
   city.gy = city.boat && !city.walk ? BOAT_Y + Math.sin(city.t * 1.6) * 0.08 : groundAt(me.pos.x, me.pos.z);
   let slope = 0;
   if (!city.boat && (city.gy || Math.abs(me.pos.z) > LIMIT || Math.abs(me.pos.x) > LIMIT)) {
@@ -2038,6 +2113,7 @@ const allowedAt = (x, z, r) => {
 const groundMemo = new Map();
 function landAt(i, j) { const k = i * 100000 + j; let h = groundMemo.get(k); if (h === undefined) { h = S.height(-1100 + i * 20, -1100 + j * 20); groundMemo.set(k, h); } return h; }
 function groundAt(x, z) {
+  if (pkIn(x, z)) return parkY(x, z);
   const pg = passGround(x, z);
   if (pg) return pg;
   if (Math.abs(x) <= LIMIT && Math.abs(z) <= LIMIT) return 0;
@@ -3971,6 +4047,13 @@ export function startCity({ player, kinds, topSpeed, onExit, pay = () => 0, earn
   if (jailUntil() > Date.now()) { goToJail(jailUntil()); showMsg('🔒 Du sitzt noch im Gefängnis!', 2.4); } // Zeit läuft weiter
   parkLotCars();
   setupBlue();
+  if (S.places.park && !S.parkCars) { // Autos im Parkhaus (einmal gebaut, bleiben stehen)
+    S.parkCars = S.places.park.parked.map(q => {
+      const kind = LOT_KINDS[Math.floor(Math.random() * LOT_KINDS.length)], m = buildCar({ kind, color: COLORS[Math.floor(Math.random() * COLORS.length)], special: null }, kinds);
+      noShadow(m); m.position.set(q.x, q.L * PK_LV + 0.05, q.z); m.rotation.y = -q.h; S.scene.add(m); return m;
+    });
+  }
+  city.pkL = 0; city.pkR = null;
   city.peds = makePeds();
   city.works = null; city.worksT = 30 + Math.random() * 40;
   city.house = loadHouse(); city.houseOpen = false; showHouse();
@@ -4234,6 +4317,7 @@ function render(dt) {
   } else if (!camView(camMode, me.pos.x, me.alt + city.gy, me.pos.z, me.heading, camWant, camAhead)) {
     const y = me.alt + city.gy, hy = (groundAt(me.pos.x - fx * back, me.pos.z - fz * back) || y) ; // hinter dir am Hang nicht in den Boden
     camWant.set(me.pos.x - fx * back, Math.max(y, hy) + 3.3 + Math.abs(me.speed) * 0.01, me.pos.z - fz * back);
+    if (pkIn(me.pos.x, me.pos.z) && ((city.pkR != null && city.pkR < 2) || (city.pkR == null && (city.pkL || 0) < 3))) camWant.y = Math.min(camWant.y, y + 2.9); // Parkhaus: unter der Decke
     camAhead.set(me.pos.x + fx * 6, y + 1.2, me.pos.z + fz * 6);
   }
   if (!cockpit(me.mesh, cam, camMode === COCKPIT && !w)) {
