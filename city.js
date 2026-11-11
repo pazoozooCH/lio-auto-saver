@@ -26,7 +26,7 @@ const CYCLE = 22;               // Ampelzyklus in Sekunden
 const TRAFFIC = 46;             // so viele Autos fahren herum
 const SEE = 140;                // weiter weg werden Autos nicht gezeichnet
 const DIRS = [[1, 0], [0, 1], [-1, 0], [0, -1]]; // +x, +z, −x, −z
-const SPECIAL = { '2,5': 'gas', '5,2': 'wash', '5,5': 'pizza', '2,2': 'jail', '6,3': 'workshop', '1,3': 'dealer', '6,6': 'hospital', '3,6': 'blue', '7,5': 'house', '4,2': 'park' }; // Blöcke mit Tankstelle, Waschanlage, Pizzeria, Gefängnis, Werkstatt, Autohändler, Spital, Blauer Zone
+const SPECIAL = { '2,5': 'gas', '5,2': 'wash', '5,5': 'pizza', '2,2': 'jail', '6,3': 'workshop', '1,3': 'dealer', '6,6': 'hospital', '3,6': 'blue', '7,5': 'house', '4,2': 'park', '2,6': 'drive', '6,4': 'kino', '5,6': 'stadium' }; // Blöcke mit Tankstelle, Waschanlage, Pizzeria, Gefängnis, Werkstatt, Autohändler, Spital, Blauer Zone
 // Basen: sechs Blöcke nebeneinander am oberen Stadtrand, Platz s im Block (s + 1, 0); Einfahrt von der Strasse, an der man startet
 const BASES = 6, BASE_CARS = 10, BASE_COLORS = ['#ef4444', '#3b82f6', '#22c55e', '#f59e0b', '#a855f7', '#ec4899'];
 const baseOf = key => { const [i, j] = key.split(',').map(Number); return j === 0 && i >= 1 && i <= BASES ? i - 1 : -1; };
@@ -513,6 +513,90 @@ function buildWorld() {
     for (let L = 0; L <= 3; L++) for (const k of [0, 3, 5]) if ((L + k) % 2 === 0 || L === 0) parked.push({ x: cx - 18.5 + k * 3, z: cz - 15, L, h: Math.PI / 2 });
     places.park = { F, RS, parked, cx, cz };
   }
+  // Drive-in: Burger-Restaurant, Spur rechts am Haus entlang (von Norden): beim Lautsprecher bestellen, am Fenster abholen
+  function buildDrive(cx, cz) {
+    box(46, 0.04, 46, tarmac, cx, 0.18, cz);
+    const wallM = mat({ color: 0xfde68a }), red = mat({ color: 0xdc2626 }), dark = mat({ color: 0x1f2937 });
+    const shop = wallBox(16, 5, 12, walls[1], 8); shop.position.set(cx - 6, 2.66, cz + 2); decor.add(shop);
+    solid.push({ x0: cx - 14, x1: cx + 2, z0: cz - 4, z1: cz + 8, h: 6 });
+    box(16.6, 0.6, 12.6, red, cx - 6, 5.45, cz + 2);
+    // Riesenburger auf dem Dach
+    const bun = mat({ color: 0xd97706 }), patty = mat({ color: 0x5b2c0f }), cheese = mat({ color: 0xfacc15 }), salad = mat({ color: 0x22c55e });
+    for (const [y, rr, h, m] of [[6.2, 2.6, 0.9, bun], [6.85, 2.75, 0.2, salad], [7.1, 2.7, 0.4, patty], [7.35, 2.85, 0.12, cheese]]) { const c = new THREE.Mesh(new THREE.CylinderGeometry(rr, rr, h, 20), m); c.position.set(cx - 6, y, cz + 2); c.castShadow = true; decor.add(c); }
+    const top = new THREE.Mesh(new THREE.SphereGeometry(2.7, 20, 10, 0, Math.PI * 2, 0, Math.PI / 2), bun); top.position.set(cx - 6, 7.4, cz + 2); top.scale.y = 0.7; decor.add(top);
+    for (const side of [0, 1]) { const s1 = sign('🍔 BURGER DRIVE-IN', '#dc2626', '#fde68a', 12, 1.8); s1.position.set(cx - 6, 4, cz - 4.2 - side * 0.05); s1.rotation.y = side ? Math.PI : 0; decor.add(s1); }
+    // Spur mit Pfeilen, Lautsprecher mit Menütafel, Fenster
+    const lineM2 = mat({ color: 0xfacc15, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 });
+    for (const x of [cx + 3, cx + 9]) box(0.15, 0.02, 44, lineM2, x, 0.21, cz);
+    box(0.25, 1.5, 0.25, dark, cx + 10.2, 0.9, cz - 8); box(0.6, 0.6, 0.4, dark, cx + 10.2, 1.7, cz - 8);
+    const menu = sign('🍔 6 · 🍟 4 · 🥤 3 · 🍱 11', '#111827', '#fde68a', 4.5, 1.4); menu.position.set(cx + 11.5, 2.2, cz - 10); menu.rotation.y = -Math.PI / 2; decor.add(menu);
+    box(0.1, 1.4, 2, mat({ color: 0x93c5fd, emissive: 0xfff3c4, emissiveIntensity: 0.5 }), cx + 2.1, 1.6, cz + 4);
+    const spk = sign('🔊 BESTELLEN', '#dc2626', '#ffffff', 3, 0.8); spk.position.set(cx + 10.2, 2.4, cz - 8); spk.rotation.y = -Math.PI / 2; decor.add(spk);
+    const win = sign('🪟 ABHOLEN', '#dc2626', '#ffffff', 3, 0.8); win.position.set(cx + 2.2, 3, cz + 4); win.rotation.y = Math.PI / 2; decor.add(win);
+    // Tische mit Schirmen auf der anderen Seite
+    for (const [dx, dz] of [[-18, -14], [-10, -14], [-18, 16], [-10, 16]]) { box(1.6, 0.1, 1.6, mat({ color: 0xffffff }), cx + dx, 0.95, cz + dz); const u = new THREE.Mesh(new THREE.ConeGeometry(1.8, 0.7, 10), red); u.position.set(cx + dx, 2.6, cz + dz); decor.add(u); box(0.08, 2.3, 0.08, dark, cx + dx, 1.4, cz + dz); }
+    places.order = { x: cx + 6, z: cz - 8, w: 6, d: 5 }; places.pickup = { x: cx + 6, z: cz + 4, w: 6, d: 5 };
+  }
+  // Kino: grosser Saal mit Leinwand (läuft ein Film) und Sitzreihen; vorne Leuchtschrift, Plakate, abends Leute
+  function buildKino(cx, cz) {
+    box(46, 0.04, 46, tarmac, cx, 0.18, cz);
+    const X0 = cx - 20, X1 = cx + 20, Z0 = cz - 14, Z1 = cz + 14, T = 0.4, H = 9, wy = 0.16 + H / 2;
+    const wallM = mat({ color: 0x3b0764 }), inM = mat({ color: 0x1e1b4b, emissive: 0x1e1b4b, emissiveIntensity: 0.4 }), gold = mat({ color: 0xfbbf24, emissive: 0xfbbf24, emissiveIntensity: 0.8 });
+    box(40, H, T, wallM, cx, wy, Z1 - T / 2, true); box(T, H, 28, wallM, X0 + T / 2, wy, cz, true); box(T, H, 28, wallM, X1 - T / 2, wy, cz, true);
+    box(18, H, T, wallM, cx - 11, wy, Z0 + T / 2, true); box(18, H, T, wallM, cx + 11, wy, Z0 + T / 2, true); box(4, H - 3.2, T, wallM, cx, 3.36 + (H - 3.2) / 2, Z0 + T / 2);
+    box(40, 0.3, 28, inM, cx, H + 0.1, cz); box(39, 0.05, 27, mat({ color: 0x7f1d1d, emissive: 0x7f1d1d, emissiveIntensity: 0.25 }), cx, 0.2, cz); // Dach, Teppich
+    for (const [x, z, w, d] of [[cx, Z1 - T - 0.02, 39, 0.04], [X0 + T + 0.02, cz, 0.04, 27], [X1 - T - 0.02, cz, 0.04, 27]]) box(w, H - 0.3, d, inM, x, wy, z);
+    // Leinwand mit Film (Bild wird in stepKino gezeichnet)
+    const fc = document.createElement('canvas'); fc.width = 384; fc.height = 160;
+    const ftex = new THREE.CanvasTexture(fc); ftex.colorSpace = THREE.SRGBColorSpace;
+    const screen = new THREE.Mesh(new THREE.PlaneGeometry(24, 10), new THREE.MeshBasicMaterial({ map: ftex }));
+    screen.position.set(cx, 5, Z1 - T - 0.1); screen.rotation.y = Math.PI; screen.userData.keep = true; scene.add(screen);
+    // Sitzreihen
+    const seats = []; for (let r = 0; r < 6; r++) for (let k = 0; k < 12; k++) seats.push([cx - 11 + k * 2, cz - 7 + r * 2.4]);
+    const seatM = new THREE.InstancedMesh(new THREE.BoxGeometry(1.4, 1.1, 1), mat({ color: 0xb91c1c, emissive: 0x7f1d1d, emissiveIntensity: 0.3 }), seats.length), d0 = new THREE.Object3D();
+    seats.forEach(([x, z], k) => { d0.position.set(x, 0.75, z); d0.updateMatrix(); seatM.setMatrixAt(k, d0.matrix); }); scene.add(seatM);
+    // aussen: Leuchtschrift mit Lämpchen, Plakate
+    for (const side of [0, 1]) { const s1 = sign('🎬 KINO', '#111827', '#fbbf24', 14, 2.6); s1.position.set(cx, 7, Z0 - 0.3 - side * 0.05); s1.rotation.y = side ? 0 : Math.PI; decor.add(s1); }
+    for (let k = 0; k < 16; k++) box(0.3, 0.3, 0.3, gold, cx - 7.5 + k, 8.6, Z0 - 0.35);
+    const posters = [['🚗💨 TURBO-TOM', '#dc2626'], ['🚀 WELTRAUM-RENNEN', '#1d4ed8'], ['🐉 DER AUTO-DRACHE', '#16a34a'], ['🏁 LIONELS GROSSER SIEG', '#7c3aed']];
+    posters.forEach(([t, bg], k) => { const pz = sign(t, bg, '#ffffff', 4.5, 2.4); pz.position.set(cx + (k < 2 ? -16 + k * 6 : 10 + (k - 2) * 6), 3, Z0 - 0.3); pz.rotation.y = Math.PI; decor.add(pz); });
+    places.kino = { x: cx, z: cz, inside: { x0: X0 + T, x1: X1 - T, z0: Z0 + T, z1: Z1 - T }, seats: { x0: cx - 12, x1: cx + 12, z0: cz - 8, z1: cz + 6 }, film: { c: fc, tex: ftex }, door: { x: cx, z: Z0 } };
+  }
+  // Stadion: Rasen mit Linien, Tribünen rundherum (Eingang im Süden), Flutlicht; Spiel am Nachmittag und Abend (stepStadium)
+  function buildStadium(cx, cz) {
+    box(46, 0.04, 46, tarmac, cx, 0.18, cz);
+    const pc = document.createElement('canvas'); pc.width = 300; pc.height = 200; const g = pc.getContext('2d');
+    for (let k = 0; k < 10; k++) { g.fillStyle = k % 2 ? '#3f9b45' : '#47a84d'; g.fillRect(k * 30, 0, 30, 200); }
+    g.strokeStyle = '#fff'; g.lineWidth = 3; g.strokeRect(6, 6, 288, 188); g.beginPath(); g.moveTo(150, 6); g.lineTo(150, 194); g.stroke();
+    g.beginPath(); g.arc(150, 100, 28, 0, Math.PI * 2); g.stroke(); g.strokeRect(6, 55, 36, 90); g.strokeRect(258, 55, 36, 90);
+    const pt = new THREE.CanvasTexture(pc); pt.colorSpace = THREE.SRGBColorSpace;
+    const pitch = new THREE.Mesh(new THREE.PlaneGeometry(30, 20).rotateX(-Math.PI / 2), mat({ map: pt, roughness: 1 })); pitch.position.set(cx, 0.22, cz); pitch.receiveShadow = true; decor.add(pitch);
+    const white = mat({ color: 0xffffff });
+    for (const sx of [-1, 1]) { box(0.15, 2.2, 0.15, white, cx + sx * 15, 1.3, cz - 3); box(0.15, 2.2, 0.15, white, cx + sx * 15, 1.3, cz + 3); box(0.15, 0.15, 6.2, white, cx + sx * 15, 2.4, cz); }
+    // Tribünen: drei Stufen auf jeder Seite (im Süden mit Eingang)
+    const seatC = [0xdc2626, 0xfacc15, 0x1d4ed8, 0xffffff], crowd = [];
+    for (let st = 0; st < 3; st++) {
+      const h = 1.4 + st * 1.4, o = 12 + st * 3.3, m = mat({ color: seatC[st % 4] });
+      box(36 + st * 6.6, h, 3.2, m, cx, 0.16 + h / 2, cz - o - 1.6, true); // Norden
+      for (const sx of [-1, 1]) box(3.2, h, 26 + st * 6.6, m, cx + sx * (17 + st * 3.3 + 1.6), 0.16 + h / 2, cz, true); // Ost, West
+      for (const sx of [-1, 1]) box(15 + st * 3.3, h, 3.2, m, cx + sx * (11 + st * 1.65), 0.16 + h / 2, cz + o + 1.6, true); // Süden (Lücke in der Mitte)
+      for (let k = 0; k < 46; k++) { const t = (k + 0.5) / 46;
+        crowd.push([cx - 18 - st * 3.3 + t * (36 + st * 6.6), 0.16 + h + 0.4, cz - o - 1.6]);
+        if (k % 2 === 0) for (const sx of [-1, 1]) crowd.push([cx + sx * (17 + st * 3.3 + 1.6), 0.16 + h + 0.4, cz - 13 - st * 3.3 + t * (26 + st * 6.6)]);
+      }
+    }
+    const cm = new THREE.InstancedMesh(new THREE.BoxGeometry(0.5, 0.8, 0.4), mat({ color: 0xffffff }), crowd.length), d0 = new THREE.Object3D(), col = new THREE.Color(), cc = [0xdc2626, 0x1d4ed8, 0xfacc15, 0xffffff, 0x16a34a, 0xf472b6];
+    crowd.forEach(([x, y, z], k) => { d0.position.set(x, y, z); d0.updateMatrix(); cm.setMatrixAt(k, d0.matrix); cm.setColorAt(k, col.setHex(cc[k % cc.length])); });
+    cm.visible = false; scene.add(cm);
+    // Flutlicht
+    const lampM = mat({ color: 0xffffff, emissive: 0xfffbe6, emissiveIntensity: 0.2 });
+    for (const [sx, sz] of [[-1, -1], [1, -1], [-1, 1], [1, 1]]) { box(0.6, 18, 0.6, metal, cx + sx * 22, 9.16, cz + sz * 22, true); box(3, 1.6, 0.6, lampM, cx + sx * 21, 18, cz + sz * 21); }
+    for (const side of [0, 1]) { const s1 = sign('⚽ STADION', '#16a34a', '#ffffff', 10, 1.8); s1.position.set(cx, 6.8, cz + 23.2 + side * 0.05); s1.rotation.y = side ? Math.PI : 0; decor.add(s1); }
+    const sc = document.createElement('canvas'); sc.width = 256; sc.height = 96; const stex = new THREE.CanvasTexture(sc); stex.colorSpace = THREE.SRGBColorSpace;
+    const board = new THREE.Mesh(new THREE.PlaneGeometry(8, 3), new THREE.MeshBasicMaterial({ map: stex })); board.position.set(cx, 9.5, cz - 22.6); board.userData.keep = true; scene.add(board);
+    box(8.4, 3.4, 0.3, mat({ color: 0x111827 }), cx, 9.5, cz - 22.8); box(0.4, 8, 0.4, metal, cx, 4, cz - 22.8);
+    places.stadium = { x: cx, z: cz, crowd: cm, lampM, board: { c: sc, tex: stex, last: '' } };
+  }
   function buildDealer(cx, cz) { // Autohändler: Glas-Ausstellungsraum, davor drei Drehteller mit Gebrauchtwagen
     box(46, 0.04, 46, tarmac, cx, 0.18, cz);
     const glass = mat({ color: 0x9cc7e6, metalness: 0.3, roughness: 0.05, transparent: true, opacity: 0.35 }), frame = mat({ color: 0x1f2937 });
@@ -625,7 +709,7 @@ function buildWorld() {
     const key = bi + ',' + bj;
     if (key === plaza) { buildPlaza(decor, cx, cz, round); continue; }
     if (baseOf(key) >= 0) { buildBase(cx, cz, baseOf(key)); continue; }
-    if (SPECIAL[key]) { ({ gas: buildGas, wash: buildWash, pizza: buildPizza, jail: buildJail, workshop: buildWorkshop, dealer: buildDealer, hospital: buildHospital, blue: (x, z) => buildBlue(x, z, bi, bj), house: buildHouse, park: buildPark })[SPECIAL[key]](cx, cz); continue; }
+    if (SPECIAL[key]) { ({ gas: buildGas, wash: buildWash, pizza: buildPizza, jail: buildJail, workshop: buildWorkshop, dealer: buildDealer, hospital: buildHospital, blue: (x, z) => buildBlue(x, z, bi, bj), house: buildHouse, park: buildPark, drive: buildDrive, kino: buildKino, stadium: buildStadium })[SPECIAL[key]](cx, cz); continue; }
     if (parks.has(key)) { // Park: Wiese mit Wegkreuz und Bäumen
       const g = quads(1 / 4), h = inner / 2, p = 1.6;
       g.add(cx - h, cz - h, cx - p, cz - p, 0.17); g.add(cx + p, cz - h, cx + h, cz - p, 0.17);
@@ -1140,6 +1224,8 @@ function stationPanel(id) {
   const me = city.me, K = city.kinds;
   if (id === 'gasShop') return { title: '🛒 Tankstellen-Shop', rows: () => SNACKS.map(([k, label, price, note]) => ({ id: k, label, price, note })),
     buy: k => { const it = SNACKS.find(x => x[0] === k); if (city.pay(it[2]) < it[2]) return; if (it[4]) city.turbo = Math.max(city.turbo, it[4]); showMsg(it[1] + ' gekauft! ' + (it[4] ? '🚀 Turbo ' + it[4] + ' s' : it[3]), 2); } };
+  if (id === 'order') return { title: '🔊 Burger Drive-in – was darf es sein?', rows: () => DRIVE.map(([k, label, price, note]) => ({ id: k, label, price, note, done: !!city.dOrder })),
+    buy: k => { const it = DRIVE.find(x => x[0] === k); if (city.dOrder || city.pay(it[2]) < it[2]) return; city.dOrder = it; closePanel(); showMsg('🔊 Danke! Bitte zum Fenster vorfahren 🪟', 2.4); } };
   if (id === 'paint') return { title: '🎨 Lackieren (' + ((K[me.v.kind] || {}).name || '') + ')', rows: () => PAINT.map(([c, name]) => ({ id: c, label: name, price: 20, color: c, done: (me.v.color || '').toLowerCase() === c })),
     buy: c => modMe({ color: c }, 20, '🎨 Frisch lackiert: ' + PAINT.find(x => x[0] === c)[1] + '!') };
   if (id === 'tuning') return { title: '🔧 Tuning (' + ((K[me.v.kind] || {}).name || '') + ')', rows: () => {
@@ -1167,13 +1253,110 @@ function stationPanel(id) {
 function stepStations() {
   const me = city.me, w = city.walk, x = w ? w.x : me.pos.x, z = w ? w.z : me.pos.z, P = S.places;
   let here = null;
-  for (const id of ['gasShop', 'paint', 'tuning']) if (inZone(P[id], x, z) && (w ? id === 'gasShop' : Math.abs(me.speed) < 1 && me.alt < 2)) here = id;
+  for (const id of ['gasShop', 'paint', 'tuning', 'order']) if (inZone(P[id], x, z) && (w ? id === 'gasShop' : Math.abs(me.speed) < 1 && me.alt < 2)) here = id;
   if (here && city.station !== here) {
     city.station = here;
     if (!city.dealer) showMsg('🌐 Online sind die Läden geschlossen', 1.6);
     else if (!city.plane && !city.boat) openPanel(stationPanel(here));
   }
   if (!here && city.station && !inZone(P[city.station], x, z, 3)) { city.station = null; if (city.panel) closePanel(); }
+  // Drive-in: am Fenster abholen
+  const atWin = P.pickup && !w && inZone(P.pickup, x, z) && Math.abs(me.speed) < 1.5;
+  if (atWin && !city.atWin) {
+    const it = city.dOrder;
+    if (it) { city.dOrder = null; if (it[4]) city.turbo = Math.max(city.turbo, it[4]); showMsg('🍔 Bitte schön: ' + it[1] + '! En Guete 😋' + (it[4] ? '  🚀 Turbo ' + it[4] + ' s' : ''), 2.6); window.beep && window.beep(880, 0.12, 'triangle', 0.06); }
+    else showMsg('🔊 Zuerst beim Lautsprecher bestellen', 1.6);
+  }
+  city.atWin = atWin;
+}
+
+// ---------- Kino ----------
+// Im Saal bei den Sitzen X: hinsetzen und den Film schauen (Kamera auf die Leinwand), nochmals X: aufstehen.
+// Abends (18–23 Uhr) stehen Leute vor dem Eingang.
+function drawFilm(t) {
+  const F = S.places.kino.film, g = F.c.getContext('2d'), W = 384, H = 160, k = t % 24;
+  const night = k > 12, sky = g.createLinearGradient(0, 0, 0, H);
+  sky.addColorStop(0, night ? '#0b1033' : '#38bdf8'); sky.addColorStop(1, night ? '#3b0764' : '#bae6fd');
+  g.fillStyle = sky; g.fillRect(0, 0, W, H);
+  if (night) { g.fillStyle = '#fff'; for (let i = 0; i < 30; i++) g.fillRect((i * 97 + t * 3) % W, (i * 37) % 70, 2, 2); }
+  else { g.fillStyle = '#fde047'; g.beginPath(); g.arc(320, 30, 16, 0, 7); g.fill(); }
+  g.fillStyle = night ? '#1e293b' : '#4ade80'; for (let i = 0; i < 6; i++) { const x = ((i * 90 - t * 30) % 480 + 480) % 480 - 60; g.beginPath(); g.moveTo(x, 120); g.lineTo(x + 50, 60); g.lineTo(x + 100, 120); g.fill(); }
+  g.fillStyle = '#374151'; g.fillRect(0, 118, W, 42); g.fillStyle = '#fde047'; for (let i = 0; i < 10; i++) g.fillRect(((i * 50 - t * 160) % 500 + 500) % 500 - 50, 137, 26, 4);
+  const cx = 120 + Math.sin(t * 0.7) * 60, cy = 104 + Math.abs(Math.sin(t * 6)) * 3;
+  g.fillStyle = '#dc2626'; g.fillRect(cx - 34, cy, 68, 16); g.fillRect(cx - 18, cy - 12, 34, 13); g.fillStyle = '#93c5fd'; g.fillRect(cx - 12, cy - 9, 12, 8); g.fillRect(cx + 3, cy - 9, 10, 8);
+  g.fillStyle = '#111'; for (const dx of [-20, 20]) { g.beginPath(); g.arc(cx + dx, cy + 16, 7, 0, 7); g.fill(); }
+  g.fillStyle = 'rgba(249,115,22,.85)'; for (let i = 0; i < 4; i++) g.fillRect(cx - 40 - i * 9 - Math.random() * 6, cy + 6 + Math.random() * 6, 7, 4);
+  const bx = (k * 40) % 520 - 60; g.fillStyle = '#7c3aed'; g.fillRect(380 - bx, 100, 40, 20); g.fillStyle = '#111'; g.beginPath(); g.arc(388 - bx, 122, 6, 0, 7); g.arc(412 - bx, 122, 6, 0, 7); g.fill();
+  g.fillStyle = '#fff'; g.font = 'bold 14px system-ui'; g.textAlign = 'center';
+  g.fillText(['Turbo-Tom gibt Gas!', 'Der Rivale kommt näher …', 'Nachtrennen unter den Sternen', 'Wer gewinnt das grosse Rennen?'][Math.floor(t / 6) % 4], W / 2, 18);
+  F.tex.needsUpdate = true;
+}
+function stepKino(dt) {
+  const K = S.places.kino; if (!K) return;
+  const cam = S.camera.position, inside = cam.x > K.inside.x0 - 2 && cam.x < K.inside.x1 + 2 && cam.z > K.inside.z0 - 2 && cam.z < K.inside.z1 + 2;
+  if (inside && (city.filmT = (city.filmT || 0) + dt) > 1 / 15) { city.filmT = 0; drawFilm(city.t); }
+  const m = clockMins(), evening = m >= 18 * 60 && m < 23 * 60, near = Math.hypot(cam.x - K.x, cam.z - K.z) < 160;
+  for (const p of S.kinoCrowd || []) { p.mesh.visible = evening && near; if (p.mesh.visible) { p.mesh.rotation.y = -p.h + Math.sin(city.t * 1.3 + p.phase) * 0.2; } }
+}
+
+// ---------- Stadion ----------
+// Fussballspiel von 14 bis 22 Uhr: zwei Teams (Rot, Blau) laufen dem Ball nach, schiessen aufs Tor; Zuschauer und
+// Anzeigetafel; nachts leuchtet das Flutlicht.
+function setupStadium() {
+  const St = S.places.stadium; if (!St) return;
+  if (!S.match) {
+    const players = [];
+    for (let k = 0; k < 10; k++) {
+      const team = k < 5 ? 0 : 1, mesh = makePerson(team ? 0x1d4ed8 : 0xdc2626, HAIRS[k % HAIRS.length], SKINS[k % SKINS.length]);
+      mesh.traverse(o => { o.castShadow = false; }); mesh.visible = false; S.scene.add(mesh);
+      const hx = St.x + (team ? 1 : -1) * (3 + (k % 5) * 2.4), hz = St.z + ((k % 5) - 2) * 3.5;
+      players.push({ mesh, team, hx, hz, x: hx, z: hz, h: 0, speed: 0, phase: k, gy: 0.22 });
+    }
+    const ball = new THREE.Mesh(new THREE.SphereGeometry(0.22, 12, 8), new THREE.MeshStandardMaterial({ color: 0xffffff })); ball.visible = false; S.scene.add(ball);
+    S.match = { players, ball, bx: St.x, bz: St.z, vx: 0, vz: 0, score: [0, 0] };
+  }
+}
+function stepStadium(dt) {
+  const St = S.places.stadium, M = S.match; if (!St || !M) return;
+  const cam = S.camera.position, near = Math.hypot(cam.x - St.x, cam.z - St.z) < 260, m = clockMins(), on = m >= 14 * 60 && m < 22 * 60;
+  St.lampM.emissiveIntensity = S.night.walls[0] ? 0.2 + S.night.walls[0].emissiveIntensity * 2.5 : 0.2; // Flutlicht
+  const show = near && on;
+  St.crowd.visible = show; M.ball.visible = show; for (const p of M.players) p.mesh.visible = show;
+  if (St.board.last !== (on ? M.score.join(':') : 'aus')) { // Anzeigetafel
+    St.board.last = on ? M.score.join(':') : 'aus';
+    const g = St.board.c.getContext('2d'); g.fillStyle = '#0b1220'; g.fillRect(0, 0, 256, 96); g.textAlign = 'center';
+    g.fillStyle = '#fde047'; g.font = 'bold 22px system-ui'; g.fillText(on ? '🔴 ROT  :  BLAU 🔵' : 'Nächstes Spiel 14 Uhr', 128, 30);
+    if (on) { g.fillStyle = '#fff'; g.font = 'bold 44px system-ui'; g.fillText(M.score[0] + ' : ' + M.score[1], 128, 80); }
+    St.board.tex.needsUpdate = true;
+  }
+  if (!show) return;
+  St.crowd.position.y = Math.abs(Math.sin(city.t * 3)) * 0.12; // Zuschauer wippen
+  // Ball rollt, prallt an den Seitenlinien ab; Tor?
+  M.bx += M.vx * dt; M.bz += M.vz * dt; M.vx *= Math.exp(-0.8 * dt); M.vz *= Math.exp(-0.8 * dt);
+  if (Math.abs(M.bz - St.z) > 9.6) { M.vz *= -0.7; M.bz = St.z + Math.sign(M.bz - St.z) * 9.6; }
+  if (Math.abs(M.bx - St.x) > 14.8) {
+    if (Math.abs(M.bz - St.z) < 2.8) { // Tor!
+      const team = M.bx > St.x ? 0 : 1; M.score[team]++;
+      if (Math.hypot(city.me.pos.x - St.x, city.me.pos.z - St.z) < 120) showMsg('⚽ TOOOR für ' + (team ? 'Blau 🔵' : 'Rot 🔴') + '! ' + M.score.join(':'), 2.4);
+      M.bx = St.x; M.bz = St.z; M.vx = M.vz = 0;
+    } else { M.vx *= -0.7; M.bx = St.x + Math.sign(M.bx - St.x) * 14.8; }
+  }
+  M.ball.position.set(M.bx, 0.44, M.bz); M.ball.rotation.z -= M.vx * dt * 4; M.ball.rotation.x += M.vz * dt * 4;
+  // Spieler: die zwei Nächsten jedes Teams laufen zum Ball, die anderen halten ihre Position (mit dem Ball etwas mit)
+  for (const team of [0, 1]) {
+    const mine = M.players.filter(p => p.team === team).sort((a, b) => Math.hypot(a.x - M.bx, a.z - M.bz) - Math.hypot(b.x - M.bx, b.z - M.bz));
+    mine.forEach((p, i) => {
+      const tx = i < 2 ? M.bx - (team ? -0.5 : 0.5) : p.hx + (M.bx - St.x) * 0.4, tz = i < 2 ? M.bz : p.hz + (M.bz - St.z) * 0.3;
+      const dx = tx - p.x, dz = tz - p.z, d = Math.hypot(dx, dz), sp = i < 2 ? 5.5 : 3;
+      p.speed = d > 0.3 ? Math.min(sp, d * 2) : 0; if (d > 0.01) p.h = Math.atan2(dz, dx);
+      p.x += Math.cos(p.h) * p.speed * dt; p.z += Math.sin(p.h) * p.speed * dt;
+      if (Math.hypot(p.x - M.bx, p.z - M.bz) < 0.7) { // schiessen: Richtung gegnerisches Tor
+        const gx = St.x + (team ? -15.5 : 15.5), gz = St.z + (Math.random() - 0.5) * 7, gd = Math.hypot(gx - M.bx, gz - M.bz), v = 7 + Math.random() * 7;
+        M.vx = (gx - M.bx) / gd * v; M.vz = (gz - M.bz) / gd * v + (Math.random() - 0.5) * 4;
+      }
+      animatePerson(p, dt);
+    });
+  }
 }
 
 // ---------- Eigenes Haus ----------
@@ -2490,6 +2673,8 @@ function toggleWalk() {
 }
 function getIn() {
   const w = city.walk, t = w.target;
+  if (city.movie) { city.movie = null; w.mesh.visible = true; showMsg('🎬 Aufgestanden', 1.2); return; }
+  if (t && t.movie) { city.movie = { t: 0 }; w.mesh.visible = false; showMsg('🍿 Film läuft – X zum Aufstehen', 2.4); return; }
   if (t && t.lift) { startLift(w); return; }
   if (t && t.bed) { goSleep(w); return; }
   if (w.ski) { skiOff(w); return; }
@@ -2521,7 +2706,7 @@ function getIn() {
 }
 function stepWalk(dt) {
   const w = city.walk, input = city.input, me = city.me;
-  if (city.sleep) return; // schläft
+  if (city.sleep || city.movie) return; // schläft oder schaut einen Film
   if (w.lift) { stepLift(w, dt); return; }
   if (w.ski) { stepSki(w, dt); return; }
   w.h += ((input.right ? 1 : 0) - (input.left ? 1 : 0)) * 2.6 * dt;
@@ -2561,12 +2746,14 @@ function stepWalk(dt) {
   }
   if (!city.boat && nearPier(w.x, w.z) && Math.hypot(w.x - BOAT_HOME.x, w.z - BOAT_HOME.z) < 12.5) { best = { boat: true }; bd = 0; } // Boot am Steg
   if (Math.hypot(w.x - LIFT.A.x, w.z - LIFT.A.z) < 14) { best = { lift: true }; bd = 0; } // Sessellift (Talstation)
+  const KS = S.places.kino && S.places.kino.seats;
+  if (KS && w.x > KS.x0 && w.x < KS.x1 && w.z > KS.z0 && w.z < KS.z1) { best = { movie: true }; bd = 0; } // im Kino bei den Sitzen
   const FL = S.areas.flyer;
   if (FL && !city.plane && Math.hypot(w.x - FL.x, w.z - FL.z) < 16) { best = { plane: true }; bd = 0; } // Flugzeug
   const HB = S.places.house && S.places.house.bed;
   if (HB && city.house.owned && Math.hypot(w.x - HB.x, w.z - HB.z) < 3) { best = { bed: true }; bd = 0; } // Bett im eigenen Haus
-  if (best && (!w.target || w.target.v !== best.v || !!w.target.boat !== !!best.boat || !!w.target.lift !== !!best.lift || !!w.target.bed !== !!best.bed || !!w.target.plane !== !!best.plane))
-    showMsg(best.plane ? '✈️ Flugzeug – X: einsteigen und fliegen' : best.bed ? '🛏️ Bett – X: schlafen' : best.lift ? '🚡 Sessellift – X: einsteigen und hinauffahren' : best.boat ? '🚤 Boot – einsteigen' : best.v ? '🔑 ' + ((city.kinds[best.v.kind] || {}).name || '') + ' – 🚗 einsteigen' : '🚗 Einsteigen?', 1.2);
+  if (best && (!w.target || w.target.v !== best.v || !!w.target.boat !== !!best.boat || !!w.target.lift !== !!best.lift || !!w.target.bed !== !!best.bed || !!w.target.plane !== !!best.plane || !!w.target.movie !== !!best.movie))
+    showMsg(best.movie ? '🍿 Film schauen – X' : best.plane ? '✈️ Flugzeug – X: einsteigen und fliegen' : best.bed ? '🛏️ Bett – X: schlafen' : best.lift ? '🚡 Sessellift – X: einsteigen und hinauffahren' : best.boat ? '🚤 Boot – einsteigen' : best.v ? '🔑 ' + ((city.kinds[best.v.kind] || {}).name || '') + ' – 🚗 einsteigen' : '🚗 Einsteigen?', 1.2);
   w.target = best;
   S.ui.walkbtn.classList.toggle('ready', !!best);
 }
@@ -3927,7 +4114,7 @@ function drawMinimapBase() {
   g.fillStyle = '#4aa3ff';
   g.beginPath(); g.arc(mx(0), mx(0), 3, 0, Math.PI * 2); g.fill();
   g.font = '13px system-ui, sans-serif'; g.textAlign = 'center'; g.textBaseline = 'middle';
-  for (const [k, icon] of [['gas', '⛽'], ['wash', '🫧'], ['pizza', '🍕'], ['jail', '🔒'], ['repair', '🔧'], ['dealer', '🚗'], ['hospital', '🏥'], ['house', '🏡'], ['blue', '🅿️']]) { const p = S.places[k] && { x: S.places[k].x ?? S.places[k].cx, z: S.places[k].z ?? S.places[k].cz }; if (p) g.fillText(icon, mx(p.x), mx(p.z)); }
+  for (const [k, icon] of [['gas', '⛽'], ['wash', '🫧'], ['pizza', '🍕'], ['jail', '🔒'], ['repair', '🔧'], ['dealer', '🚗'], ['hospital', '🏥'], ['house', '🏡'], ['blue', '🅿️'], ['park', '🅿️'], ['order', '🍔'], ['kino', '🎬'], ['stadium', '⚽']]) { const p = S.places[k] && { x: S.places[k].x ?? S.places[k].cx, z: S.places[k].z ?? S.places[k].cz }; if (p) g.fillText(icon, mx(p.x), mx(p.z)); }
   g.strokeStyle = 'rgba(220,225,235,0.85)'; g.lineWidth = Math.max(2, ROAD * mapScale);
   for (let i = 0; i <= N; i++) {
     g.beginPath(); g.moveTo(mx(node(i)), mx(-HALF)); g.lineTo(mx(node(i)), mx(HALF)); g.stroke();
@@ -4053,7 +4240,13 @@ export function startCity({ player, kinds, topSpeed, onExit, pay = () => 0, earn
       noShadow(m); m.position.set(q.x, q.L * PK_LV + 0.05, q.z); m.rotation.y = -q.h; S.scene.add(m); return m;
     });
   }
-  city.pkL = 0; city.pkR = null;
+  city.pkL = 0; city.pkR = null; city.dOrder = null; city.movie = null;
+  setupStadium();
+  if (S.places.kino && !S.kinoCrowd) { // Leute vor dem Kino (abends)
+    const K = S.places.kino; S.kinoCrowd = [];
+    for (let k = 0; k < 7; k++) { const mesh = makePerson(SHIRTS[k % SHIRTS.length], HAIRS[k % HAIRS.length], SKINS[k % SKINS.length]); mesh.traverse(o => { o.castShadow = false; });
+      const p = { mesh, h: Math.PI / 2 + (Math.random() - 0.5), phase: k }; mesh.position.set(K.door.x - 6 + k * 1.8, 0.16, K.door.z - 3 - (k % 2) * 1.2); mesh.visible = false; S.scene.add(mesh); S.kinoCrowd.push(p); }
+  }
   city.peds = makePeds();
   city.works = null; city.worksT = 30 + Math.random() * 40;
   city.house = loadHouse(); city.houseOpen = false; showHouse();
@@ -4134,6 +4327,8 @@ function step(now) {
   stepHouse(dt);
   stepSleep(dt);
   stepStations();
+  stepKino(dt);
+  stepStadium(dt);
   stepAccidents(dt);
   stepHw(dt);
   if (S.areas.pass && S.areas.pass.flag && Math.hypot(S.camera.position.x - SUMMIT.x, S.camera.position.z - SUMMIT.z) < 400) waveFlag(S.areas.pass.flag, city.t); // Fahne auf dem Gipfel
@@ -4308,6 +4503,11 @@ function render(dt) {
     const gy = w.gy || 0;
     camWant.set(w.x - wx * 4.2, gy + 2.4, w.z - wz * 4.2);
     camAhead.set(w.x + wx * 3, gy + 1.3, w.z + wz * 3);
+    const KI = S.places.kino;
+    if (city.movie && KI) { camWant.set(KI.x, 2.6, KI.z - 7); camAhead.set(KI.x, 5, KI.z + 13); }
+    else if (KI && w.x > KI.inside.x0 && w.x < KI.inside.x1 && w.z > KI.inside.z0 && w.z < KI.inside.z1) { // im Kino: Kamera bleibt drinnen
+      camWant.x = Math.max(KI.inside.x0 + 0.5, Math.min(KI.inside.x1 - 0.5, camWant.x)); camWant.z = Math.max(KI.inside.z0 + 0.5, Math.min(KI.inside.z1 - 0.5, camWant.z));
+    }
     const HI = S.places.house && S.places.house.inside;
     if (HI && w.x > HI.x0 && w.x < HI.x1 && w.z > HI.z0 && w.z < HI.z1) { // im Haus: Kamera bleibt drinnen, unter der Decke
       camWant.x = Math.max(HI.x0 + 0.4, Math.min(HI.x1 - 0.4, camWant.x)); camWant.z = Math.max(HI.z0 + 0.4, Math.min(HI.z1 - 0.4, camWant.z));
