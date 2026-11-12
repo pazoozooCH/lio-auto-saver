@@ -397,6 +397,7 @@ function storeJSON(key, value) {
   try { localStorage.setItem(key, JSON.stringify(value)); } catch (e) { /* egal */ }
 }
 let wallet = loadJSON('autoRetterCoins', 0);
+let daily = { open: false, claimed: true, next: 1 }; // tägliche Belohnung (unten bei drawDaily)
 
 // Ein Fahrzeug im Fahrzeugpark: Typ, eigene Farbe und evtl. Gold-/Regenbogen-Lack
 // Start-PS eines Fahrzeugtyps: Seltenheit mal Tempo. In der Presse: retten +1 PS, zerquetscht −3 PS.
@@ -2673,6 +2674,8 @@ function draw() {
     drawVersion();
     drawCredits();
     drawQuit();
+    if (menuMsgT > 0) drawMenuMsg('', 400);
+    if (daily.open) drawDaily();
   } else if (state === 'over') {
     drawOverlay('RUNDE VORBEI!', [
       'Punkte: ' + saved + '   ·   Level ' + level,
@@ -2730,6 +2733,7 @@ function inRect(px, py, b) { return px >= b.x && px <= b.x + b.w && py >= b.y &&
 
 function openMenu(name) {
   if (name === 'select') { trimSelection(); sellMode = false; pendingSell = null; }
+  if (name === 'title' && !daily.open) daily = checkDaily(); // neuer Tag? Dann wieder eine Belohnung
   state = name;
   menuMsgT = 0;
   particles = [];
@@ -3794,7 +3798,63 @@ function drawTitleButtons() {
   drawButton(ONLINE_BTN, '🌍 ONLINE', '#0e7490', 15);
   drawButton(PRESS_BTN, '🏭 PRESSE', '#21a35b', 15);
   drawButton(TITLE_SHOP_BTN, '🏪 🪙 ' + wallet, '#3657b8', 15);
+  drawButton(DAILY_SMALL, daily.claimed ? '🎁 Tag ' + daily.next + ' ✓' : '🎁 Belohnung!', daily.claimed ? '#4b5563' : '#16a34a', 15);
 }
+
+// --- Tägliche Belohnung ---
+// Jeden Tag beim Start einmal abholen. Wer jeden Tag kommt, steigt im 7-Tage-Kalender auf (mehr Münzen);
+// Tag 7: Münzen und ein seltenes Fahrzeug, danach geht es wieder bei Tag 1 los. Einen Tag verpasst = wieder Tag 1.
+// Spielstand: autoRetterDaily = { last: 'J-M-T' (Tag der letzten Belohnung), day: 1…7 }.
+const DAILY = [20, 30, 40, 60, 80, 100, 150];
+const DAILY_BTN = { x: W / 2 - 120, y: 392, w: 240, h: 58 }, DAILY_CLOSE = { x: W / 2 + 330, y: 92, w: 44, h: 44 };
+const dayKey = t => { const d = new Date(t); return d.getFullYear() + '-' + (d.getMonth() + 1) + '-' + d.getDate(); };
+function checkDaily() {
+  const s = loadJSON('autoRetterDaily', null), today = dayKey(Date.now()), yesterday = dayKey(Date.now() - 864e5);
+  if (s && s.last === today) return { next: s.day, claimed: true, open: false };
+  const goesOn = s && s.last === yesterday;
+  return { next: goesOn ? s.day % 7 + 1 : 1, claimed: false, open: true, broke: !!s && !goesOn && s.day > 1 };
+}
+daily = checkDaily();
+function drawDaily() {
+  ctx.fillStyle = 'rgba(0,0,0,0.65)'; ctx.fillRect(0, 0, W, H);
+  ctx.fillStyle = '#1e1b4b'; rr(W / 2 - 380, 82, 760, 390, 22); ctx.fill();
+  ctx.strokeStyle = '#facc15'; ctx.lineWidth = 3; ctx.stroke();
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.fillStyle = '#fde047'; ctx.font = 'bold 32px system-ui, sans-serif'; ctx.fillText('🎁 Tägliche Belohnung', W / 2, 122);
+  ctx.fillStyle = 'rgba(255,255,255,0.8)'; ctx.font = '17px system-ui, sans-serif';
+  ctx.fillText(daily.broke ? '😮 Gestern verpasst – du beginnst wieder bei Tag 1. Komm jeden Tag!' : 'Komm jeden Tag wieder – an Tag 7 gibt es eine Überraschung! 🚗', W / 2, 158);
+  for (let i = 0; i < 7; i++) {
+    const x = W / 2 - 350 + i * 100, y = 185, n = i + 1, done = n < daily.next, now = n === daily.next, pulse = now ? 1 + 0.04 * Math.sin(time * 5) : 1;
+    ctx.save(); ctx.translate(x + 45, y + 65); ctx.scale(pulse, pulse); ctx.translate(-(x + 45), -(y + 65));
+    ctx.fillStyle = done ? '#15803d' : now ? '#f59e0b' : '#374151'; rr(x, y, 90, 130, 14); ctx.fill();
+    if (now) { ctx.strokeStyle = '#fff'; ctx.lineWidth = 3; ctx.stroke(); }
+    ctx.fillStyle = '#fff'; ctx.font = 'bold 16px system-ui, sans-serif'; ctx.fillText('Tag ' + n, x + 45, y + 22);
+    ctx.font = (n === 7 ? 34 : 30) + 'px system-ui, sans-serif'; ctx.fillText(done ? '✅' : n === 7 ? '🎁' : '🪙', x + 45, y + 65);
+    ctx.font = 'bold 18px system-ui, sans-serif'; ctx.fillText(DAILY[i] + (n === 7 ? ' + 🚗' : ''), x + 45, y + 108);
+    ctx.restore();
+  }
+  drawButton(DAILY_BTN, daily.claimed ? '✓ Bis morgen!' : '🎁 ABHOLEN: ' + DAILY[daily.next - 1] + ' 🪙', daily.claimed ? '#4b5563' : '#16a34a', 22);
+  drawButton(DAILY_CLOSE, '✕', '#4b5563', 20);
+}
+function dailyTap(px, py) {
+  if (inRect(px, py, DAILY_CLOSE) || (daily.claimed && inRect(px, py, DAILY_BTN))) { daily.open = false; return; }
+  if (!inRect(px, py, DAILY_BTN) || daily.claimed) return;
+  const n = daily.next, coins = DAILY[n - 1];
+  wallet += coins;
+  let text = '🪙 +' + coins + ' Münzen – bis morgen!';
+  if (n === 7) { // Überraschung: ein seltenes oder episches Fahrzeug
+    const pool = Object.keys(KINDS).filter(k => ['rare', 'epic'].includes(KINDS[k].tier) && !KINDS[k].secret), v = makeVehicle(pick(pool));
+    fleet.push(v); storeJSON('autoRetterFleet', fleet);
+    text = '🎁 +' + coins + ' 🪙 und ein neues Fahrzeug: ' + KINDS[v.kind].name + '!';
+  }
+  storeJSON('autoRetterCoins', wallet);
+  storeJSON('autoRetterDaily', { last: dayKey(Date.now()), day: n });
+  daily.claimed = true; daily.open = false;
+  showMenuMsg(text, 4);
+  beep(660, 0.1, 'triangle', 0.07); beep(990, 0.18, 'triangle', 0.07, 0.1);
+}
+// Kleiner Knopf auf dem Startbildschirm: Kalender nochmals ansehen
+const DAILY_SMALL = { x: 20, y: 74, w: 140, h: 40 };
 
 // --- Rennstrecke: Cups, Fahrzeugwahl und Pokale ---
 // Höchstgeschwindigkeit auf der Rennstrecke in m/s: mehr PS = schneller (race.js benutzt dieselbe Formel)
@@ -4525,6 +4585,8 @@ canvas.addEventListener('pointerdown', e => {
   if (state === 'title' || state === 'over') {
     if (state === 'over' && overTime < 0.8) return;
     if (state === 'title') {
+      if (daily.open) { dailyTap(px, py); return; }
+      if (inRect(px, py, DAILY_SMALL)) { daily.open = true; return; }
       if (inRect(px, py, QUIT_BTN)) quitApp();
       else if (appUpdate.info && inRect(px, py, UPDATE_BTN)) applyUpdate();
       else if (inRect(px, py, VERSION_AREA)) secretTap();
