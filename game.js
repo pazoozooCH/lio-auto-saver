@@ -3805,7 +3805,7 @@ function drawTitleButtons() {
 // Jeden Tag beim Start einmal abholen. Wer jeden Tag kommt, steigt im 7-Tage-Kalender auf (mehr Münzen);
 // Tag 7: Münzen und ein seltenes Fahrzeug, danach geht es wieder bei Tag 1 los. Einen Tag verpasst = wieder Tag 1.
 // Spielstand: autoRetterDaily = { last: 'J-M-T' (Tag der letzten Belohnung), day: 1…7 }.
-const DAILY = [20, 30, 40, 60, 80, 100, 150];
+const DAILY = [5, 30, 40, 60, 80, 100, 150];
 const DAILY_BTN = { x: W / 2 - 120, y: 392, w: 240, h: 58 }, DAILY_CLOSE = { x: W / 2 + 330, y: 92, w: 44, h: 44 };
 const dayKey = t => { const d = new Date(t); return d.getFullYear() + '-' + (d.getMonth() + 1) + '-' + d.getDate(); };
 function checkDaily() {
