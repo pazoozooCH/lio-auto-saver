@@ -6,7 +6,8 @@ import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 import { buildCar, animateCar, warmUp, makeQuality, mergeStatic } from './cars3d.js';
 import { makeNoise, rng, smoothstep, surface, terrain, cloudDome } from './world3d.js';
 import { createCarSound, crash, gearbox, horn, createSiren } from './sound.js';
-import { buildCountry, stepCountry, countryDist, countryDrivable, countrySurface, inCountry, inWater, nearPier, BOAT_Y, BOAT_HOME, RIDES_INFO, FARM, countryBlocked, LIFT } from './country.js';
+import { buildMoon, stepMoon, inMoon, moonGround, moonAllowed, MOON, MOON_G, MOON_ROCKET, MOON_BUGGY } from './moon.js';
+import { buildCountry, stepCountry, countryDist, countryDrivable, countrySurface, inCountry, inWater, nearPier, BOAT_Y, BOAT_HOME, RIDES_INFO, FARM, countryBlocked, LIFT, SPACE } from './country.js';
 import { makeNetCars } from './netcars.js';
 import { makeChat } from './chat.js';
 import { buildHighway, outskirtsDist, hwDrivable, onHighway, makeHighwayTraffic, stepHighway, hwProject, hwPoint, HW, HW_LEN, HW_LIMIT, REST, REST_ZONES, makePath, pathAt, turnTo,
@@ -936,6 +937,7 @@ function buildWorld() {
   const areas = buildAreas({ group: decor, scene, asphaltMat, lineMat, sign }); // Hafen und Flughafen
   const country = buildCountry({ scene, group: decor, asphaltMat, grassMat, sign, natural, makePerson }); // Bauernhof, Strand, Skigebiet
   round.push(...(country.round || [])); // Tannen und Felsen am Berg sind fest
+  const moon = buildMoon({ scene }); // der Mond (weit weg, nur mit der Rakete)
   solid.push(...areas.solids);
   areas.pass = buildPass({ scene, group: decor, asphaltMat, lineMat, sign, natural, // Passstrasse im Norden
     terrainMesh: o => terrain({ ...o, detail: grassDetail, detailRepeat: 100 }) });
@@ -948,7 +950,7 @@ function buildWorld() {
   const flash = new THREE.Mesh(new THREE.SphereGeometry(0.6, 12, 8), new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0, depthWrite: false }));
   flash.visible = false;
   scene.add(flash);
-  return { renderer, scene, camera, sun, clouds, lamps, solid, round, parks, places, sign, country, height, redCams, speedCams, flash, areas, ground: { asphalt: asphaltMat, grass: grassMat, pave: paveMat, land: land.material },
+  return { renderer, scene, camera, sun, clouds, lamps, solid, round, parks, places, sign, country, height, moon, redCams, speedCams, flash, areas, ground: { asphalt: asphaltMat, grass: grassMat, pave: paveMat, land: land.material },
     night: { sky: su, hemi, envs: { ...envs, day: dayEnv }, walls: [...walls, ...homeWalls], heads: headM.material, pools, stars, headlight, fog: scene.fog } };
 }
 
@@ -1578,6 +1580,7 @@ function goSleep(w) {
   const B = S.places.house.bed;
   city.sleep = { t: 0, w };
   w.mesh.position.set(B.x, 1.15, B.z); w.mesh.rotation.set(Math.PI / 2, Math.PI / 2, 0, 'YXZ'); // ins Bett legen
+  overlay();
   if (!S.ui.sleep) {
     const d = document.createElement('div');
     d.style.cssText = 'position:absolute;inset:0;background:#000;opacity:0;pointer-events:none;display:flex;align-items:center;justify-content:center;font:700 44px system-ui,sans-serif;color:#fff;z-index:5';
@@ -1682,6 +1685,73 @@ function stepWorks(dt) {
   if (!W.told && Math.hypot(me.pos.x - W.x, me.pos.z - W.z) < 70 && me.alt < 2) { W.told = true; showMsg('🚧 Baustelle – Strasse gesperrt, fahr eine Umleitung!', 2.4); }
 }
 
+// ---------- Mondausflug ----------
+// Zu Fuss zur Rakete (Raumbahnhof östlich der Stadt), X: Countdown, Start, Flug zum Mond (dunkel), Landung. Auf dem Mond:
+// wenig Schwerkraft, Mondsteine sammeln, Mond-Buggy fahren. Zurück: zur Rakete auf dem Mond und X.
+function overlay() {
+  if (!S.ui.sleep) {
+    const d = document.createElement('div');
+    d.style.cssText = 'position:absolute;inset:0;background:#000;opacity:0;pointer-events:none;display:flex;align-items:center;justify-content:center;font:700 40px system-ui,sans-serif;color:#fff;z-index:5;text-align:center';
+    S.ui.root.append(d); S.ui.sleep = d;
+  }
+  return S.ui.sleep;
+}
+function startLaunch() {
+  const w = city.walk, toMoon = !city.moonOn;
+  const R = toMoon ? S.country.rocket : S.moon.rocket;
+  city.launch = { t: 0, toMoon, R, x: R.position.x, z: R.position.z, y0: R.position.y, count: 4 };
+  w.mesh.visible = false;
+  showMsg('🚀 Alle einsteigen! Countdown …', 1.4);
+}
+function stepLaunch(dt) {
+  const L = city.launch; if (!L) return;
+  L.t += dt;
+  const R = L.R, ov = overlay();
+  if (L.t < 3) { const n = 3 - Math.floor(L.t); if (n !== L.count) { L.count = n; showMsg(n + ' …', 0.9); window.beep && window.beep(440, 0.15, 'square', 0.05); } }
+  else if (L.t < 8.5) {
+    if (L.count !== 0) { L.count = 0; showMsg('🚀 START!', 1.4); crash(0.5, 'car'); }
+    const k = L.t - 3; R.position.y = L.y0 + 0.5 * 7 * k * k; R.userData.flame.visible = true; R.userData.flame.scale.y = 0.8 + Math.random() * 0.5;
+    if (Math.random() < dt * 30) S.fx.puff(L.x + (Math.random() - 0.5) * 8, L.y0 + 1 + Math.random() * 3, L.z + (Math.random() - 0.5) * 8, 0, 0);
+    if (L.t > 7) { ov.textContent = L.toMoon ? '🌌 Flug zum Mond …' : '🌍 Flug zurück zur Erde …'; ov.style.opacity = Math.min(1, (L.t - 7) / 1.2); }
+  } else if (!L.arrived) { // ankommen: auf der anderen Seite neben der Rakete aussteigen
+    L.arrived = true; R.position.y = L.y0; R.userData.flame.visible = false;
+    const D = L.toMoon ? { x: MOON_ROCKET.x + 8, z: MOON_ROCKET.z + 7 } : { x: SPACE.x - 10, z: SPACE.z + 10 }, w = city.walk;
+    w.x = D.x; w.z = D.z; w.okX = D.x; w.okZ = D.z; w.h = -Math.PI / 2; w.speed = 0; w.air = null; w.jy = 0; w.gy = groundAt(D.x, D.z);
+    S.moon.group.visible = L.toMoon;
+  } else if (L.t < 10.8) ov.style.opacity = Math.max(0, 1 - (L.t - 9.3) / 1.4);
+  else {
+    ov.style.opacity = 0; city.walk.mesh.visible = true; city.launch = null;
+    showMsg(L.toMoon ? '🌙 Willkommen auf dem Mond! Spring mal (E) – hier ist alles ganz leicht. 💎 Sammle Mondsteine!' : '🌍 Zurück auf der Erde!', 3.2);
+  }
+}
+// Himmel, Licht und Nebel: auf dem Mond schwarz mit Sternen, harte Sonne, kein Wetter, keine Wolken
+function stepMoonEnv(dt) {
+  const w = city.walk, me = city.me, fx = w ? w.x : me.pos.x, fz = w ? w.z : me.pos.z, on = inMoon(fx, fz);
+  if (on !== city.moonOn) {
+    city.moonOn = on;
+    S.scene.background = on ? new THREE.Color(0x000000) : null;
+    S.clouds.visible = !on;
+  }
+  S.moon.group.visible = on || !!(city.launch && !city.launch.toMoon && !city.launch.arrived); // auch beim Start vom Mond
+  if (!on) return;
+  const n = S.night;
+  n.fog.color.setHex(0x000000); n.fog.near = 2500; n.fog.far = 6000;
+  S.sun.intensity = 2.4; n.hemi.intensity = 0.1; n.stars.material.opacity = 0;
+  if (S.wxFx) { S.wxFx.rain.visible = false; S.wxFx.snow.visible = false; }
+  stepMoon(S.moon, dt, city.t, fx, fz, (got, all) => {
+    const c = city.net ? 0 : 3; if (c) city.earn(c);
+    showMsg('💎 Mondstein! (' + got + '/' + all + ')' + (c ? '  +' + c + ' 🪙' : '') + (got === all ? '  Alle gefunden! 🎉' : ''), 2);
+  });
+}
+function drawMoonMap(g) {
+  const sc = (MAP - 16) / (MOON.r * 2), mx2 = x => MAP / 2 + (x - MOON.x) * sc, mz2 = z => MAP / 2 + (z - MOON.z) * sc, w = city.walk, me = city.me;
+  g.fillStyle = '#0b0b12'; g.fillRect(0, 0, MAP, MAP);
+  g.fillStyle = '#6b6b73'; g.beginPath(); g.arc(MAP / 2, MAP / 2, MOON.r * sc, 0, Math.PI * 2); g.fill();
+  g.font = '12px system-ui'; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText('🚀', mx2(MOON_ROCKET.x), mz2(MOON_ROCKET.z));
+  g.fillStyle = '#67e8f9'; for (const r of S.moon.rocks) if (!r.got) g.fillRect(mx2(r.x) - 1.5, mz2(r.z) - 1.5, 3, 3);
+  g.fillStyle = '#ef4444'; g.beginPath(); g.arc(mx2(w ? w.x : me.pos.x), mz2(w ? w.z : me.pos.z), 4, 0, Math.PI * 2); g.fill();
+}
+
 // ---------- Skifahren (Skigebiet am Pass) ----------
 // Zu Fuss zur Talstation, X: im Sessellift hinauf. Oben bekommt man Ski: ⬅️➡️ lenken, ⬆️ anschieben, ⬇️ bremsen (Pflug),
 // bergab wird man von selber schneller. Unten an der Talstation wieder X = nochmals hinauf; sonst X = Ski aus.
@@ -1739,7 +1809,7 @@ function stepSki(w, dt) {
   w.h += steer * 1.7 * dt;
   const fx = Math.cos(w.h), fz = Math.sin(w.h);
   const slope = (G(w.x + fx, w.z + fz) - G(w.x - fx, w.z - fz)) / 2; // > 0: bergauf
-  let v = w.speed - 9.81 * slope * 0.85 * dt;
+  let v = w.speed - (city.moonOn ? MOON_G : 9.81) * slope * 0.85 * dt;
   if (input.gas && v < 6) v += 3 * dt; // mit den Stöcken anschieben
   if (input.brake) v -= Math.sign(v) * Math.min(Math.abs(v), 7 * dt); // Pflug
   v -= v * 0.05 * dt + Math.sign(v) * Math.min(Math.abs(v), 0.4 * dt); // Schnee bremst ein wenig
@@ -2233,7 +2303,7 @@ function stepMe(dt) {
   me.surface = me.fly ? 'asphalt' : surfaceAt(me.pos.x, me.pos.z);
   const boost = city.turbo > 0 ? 1.3 : 1; // Turbo-Benzin von der Tankstelle
   const offroad = ['tractor', 'offroad', 'jeep', 'monster', 'rally'].includes(me.v.kind); // im Matsch und Sand besser
-  const SURF = { grass: 0.55, sand: offroad ? 0.8 : 0.5, mud: offroad ? 0.75 : 0.32, gravel: 0.85, snow: 0.8, water: 1 };
+  const SURF = { grass: 0.55, sand: offroad ? 0.8 : 0.5, mud: offroad ? 0.75 : 0.32, gravel: 0.85, snow: 0.8, water: 1, moon: offroad ? 0.9 : 0.75 };
   let maxV = (me.fly ? me.maxV * FLY_SPEED : me.maxV * (SURF[me.surface] || 1)) * boost;
   if (city.boat && !city.walk) maxV = Math.min(maxV, 22); // Boot: bis 80 km/h
   if (city.cruise && city.cruise.on) maxV = Math.min(maxV, city.cruise.kmh / 3.6); // Tempomat: nie schneller
@@ -2268,7 +2338,7 @@ function stepMe(dt) {
   me.vl = -me.speed * s + me.vl * c;
   me.speed = vf;
   // Reifen greifen: seitliches Rutschen wird abgebaut – normal schnell, im Drift mit Gas langsam, mit Handbremse kaum
-  const SURF_GRIP = { grass: 4, sand: 3.5, mud: 2.5, gravel: 6, snow: 3, water: 1.6 };
+  const SURF_GRIP = { grass: 4, sand: 3.5, mud: 2.5, gravel: 6, snow: 3, water: 1.6, moon: 3.5 };
   const grip = (hand ? 0.8 : sliding ? (gas ? 1.3 : 2.4) : SURF_GRIP[me.surface] || 9) * city.wGrip; // Regen und Schnee: rutschiger
   me.vl *= Math.exp(-grip * dt);
   const fx = Math.cos(me.heading), fz = Math.sin(me.heading);
@@ -2341,6 +2411,7 @@ function stepMe(dt) {
     me.speed *= fast ? -0.25 : 0.3; me.vl *= 0.2;
     const lg = lockedGate(me.pos.x, me.pos.z, city.keys.size);
     if (lg && city.msgT <= 0) showMsg('🔒 ' + lg.name + ' öffnet ab ' + lg.need + ' goldenen Schlüsseln (du hast ' + city.keys.size + ')', 2.4);
+    else if (city.msgT <= 0 && city.moonOn) showMsg('⛰️ Die Mondberge sind zu steil', 1.4);
     else if (city.msgT <= 0 && !city.boat) { // sagen, warum es nicht weitergeht
       const fx = Math.cos(me.heading) * 3, fz = Math.sin(me.heading) * 3, why = offroadWhy(me.pos.x + fx, me.pos.z + fz, me.radius, city.keys.size);
       if (why === 'water') showMsg('🌊 Da ist Wasser – das Boot wartet am Steg beim Strand', 1.8);
@@ -2364,11 +2435,24 @@ function stepMe(dt) {
   // Am Berg: Boden unter dem Auto, Neigung vorne/hinten, bergab rollt es schneller
   if (S.places.park && !me.fly) parkStep(me.pos.x, me.pos.z);
   city.gy = city.boat && !city.walk ? BOAT_Y + Math.sin(city.t * 1.6) * 0.08 : groundAt(me.pos.x, me.pos.z);
+  if (city.moonOn && !me.fly) { // Mond: wenig Schwerkraft – über Kraterränder fliegt man weit
+    const g = city.gy, Gc = MOON_G * 1.6;
+    if (me.mY === undefined || Math.abs(me.mY - g) > 30) { me.mY = g; me.mVy = 0; me.mAir = false; }
+    if (me.mAir) {
+      me.mVy -= Gc * dt; me.mY += me.mVy * dt;
+      if (me.mY <= g) { if (me.mVy < -8 && city.crashT <= 0) { crash(0.25, 'car'); city.crashT = 0.5; } me.mY = g; me.mVy = 0; me.mAir = false; }
+    } else {
+      const expect = me.mY + me.mVy * dt - 0.5 * Gc * dt * dt;
+      if (g < expect - 0.03 && Math.abs(me.speed) > 3) { me.mAir = true; me.mY = expect; me.mVy -= Gc * dt; if (city.msgT <= 0) showMsg('🌙 Hui – auf dem Mond fliegt man weit!', 1.2); }
+      else { me.mVy = Math.max(-25, Math.min(25, (g - me.mY) / Math.max(dt, 1e-3))); me.mY = g; }
+    }
+    city.gy = me.mY;
+  } else me.mAir = false;
   let slope = 0;
   if (!city.boat && (city.gy || Math.abs(me.pos.z) > LIMIT || Math.abs(me.pos.x) > LIMIT)) {
     const hx = Math.cos(me.heading) * me.len * 0.4, hz = Math.sin(me.heading) * me.len * 0.4;
     slope = (groundAt(me.pos.x + hx, me.pos.z + hz) - groundAt(me.pos.x - hx, me.pos.z - hz)) / (me.len * 0.8 || 1);
-    if (!me.fly) me.speed -= 9.81 * slope * 0.7 * dt;
+    if (!me.fly && !me.mAir) me.speed -= (city.moonOn ? MOON_G : 9.81) * slope * 0.7 * dt;
   }
   const m = me.mesh;
   m.position.set(me.pos.x, me.alt + city.gy, me.pos.z);
@@ -2420,6 +2504,7 @@ function stepHw(dt) {
 // Wo man fahren (und gehen) darf: in der Stadt bis zum Waldrand, draussen nur auf der Autobahn
 // (dazu überall auf dem Gelände, siehe offroadWhy in outskirts.js: nicht ins Wasser, nicht über Leitplanken, nicht in gesperrte Gebiete)
 const allowedAt = (x, z, r) => {
+  if (inMoon(x, z)) return moonAllowed(x, z, r); // auf dem Mond
   if (city.boat && !city.walk) return inWater(x, z, r);
   const keys = city.keys ? city.keys.size : 0;
   if ((Math.abs(x) <= LIMIT && Math.abs(z) <= LIMIT) || hwDrivable(x, z, r) || countryDrivable(x, z, r) || areaDrivable(x, z, r, keys) || passDrivable(x, z, r, keys)) return true;
@@ -2430,6 +2515,7 @@ const allowedAt = (x, z, r) => {
 const groundMemo = new Map();
 function landAt(i, j) { const k = i * 100000 + j; let h = groundMemo.get(k); if (h === undefined) { h = S.height(-1100 + i * 20, -1100 + j * 20); groundMemo.set(k, h); } return h; }
 function groundAt(x, z) {
+  if (inMoon(x, z)) return moonGround(x, z);
   if (pkIn(x, z)) return parkY(x, z);
   const pg = passGround(x, z);
   if (pg) return pg;
@@ -2855,12 +2941,13 @@ function stepAir(w, dt) {
   }
   if (!w.air && (upHit || downHit) && U.spin) {
     const run = !!input.drift || Math.abs(w.speed) > 6, flip = downHit ? (run ? 2 : 1) * Math.PI * 2 : 0, vy = downHit ? (run ? 9.6 : 7.6) : (run ? 7 : 6);
-    w.air = { vy, y: 0, flip, rot: 0, spinY: 0, rate: flip / (2 * vy / 9.81 * 0.9) };
+    const G = city.moonOn ? MOON_G * 1.8 : 9.81; // auf dem Mond springt man viel höher
+    w.air = { vy, y: 0, flip, rot: 0, spinY: 0, G, rate: flip / (2 * vy / G * 0.9) };
     window.beep && window.beep(520, 0.06, 'triangle', 0.03);
   }
   const A = w.air;
   if (!A) { w.jy = 0; return; }
-  A.vy -= 9.81 * dt; A.y += A.vy * dt;
+  A.vy -= A.G * dt; A.y += A.vy * dt;
   if (A.flip) A.rot = Math.min(A.flip, A.rot + A.rate * dt);
   else if (input.left || input.right) A.spinY += (input.right ? -1 : 1) * 10 * dt; // Pirouette
   U.spin.rotation.set(0, A.spinY, A.rot);
@@ -2916,6 +3003,7 @@ function getIn() {
   if (city.movie) { city.movie = null; w.mesh.visible = true; showMsg('🎬 Aufgestanden', 1.2); return; }
   if (t && t.movie) { city.movie = { t: 0 }; w.mesh.visible = false; showMsg('🍿 Film läuft – X zum Aufstehen', 2.4); return; }
   if (t && t.lift) { startLift(w); return; }
+  if (t && t.rocket) { startLaunch(); return; }
   if (t && t.bed) { goSleep(w); return; }
   if (w.ski) { skiOff(w); return; }
   if (!t) { showMsg('🚗 Geh näher zu einem Auto', 1.4); return; }
@@ -2929,7 +3017,7 @@ function getIn() {
     Object.assign(me.pos, { x: R.x, z: R.z }); me.heading = R.h;
     S.scene.remove(R.mesh);
     R.mesh = buildCar({ ...old.v, special: null }, city.kinds);
-    R.mesh.position.set(old.x, 0, old.z); R.mesh.rotation.y = -old.h; S.scene.add(R.mesh);
+    R.mesh.position.set(old.x, groundAt(old.x, old.z), old.z); R.mesh.rotation.y = -old.h; S.scene.add(R.mesh);
     if (R.mesh.userData.driver) R.mesh.userData.driver.visible = false;
     Object.assign(R, old);
   } else if (t.v) { // Auto aus der Base: das alte Auto fährt zurück in die Base
@@ -2946,7 +3034,7 @@ function getIn() {
 }
 function stepWalk(dt) {
   const w = city.walk, input = city.input, me = city.me;
-  if (city.sleep || city.movie) return; // schläft oder schaut einen Film
+  if (city.sleep || city.movie || city.launch) return; // schläft, schaut einen Film oder fliegt mit der Rakete
   if (w.lift) { stepLift(w, dt); return; }
   if (w.ski) { stepSki(w, dt); return; }
   stepAir(w, dt); // springen, Backflip, hinfallen
@@ -2992,12 +3080,14 @@ function stepWalk(dt) {
   if (Math.hypot(w.x - LIFT.A.x, w.z - LIFT.A.z) < 14) { best = { lift: true }; bd = 0; } // Sessellift (Talstation)
   const KS = S.places.kino && S.places.kino.seats;
   if (KS && w.x > KS.x0 && w.x < KS.x1 && w.z > KS.z0 && w.z < KS.z1) { best = { movie: true }; bd = 0; } // im Kino bei den Sitzen
+  const RK = city.moonOn ? MOON_ROCKET : SPACE;
+  if (Math.hypot(w.x - RK.x, w.z - RK.z) < 9) { best = { rocket: true }; bd = 0; } // Mondrakete
   const FL = S.areas.flyer;
   if (FL && !city.plane && Math.hypot(w.x - FL.x, w.z - FL.z) < 16) { best = { plane: true }; bd = 0; } // Flugzeug
   const HB = S.places.house && S.places.house.bed;
   if (HB && city.house.owned && Math.hypot(w.x - HB.x, w.z - HB.z) < 3) { best = { bed: true }; bd = 0; } // Bett im eigenen Haus
-  if (best && (!w.target || w.target.v !== best.v || !!w.target.boat !== !!best.boat || !!w.target.lift !== !!best.lift || !!w.target.bed !== !!best.bed || !!w.target.plane !== !!best.plane || !!w.target.movie !== !!best.movie))
-    showMsg(best.movie ? '🍿 Film schauen – X' : best.plane ? '✈️ Flugzeug – X: einsteigen und fliegen' : best.bed ? '🛏️ Bett – X: schlafen' : best.lift ? '🚡 Sessellift – X: einsteigen und hinauffahren' : best.boat ? '🚤 Boot – einsteigen' : best.v ? '🔑 ' + ((city.kinds[best.v.kind] || {}).name || '') + ' – 🚗 einsteigen' : '🚗 Einsteigen?', 1.2);
+  if (best && (!w.target || w.target.v !== best.v || !!w.target.boat !== !!best.boat || !!w.target.lift !== !!best.lift || !!w.target.bed !== !!best.bed || !!w.target.plane !== !!best.plane || !!w.target.movie !== !!best.movie || !!w.target.rocket !== !!best.rocket))
+    showMsg(best.rocket ? (city.moonOn ? '🚀 Zurück zur Erde – X' : '🚀 Zum Mond fliegen – X') : best.movie ? '🍿 Film schauen – X' : best.plane ? '✈️ Flugzeug – X: einsteigen und fliegen' : best.bed ? '🛏️ Bett – X: schlafen' : best.lift ? '🚡 Sessellift – X: einsteigen und hinauffahren' : best.boat ? '🚤 Boot – einsteigen' : best.v ? '🔑 ' + ((city.kinds[best.v.kind] || {}).name || '') + ' – 🚗 einsteigen' : '🚗 Einsteigen?', 1.2);
   w.target = best;
   S.ui.walkbtn.classList.toggle('ready', !!best);
 }
@@ -4052,6 +4142,7 @@ function removePolice() {
 
 function surfaceAt(x, z) {
   if (city && city.boat && !city.walk) return 'water';
+  if (inMoon(x, z)) return 'moon';
   if (Math.abs(x) > HALF + ROAD / 2 || Math.abs(z) > HALF + ROAD / 2) {
     if (onHighway(x, z) || inArea(x, z)) return 'asphalt';
     return countrySurface(x, z) || (onPass(x, z) ? 'asphalt' : 'grass');
@@ -4392,6 +4483,7 @@ function drawWideMap(g) {
 function drawMinimap() {
   const g = S.ui.minimap.getContext('2d');
   g.clearRect(0, 0, MAP, MAP);
+  if (city.moonOn) { drawMoonMap(g); return; }
   if (Math.max(Math.abs(city.me.pos.x), Math.abs(city.me.pos.z)) > LIMIT) { drawWideMap(g); return; }
   g.drawImage(S.mapBase, 0, 0);
   if (city.works) { const W = city.works; g.strokeStyle = '#f97316'; g.lineWidth = 4; g.beginPath(); g.moveTo(mx(node(W.a[0])), mx(node(W.a[1]))); g.lineTo(mx(node(W.b[0])), mx(node(W.b[1]))); g.stroke(); }
@@ -4494,7 +4586,14 @@ export function startCity({ player, kinds, topSpeed, onExit, pay = () => 0, earn
   city.peds = makePeds();
   city.works = null; city.worksT = 30 + Math.random() * 40;
   city.house = loadHouse(); city.houseOpen = false; showHouse();
-  city.rides = []; city.boat = null; city.bales = 0;
+  city.rides = []; city.boat = null; city.bales = 0; city.moonOn = false; city.launch = null;
+  S.scene.background = null; S.clouds.visible = true; S.moon.group.visible = false;
+  for (const r of S.moon.rocks) { r.got = false; r.mesh.visible = true; } // Mondsteine liegen wieder da
+  if (kinds[MOON_BUGGY.v.kind]) { // Mond-Buggy bei der Basis
+    const bm = buildCar({ ...MOON_BUGGY.v, special: null }, kinds); bm.position.set(MOON_BUGGY.x, moonGround(MOON_BUGGY.x, MOON_BUGGY.z), MOON_BUGGY.z); bm.rotation.y = -MOON_BUGGY.h;
+    if (bm.userData.driver) bm.userData.driver.visible = false;
+    S.scene.add(bm); city.rides.push({ v: { ...MOON_BUGGY.v }, x: MOON_BUGGY.x, z: MOON_BUGGY.z, h: MOON_BUGGY.h, mesh: bm });
+  }
   city.cruise = { on: false, kmh: Math.min(80, cruiseMax()) }; showCruise();
   const TR = RIDES_INFO.tractor;
   if (kinds.tractor) { // Traktor auf dem Bauernhof: zu Fuss hin und einsteigen
@@ -4551,6 +4650,8 @@ function step(now) {
   stepLights();
   stepDayNight(dt);
   stepWeather(dt);
+  stepMoonEnv(dt);
+  stepLaunch(dt);
   if (city.pulled > 0) city.pulled -= dt;
   if (city.walk) stepWalk(dt); else if (city.plane) stepPlane(dt); else stepMe(dt);
   stepJail();
@@ -4723,7 +4824,7 @@ function updateHud(dt) {
   for (const c of city.cars) { const d = Math.hypot(c.x - me.pos.x, c.z - me.pos.z); if (d < nd) { nd = d; near = c; } }
   const g = city.gears(me.speed, me.maxV);
   S.snd.update({ frac: g.frac, throttle: city.input.gas ? 1 : 0.15, speed: me.speed, slip: me.slip,
-    surface: ['sand', 'mud', 'snow', 'gravel'].includes(me.surface) ? 'gravel' : me.surface === 'water' ? 'grass' : me.surface,
+    surface: ['sand', 'mud', 'snow', 'gravel', 'moon'].includes(me.surface) ? 'gravel' : me.surface === 'water' ? 'grass' : me.surface,
     other: near ? { dist: nd, frac: 0.2 + near.speed / 30, kind: near.v.kind } : null, dt });
 }
 
@@ -4739,7 +4840,10 @@ function render(dt) {
   const me = city.me, cam = S.camera, w = city.walk;
   const fx = Math.cos(me.heading), fz = Math.sin(me.heading);
   const back = 8.5 + Math.abs(me.speed) * 0.03;
-  if (city.plane && !w) { // Flugzeug: weit hinten und oben
+  if (city.launch) { // Raketenstart: von der Seite zuschauen
+    const L = city.launch, ry = L.R.position.y;
+    camWant.set(L.x + 34, L.y0 + 6 + Math.min(40, (ry - L.y0) * 0.35), L.z + 30); camAhead.set(L.x, ry + 14, L.z);
+  } else if (city.plane && !w) { // Flugzeug: weit hinten und oben
     const pb = 46 + Math.abs(me.speed) * 0.1, y = me.mesh.position.y;
     camWant.set(me.pos.x - fx * pb, Math.max(y + 11, groundAt(me.pos.x - fx * pb, me.pos.z - fz * pb) + 4), me.pos.z - fz * pb);
     camAhead.set(me.pos.x + fx * 25, y + 4, me.pos.z + fz * 25);
@@ -4783,6 +4887,8 @@ function render(dt) {
 
 function endCity() {
   removePolice();
+  S.scene.background = null; S.clouds.visible = true; S.moon.group.visible = false;
+  if (S.ui.sleep) S.ui.sleep.style.opacity = 0;
   endWorks();
   if (city.plane) { // Flugzeug zurück an seinen Platz
     const F = S.areas.flyer; Object.assign(F, F.home); F.mesh.position.set(F.x, 0, F.z); F.mesh.rotation.set(0, -F.h, 0);

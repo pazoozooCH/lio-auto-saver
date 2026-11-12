@@ -59,6 +59,10 @@ Browser-Spiel ohne Build: `index.html` + `game.js` (Spiellogik, Menüs und 2D-Ze
   Kühe, Heuballen mit dem Traktor einsammeln, Traktor zum Einsteigen: `city.rides`), Strand im Westen (Promenade, Sand, Steg mit
   Boot: `city.boat`, fährt nur auf dem Wasser) und Skigebiet am Pass (Schnee ab Höhe 55, Sessellift, Skifahrer).
   Böden: `countrySurface` ('gravel', 'mud', 'sand', 'snow'), Wirkung in `stepMe` (`SURF`, `SURF_GRIP`).
+- `moon.js`: der Mond (für `city.js`, bei MOON weit weg): Krater (`moonGround`), Erde und Sterne, Mondbasis, Landefähre,
+  Schweizer Fahne, Mondsteine (`stepMoon`), Mond-Buggy (`MOON_BUGGY` in `city.rides`). Hin und zurück mit der Mondrakete
+  (Raumbahnhof `SPACE` in country.js, östlich der Stadt): `startLaunch`/`stepLaunch` in city.js; auf dem Mond wenig Schwerkraft
+  (`city.moonOn`: Auto fliegt über Kraterränder, Figur springt hoch), schwarzer Himmel (`stepMoonEnv`).
 - `stunt.js`: 3D-Stuntpark mit eigener Physik in der Höhe (Rampen als Formen in `SHAPES`, Looping, Feuerringe, Salto/Schraube).
   Testen: `startStuntMode()`, dann `window.__stunt()` (`me`, `input`, `score`).
 - `viewer.js`: 3D-Ansicht eines Fahrzeugs zum Drehen (eigener Renderer, wird beim Schliessen freigegeben).

@@ -37,6 +37,10 @@ const WATER = { x0: -1100, x1: -702, z0: -700, z1: 380, y: -4 }; // wie in outsk
 const BOAT_HOME = { x: -780, z: -420, h: Math.PI };
 const KIOSK = { x0: -676, x1: -666, z0: -306, z1: -298 };
 
+// ---------- Raketenstart (Mondausflug) ----------
+export const SPACE = { x: 700, z: 200, r: 26 }; // Startplatz mit der Mondrakete
+const SPACE_ROAD = { x0: 250, x1: 690, z0: 184, z1: 200 }; // Verlängerung der Stadtstrasse z = 192 nach Osten
+
 // ---------- Skigebiet ----------
 const LIFT_A = { x: 290, z: -650 }, LIFT_B = { x: 85, z: -955 }; // Tal- und Bergstation (die Bergstation weit genug neben der Passstrasse)
 const SNOW_ROAD = 55; // ab dieser Höhe liegt Schnee auf der Passstrasse
@@ -47,13 +51,16 @@ export const RIDES_INFO = { tractor: { ...TRACTOR, v: { id: 'farm-tractor', kind
 export function countryDist(x, z) {
   let d = Math.min(boxDist(x, z, FARM) - 4, boxDist(x, z, BEACH), boxDist(x, z, PROM), boxDist(x, z, BEACH_ROAD) - 4);
   for (const r of FARM_ROADS) d = Math.min(d, boxDist(x, z, r) - 4);
+  d = Math.min(d, boxDist(x, z, SPACE_ROAD) - 4, Math.hypot(x - SPACE.x, z - SPACE.z) - SPACE.r - 6);
   return d;
 }
-export const inCountry = (x, z) => box(FARM, x, z) || FARM_ROADS.some(r => box(r, x, z)) || box(BEACH, x, z) || box(PROM, x, z) || box(BEACH_ROAD, x, z) || box(PIER, x, z);
+export const inCountry = (x, z) => box(FARM, x, z) || FARM_ROADS.some(r => box(r, x, z)) || box(BEACH, x, z) || box(PROM, x, z) || box(BEACH_ROAD, x, z) || box(PIER, x, z)
+  || box(SPACE_ROAD, x, z) || Math.hypot(x - SPACE.x, z - SPACE.z) < SPACE.r;
 export function countryDrivable(x, z, r = 1) {
   const m = r * 0.6;
   if (box(FARM, x, z, m)) return !FARM_SOLIDS.some(b => box(b, x, z, -m)) && !box(PASTURE, x, z, -m);
-  if (FARM_ROADS.some(b => box(b, x, z, m - 1)) || box(BEACH_ROAD, x, z, m - 1) || box(PROM, x, z, m - 1)) return true;
+  if (FARM_ROADS.some(b => box(b, x, z, m - 1)) || box(BEACH_ROAD, x, z, m - 1) || box(PROM, x, z, m - 1) || box(SPACE_ROAD, x, z, m - 1)) return true;
+  if (Math.hypot(x - SPACE.x, z - SPACE.z) < SPACE.r - m) return Math.hypot(x - SPACE.x, z - SPACE.z) > 3 + m; // um die Rakete herum
   if (box(BEACH, x, z, m)) return !box(KIOSK, x, z, -m);
   return box(PIER, x, z, m - 0.5);
 }
@@ -64,12 +71,13 @@ export function countrySurface(x, z) {
     return 'grass';
   }
   if (box(BEACH, x, z)) return 'sand';
-  if (box(BEACH_ROAD, x, z) || box(PROM, x, z) || box(PIER, x, z)) return 'asphalt';
+  if (box(BEACH_ROAD, x, z) || box(PROM, x, z) || box(PIER, x, z) || box(SPACE_ROAD, x, z) || Math.hypot(x - SPACE.x, z - SPACE.z) < SPACE.r) return 'asphalt';
   if (passGround(x, z) > SNOW_ROAD) return 'snow';
   return null;
 }
 // Feste Dinge (auch wenn man quer übers Gelände kommt): Gebäude auf dem Hof, Weide, Kiosk
-export const countryBlocked = (x, z, r = 1) => FARM_SOLIDS.some(b => box(b, x, z, -r * 0.6)) || box(PASTURE, x, z, -r * 0.6) || box(KIOSK, x, z, -r * 0.6);
+export const countryBlocked = (x, z, r = 1) => FARM_SOLIDS.some(b => box(b, x, z, -r * 0.6)) || box(PASTURE, x, z, -r * 0.6) || box(KIOSK, x, z, -r * 0.6)
+  || Math.hypot(x - SPACE.x, z - SPACE.z) < 3 + r * 0.6;
 // Skigebiet: Talstation, Bergstation (für city.js: Lift fahren und selber Ski fahren)
 export const LIFT = { A: LIFT_A, B: LIFT_B };
 // Auf dem Wasser (für das Boot)
@@ -186,6 +194,19 @@ export function buildCountry({ scene, group, asphaltMat, grassMat, sign, natural
   add(new THREE.BoxGeometry(12, 0.9, 0.04), M(0xf8fafc, { transparent: true, opacity: 0.7 }), -682, 2.1, -520);
   signPair('🏖️ STRAND', '#0e7490', '#ffffff', 7, 1.5, -300, 4, -204, -Math.PI / 2);
 
+  // ===== Raketenstart =====
+  flat(SPACE_ROAD, asphaltMat, 0.035);
+  const padM = M(0xc7cbd1, { roughness: 0.9 });
+  const pad = new THREE.Mesh(new THREE.CircleGeometry(SPACE.r, 40).rotateX(-Math.PI / 2), padM); pad.position.set(SPACE.x, 0.04, SPACE.z); pad.receiveShadow = true; group.add(pad);
+  const ring = new THREE.Mesh(new THREE.RingGeometry(5, 6, 32).rotateX(-Math.PI / 2), M(0xfacc15)); ring.position.set(SPACE.x, 0.06, SPACE.z); group.add(ring);
+  const steelT = M(0xdc2626, { metalness: 0.4 });
+  for (const [dx, dz] of [[6.5, -1.5], [6.5, 1.5], [9.5, -1.5], [9.5, 1.5]]) add(new THREE.BoxGeometry(0.35, 34, 0.35), steelT, SPACE.x + dx, 17, SPACE.z + dz);
+  for (let y = 3; y < 34; y += 4) add(new THREE.BoxGeometry(3.4, 0.25, 3.4), steelT, SPACE.x + 8, y, SPACE.z);
+  add(new THREE.BoxGeometry(5, 0.4, 0.8), steelT, SPACE.x + 4.5, 24, SPACE.z); // Arm zur Rakete
+  out.rocket = makeRocket(); out.rocket.position.set(SPACE.x, 0, SPACE.z); scene.add(out.rocket);
+  signPair('🚀 MONDRAKETE – zu Fuss hin, X', '#111827', '#facc15', 10, 1.5, SPACE.x - 12, 3, SPACE.z - SPACE.r + 2, 0);
+  signPair('🚀 RAUMBAHNHOF', '#111827', '#facc15', 8, 1.5, 300, 4, 205, -Math.PI / 2);
+
   // ===== Skigebiet: Sessellift, Skihütte, Skifahrer =====
   const ground = (x, z) => Math.max(passTerrain(x, z, natural(x, z)), passGround(x, z));
   const towers = [], n = Math.ceil(Math.hypot(LIFT_B.x - LIFT_A.x, LIFT_B.z - LIFT_A.z) / 55);
@@ -290,6 +311,23 @@ export function buildCountry({ scene, group, asphaltMat, grassMat, sign, natural
   return out;
 }
 
+// Mondrakete: weisser Rumpf, rote Spitze, vier Flossen, Fenster, Schweizer Kreuz; Flamme (unsichtbar, beim Start an)
+export function makeRocket() {
+  const g = new THREE.Group(), white = M(0xf8fafc, { metalness: 0.2, roughness: 0.4 }), red = M(0xdc2626), dark = M(0x374151, { metalness: 0.6 });
+  const part = (geo, m, x, y, z) => { const o = new THREE.Mesh(geo, m); o.position.set(x, y, z); o.castShadow = true; g.add(o); return o; };
+  part(new THREE.CylinderGeometry(2, 2.2, 20, 24), white, 0, 13, 0);
+  part(new THREE.ConeGeometry(2, 6, 24), red, 0, 26, 0);
+  part(new THREE.CylinderGeometry(2.25, 2.25, 1.2, 24), red, 0, 18, 0);
+  for (let k = 0; k < 4; k++) { const f = part(new THREE.BoxGeometry(0.3, 6, 3), red, Math.cos(k * Math.PI / 2) * 2.6, 4.5, Math.sin(k * Math.PI / 2) * 2.6); f.rotation.y = -k * Math.PI / 2 + Math.PI / 2; }
+  part(new THREE.CylinderGeometry(1.4, 2, 2.5, 18), dark, 0, 1.6, 0); // Düse
+  for (const y of [15, 21]) { const w = part(new THREE.CylinderGeometry(0.6, 0.6, 0.2, 16).rotateZ(Math.PI / 2), M(0x60a5fa, { metalness: 0.5, roughness: 0.1 }), 2.05, y, 0); w.castShadow = false; }
+  part(new THREE.BoxGeometry(2, 2, 0.1), red, 0, 9, 2.22); // Schweizer Kreuz auf der Seite
+  part(new THREE.BoxGeometry(0.38, 1.3, 0.06), white, 0, 9, 2.29); part(new THREE.BoxGeometry(1.3, 0.38, 0.06), white, 0, 9, 2.29);
+  const flame = new THREE.Group(); flame.visible = false; g.add(flame);
+  for (const [r, h, c] of [[1.6, 8, 0xf97316], [1, 6, 0xfde047]]) { const f = new THREE.Mesh(new THREE.ConeGeometry(r, h, 16), new THREE.MeshBasicMaterial({ color: c, transparent: true, opacity: 0.85 })); f.rotation.x = Math.PI; f.position.y = -h / 2 + 0.4; flame.add(f); }
+  g.userData.flame = flame;
+  return g;
+}
 // Boot: Rumpf, Deck, Kabine mit Scheibe (für city.js wie ein Auto: userData.wheels, length, radius)
 function makeBoat() {
   const g = new THREE.Group(), body = new THREE.Group(); g.add(body);
