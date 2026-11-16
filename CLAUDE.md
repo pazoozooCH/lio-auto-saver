@@ -15,7 +15,11 @@ Browser-Spiel ohne Build: `index.html` + `game.js` (Spiellogik, Menüs und 2D-Ze
   (`REAL` + `realBody`: Querschnitte, Radkästen, Kabine mit Säulen, gemalte Front/Heck); `{ classic: true }` = alte Kastenform.
 - `city.js`: 3D-Stadt zum freien Herumfahren (Strassengitter, Häuser, Parks, Ampeln, Verkehr mit Abbiegen und Halten).
   Geschwungene Strassen: gerechnet wird im geraden Gitter, nur das Bild wird verbogen (`warpXZ`/`warpRot`): jede Strasse eigene Welle
-  (`SW`, fester Zufall), Stadt rund statt viereckig (`WARP_ROUND`), läuft draussen bis `WARP_OUT` (HALF + 70) sanft aus.
+  (`SW`, fester Zufall), Blöcke verschieden gross (`SW.ox`/`SW.oz`), Stadt rund statt viereckig (`WARP_ROUND`),
+  läuft draussen bis `WARP_OUT` (HALF + 70) sanft aus.
+  Kreisel an den Kreuzungen in `ROUND` (keine Ampel, `planTurn` fährt im Kreis, Vortritt vor der Einfahrt in `stepTraffic`);
+  Abbiegen als Punkte-Weg (`c.turn.pts`, `turnAt`). Fussgängerzonen `PED` (`isPed`, gelten in `isClosed` als gesperrt):
+  dort keine Strasse, Ampel, Haltestelle oder Spawn.
   Beim Bauen `warpStatic` (Formen und Instanzen mit Weltkoordinaten am Ursprung, lange Dreiecke geteilt), jedes Bild
   `warpFrame`/`unwarpFrame` in `render` (alles mit eigener Lage kurz verschieben); `userData.noWarp` = nicht verbiegen.
   Neue Effekte mit Weltkoordinaten (wie Rauch/Bremsspuren in `S.fx`) selbst mit `warpXZ` verschieben; Minikarte über `mp`.

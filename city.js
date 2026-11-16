@@ -48,8 +48,11 @@ const WARP_OUT = HALF + 70, WARP_ROUND = 0.55;
 const SW = (() => {
   const r = rng(1312), mk = () => { const calm = r() < 0.25; // ein paar Strassen fast gerade
     return { a: calm ? 1 + r() * 2 : 3 + r() * 6, l: 40 + r() * 40, p: r() * 6.28, b: calm ? 0 : r() * 3, m: 20 + r() * 12, q: r() * 6.28 }; };
-  return { v: Array.from({ length: N + 1 }, mk), h: Array.from({ length: N + 1 }, mk) };
+  // Verschiebung jeder Strasse quer zu sich selbst: so sind die Blöcke verschieden gross (Ring bleibt, höchstens 12 m Unterschied)
+  const off = () => { const o = [0]; for (let k = 1; k < N; k++) o.push(Math.max(o[k - 1] - 12, Math.min(o[k - 1] + 12, (r() - 0.5) * 18))); o.push(0); return o; };
+  return { v: Array.from({ length: N + 1 }, mk), h: Array.from({ length: N + 1 }, mk), ox: off(), oz: off() };
 })();
+const sstep = t => t * t * (3 - 2 * t); // an den Strassen flach: die Strasse behält ihre Breite
 const wave = (w, t) => w.a * Math.sin(t / w.l + w.p) + w.b * Math.sin(t / w.m + w.q);
 function warpXZ(x, z, out) {
   const m = Math.max(Math.abs(x), Math.abs(z));
@@ -59,8 +62,8 @@ function warpXZ(x, z, out) {
   let dx = (u * Math.sqrt(1 - v * v / 2) - u) * HALF * WARP_ROUND, dz = (v * Math.sqrt(1 - u * u / 2) - v) * HALF * WARP_ROUND;
   const fi = Math.max(0, Math.min(N - 1e-9, (x + HALF) / BLOCK)), i = Math.floor(fi), ti = fi - i;
   const fj = Math.max(0, Math.min(N - 1e-9, (z + HALF) / BLOCK)), j = Math.floor(fj), tj = fj - j;
-  dx += wave(SW.v[i], z) * (1 - ti) + wave(SW.v[i + 1], z) * ti;
-  dz += wave(SW.h[j], x) * (1 - tj) + wave(SW.h[j + 1], x) * tj;
+  dx += wave(SW.v[i], z) * (1 - ti) + wave(SW.v[i + 1], z) * ti + SW.ox[i] + (SW.ox[i + 1] - SW.ox[i]) * sstep(ti);
+  dz += wave(SW.h[j], x) * (1 - tj) + wave(SW.h[j + 1], x) * tj + SW.oz[j] + (SW.oz[j + 1] - SW.oz[j]) * sstep(tj);
   out.x = x + dx * F; out.z = z + dz * F;
   return out;
 }
@@ -183,7 +186,26 @@ function unwarpFrame() {
 const warpV = v => { if (inWarp(v.x, v.z)) { warpXZ(v.x, v.z, _wa); v.x = _wa.x; v.z = _wa.z; } return v; };
 
 const inGrid =(i, j) => i >= 0 && i <= N && j >= 0 && j <= N;
-const hasLights = (i, j) => !((i === 0 || i === N) && (j === 0 || j === N)); // Ecken: nur Kurve, keine Ampel
+// Echte Stadt: an einigen Kreuzungen ein Kreisel (keine Ampel, Autos fahren rundherum), und einzelne Strassenstücke sind
+// Fussgängerzonen (Autos fahren dort nicht durch; so gibt es T-Kreuzungen und längere Blöcke)
+const ROUND = new Set(['2,3', '6,2', '3,6', '6,6', '5,7']), ROUND_R = 5.4; // Kreisel: Spur im Kreis mit diesem Radius
+const PED = (() => { // Schlüssel "i,j,d" für beide Richtungen jedes Fussgängerstücks
+  const r = rng(808), out = new Set(), used = new Set(), list = [];
+  const bad = (bi, bj) => SPECIAL[bi + ',' + bj] || (bi === N >> 1 && bj === N >> 1) || baseOf(bi + ',' + bj) >= 0;
+  for (let t = 0; list.length < 4 && t < 500; t++) {
+    const ax = r() < 0.5, i = 1 + Math.floor(r() * (N - 2)), j = 1 + Math.floor(r() * (N - 2)), i2 = ax ? i + 1 : i, j2 = ax ? j : j + 1;
+    if (i2 >= N || j2 >= N) continue; // nicht am Ring
+    if (ax ? bad(i, j - 1) || bad(i, j) : bad(i - 1, j) || bad(i, j)) continue; // nicht vor Tankstelle, Basen, Platz usw.
+    if ([i + ',' + j, i2 + ',' + j2].some(k => ROUND.has(k) || used.has(k))) continue;
+    used.add(i + ',' + j); used.add(i2 + ',' + j2);
+    out.add(i + ',' + j + ',' + (ax ? 0 : 1)); out.add(i2 + ',' + j2 + ',' + (ax ? 2 : 3));
+    list.push({ i, j, i2, j2, ax });
+  }
+  out.list = list;
+  return out;
+})();
+const isPed = (i, j, d) => PED.has(i + ',' + j + ',' + d);
+const hasLights = (i, j) => !((i === 0 || i === N) && (j === 0 || j === N)) && !ROUND.has(i + ',' + j); // Ecken: nur Kurve; Kreisel: keine Ampel
 const axisOf = d => (d % 2 === 0 ? 'x' : 'z');
 // Tempolimit einer Strasse (k: Nummer der Strasse): aussen der Ring 80, durch die Mitte (Platz) 30, sonst 50 km/h
 const streetLimit = k => (k === 0 || k === N ? 80 : k === N / 2 ? 30 : 50);
@@ -469,16 +491,17 @@ function buildWorld() {
   for (let i = 0; i <= N; i++) for (let j = 0; j <= N; j++) {
     const x = node(i), z = node(j);
     roads.rect(x, z, ROAD, ROAD, 0.02);
-    if (i < N) roads.add(x + ROAD / 2, z - ROAD / 2, node(i + 1) - ROAD / 2, z + ROAD / 2, 0.02);
-    if (j < N) roads.add(x - ROAD / 2, z + ROAD / 2, x + ROAD / 2, node(j + 1) - ROAD / 2, 0.02);
+    const goX = i < N && !isPed(i, j, 0), goZ = j < N && !isPed(i, j, 1); // Fussgängerzone: keine Strasse
+    if (goX) roads.add(x + ROAD / 2, z - ROAD / 2, node(i + 1) - ROAD / 2, z + ROAD / 2, 0.02);
+    if (goZ) roads.add(x - ROAD / 2, z + ROAD / 2, x + ROAD / 2, node(j + 1) - ROAD / 2, 0.02);
     for (let s = 12; s < BLOCK - 12; s += 6) { // gestrichelte Mittellinie
-      if (i < N) lines.add(x + s, z - 0.08, x + s + 3, z + 0.08, 0.03);
-      if (j < N) lines.add(x - 0.08, z + s, x + 0.08, z + s + 3, 0.03);
+      if (goX) lines.add(x + s, z - 0.08, x + s + 3, z + 0.08, 0.03);
+      if (goZ) lines.add(x - 0.08, z + s, x + 0.08, z + s + 3, 0.03);
     }
     if (!hasLights(i, j)) continue;
     for (let d = 0; d < 4; d++) { // jede Zufahrt: Haltelinie auf der rechten Spur und Zebrastreifen
       const [fx, fz] = DIRS[d];
-      if (!inGrid(i - fx, j - fz)) continue;
+      if (!inGrid(i - fx, j - fz) || isPed(i - fx, j - fz, d)) continue;
       const rx = -fz, rz = fx;
       const sl = 11.5, ax = fx !== 0;
       lines.rect(x - fx * sl + rx * LANE, z - fz * sl + rz * LANE, ax ? 0.45 : 6.6, ax ? 6.6 : 0.45, 0.03);
@@ -1068,6 +1091,51 @@ function buildWorld() {
     }
   }
 
+  // Fussgängerzonen: Pflaster statt Strasse, Bäume in der Mitte, Bänke, Blumentröge
+  const rz = rng(909), flowerM = [0xdc2626, 0xf59e0b, 0xdb2777, 0x7c3aed].map(c => mat({ color: c, roughness: 0.8 })), troughM = mat({ color: 0x78716c, roughness: 0.9 });
+  for (const Z of PED.list) {
+    const ax = Z.ax, mx = ax ? node(Z.i) + BLOCK / 2 : node(Z.i), mz = ax ? node(Z.j) : node(Z.j) + BLOCK / 2, along = (k, side) => [mx + (ax ? k : side), mz + (ax ? side : k)];
+    const slab = new THREE.Mesh(new THREE.BoxGeometry(ax ? BLOCK - ROAD : ROAD, 0.16, ax ? ROAD : BLOCK - ROAD), paveMat);
+    slab.position.set(mx, 0.08, mz); slab.receiveShadow = true; decor.add(slab);
+    const band = new THREE.Mesh(new THREE.BoxGeometry(ax ? BLOCK - ROAD : 3, 0.02, ax ? 3 : BLOCK - ROAD), mat({ color: 0x9c8f80, roughness: 0.9 }));
+    band.position.set(mx, 0.17, mz); decor.add(band); // Mittelband aus dunklerem Stein
+    for (const k of [-18, -6, 6, 18]) { const [tx, tz] = along(k, 0); trees.push([tx, 0.17, tz, 0.75 + rz() * 0.2]); }
+    for (const k of [-12, 0, 12]) for (const side of [-3.2, 3.2]) { const [bx, bz] = along(k, side); street.push([bx, bz, ax ? (side < 0 ? 0 : Math.PI) : (side < 0 ? Math.PI / 2 : -Math.PI / 2)]); }
+    for (const k of [-21, 21]) for (const side of [-4.8, 4.8]) { // Blumentröge
+      const [fx, fz] = along(k, side);
+      box(1.4, 0.6, 1.4, troughM, fx, 0.46, fz, true);
+      const fl = new THREE.Mesh(new THREE.SphereGeometry(0.75, 10, 6, 0, Math.PI * 2, 0, Math.PI / 2), flowerM[Math.floor(rz() * flowerM.length)]);
+      fl.position.set(fx, 0.76, fz); fl.scale.set(1, 0.6, 1); decor.add(fl);
+    }
+  }
+  // Kreisel: Insel mit Randstein, Wiese und Baum, gepflasterter Ring darum, Markierung, blaue Schilder an den Zufahrten
+  const rbTex = (() => { const c = document.createElement('canvas'); c.width = c.height = 128; const g = c.getContext('2d');
+    g.fillStyle = '#fff'; g.beginPath(); g.arc(64, 64, 62, 0, 7); g.fill(); g.fillStyle = '#1d4ed8'; g.beginPath(); g.arc(64, 64, 57, 0, 7); g.fill();
+    g.strokeStyle = '#fff'; g.lineWidth = 9; g.fillStyle = '#fff';
+    for (let k = 0; k < 3; k++) { const a = k * 2.094; g.beginPath(); g.arc(64, 64, 30, a + 0.35, a + 1.75); g.stroke();
+      const ex = 64 + Math.cos(a + 1.75) * 30, ey = 64 + Math.sin(a + 1.75) * 30, tx = -Math.sin(a + 1.75), ty = Math.cos(a + 1.75);
+      g.beginPath(); g.moveTo(ex + tx * 12, ey + ty * 12); g.lineTo(ex - ty * 9 - tx * 2, ey + tx * 9 - ty * 2); g.lineTo(ex + ty * 9 - tx * 2, ey - tx * 9 - ty * 2); g.fill(); }
+    const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; return t; })();
+  const rbSign = mat({ map: rbTex, transparent: true, alphaTest: 0.5, roughness: 0.5 }), rbPole = new THREE.CylinderGeometry(0.05, 0.05, 2.4, 6);
+  const islandM = mat({ color: 0xd6d3d1, roughness: 0.85 }), rbDark = mat({ color: 0x23262d, metalness: 0.5, roughness: 0.5 }), rbPlate = new THREE.PlaneGeometry(0.9, 0.9);
+  for (const key of ROUND) {
+    const [i, j] = key.split(',').map(Number), x = node(i), z = node(j);
+    const ringStone = new THREE.Mesh(new THREE.CylinderGeometry(4.1, 4.1, 0.08, 40), paveMat); ringStone.position.set(x, 0.05, z); decor.add(ringStone); // überfahrbarer Pflasterring
+    const curb = new THREE.Mesh(new THREE.CylinderGeometry(3.1, 3.2, 0.3, 40), islandM); curb.position.set(x, 0.15, z); curb.castShadow = curb.receiveShadow = true; decor.add(curb);
+    const lawn = new THREE.Mesh(new THREE.CylinderGeometry(2.85, 2.85, 0.08, 40), grassMat); lawn.position.set(x, 0.32, z); decor.add(lawn);
+    trees.push([x, 0.3, z, 0.85]);
+    for (let k = 0; k < 6; k++) { const a = k * 1.047, fl = new THREE.Mesh(new THREE.SphereGeometry(0.45, 8, 5, 0, Math.PI * 2, 0, Math.PI / 2), flowerM[k % flowerM.length]);
+      fl.position.set(x + Math.cos(a) * 2.1, 0.36, z + Math.sin(a) * 2.1); decor.add(fl); }
+    const edge = new THREE.Mesh(new THREE.RingGeometry(6.55, 6.75, 48).rotateX(-Math.PI / 2), lineMat); edge.position.set(x, 0.035, z); decor.add(edge); // Rand des Kreisels
+    round.push({ x, z, r: 3.2, h: 1 });
+    for (const [fx, fz] of DIRS) {
+      if (!inGrid(i - fx, j - fz)) continue;
+      const rx = -fz, rz2 = fx, px = x - fx * 11 + rx * 8.4, pz = z - fz * 11 + rz2 * 8.4;
+      const p = new THREE.Mesh(rbPole, rbDark); p.position.set(px, 1.2, pz); decor.add(p);
+      const sg = new THREE.Mesh(rbPlate, rbSign); sg.position.set(px - fx * 0.06, 2.4, pz - fz * 0.06); sg.rotation.y = Math.atan2(-fx, -fz); decor.add(sg);
+    }
+  }
+
   // Bäume: in den Parks und als Waldgürtel rund um die Stadt
   // (die Stadt ist quadratisch: Bäume aus einem Kreis landeten sonst in den Ecken auf Strassen und Häusern)
   for (let k = 0; k < 360;) {
@@ -1156,7 +1224,7 @@ function buildWorld() {
     if (!hasLights(i, j)) continue;
     for (let d = 0; d < 4; d++) {
       const [fx, fz] = DIRS[d];
-      if (!inGrid(i - fx, j - fz)) continue;
+      if (!inGrid(i - fx, j - fz) || isPed(i - fx, j - fz, d)) continue;
       const rx = -fz, rz = fx, x = node(i) - fx * 11 + rx * 8.4, z = node(j) - fz * 11 + rz * 8.4;
       const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.1, 0.12, 4.6, 8), dark);
       pole.position.set(x, 2.3, z); pole.castShadow = true;
@@ -1189,7 +1257,7 @@ function buildWorld() {
     if (!hasLights(i, j)) continue;
     for (let d = 0; d < 4; d++) {
       const [fx, fz] = DIRS[d];
-      if (!inGrid(i - fx, j - fz) || nLight++ % 10 !== 4) continue;
+      if (!inGrid(i - fx, j - fz) || isPed(i - fx, j - fz, d) || nLight++ % 10 !== 4) continue;
       const rx = -fz, rz = fx, x = node(i) - fx * 11 + rx * 8.4, z = node(j) - fz * 11 + rz * 8.4;
       redCams.set(i + ',' + j + ',' + d, camAt(x - fx * 0.1, 3.0, z - fz * 0.1, fx, fz));
     }
@@ -1207,7 +1275,7 @@ function buildWorld() {
   const plateGeo = new THREE.PlaneGeometry(0.9, 0.9), signPole = new THREE.CylinderGeometry(0.05, 0.05, 2.4, 6);
   const rs = rng(77), segs = [];
   for (let i = 0; i <= N; i++) for (let j = 0; j <= N; j++) for (const [fx, fz] of DIRS) {
-    if (!inGrid(i + fx, j + fz)) continue;
+    if (!inGrid(i + fx, j + fz) || isPed(i, j, DIRS.findIndex(q => q[0] === fx && q[1] === fz))) continue;
     const rx = -fz, rz = fx, lim = streetLimit(fx ? j : i), x = node(i) + fx * 15 + rx * (ROAD / 2 + 0.9), z = node(j) + fz * 15 + rz * (ROAD / 2 + 0.9);
     const p = new THREE.Mesh(signPole, dark); p.position.set(x, 1.2, z); decor.add(p);
     const s = new THREE.Mesh(plateGeo, plates[lim]); s.position.set(x - fx * 0.06, 2.4, z - fz * 0.06);
@@ -1300,7 +1368,7 @@ function spawnTraffic(kinds) {
   const cars = [];
   for (let tries = 0; cars.length < TRAFFIC && tries < 500; tries++) {
     const i = Math.floor(Math.random() * (N + 1)), j = Math.floor(Math.random() * (N + 1)), d = Math.floor(Math.random() * 4);
-    if (!inGrid(i + DIRS[d][0], j + DIRS[d][1])) continue;
+    if (!inGrid(i + DIRS[d][0], j + DIRS[d][1]) || isPed(i, j, d)) continue;
     const s = 10 + Math.random() * (BLOCK - 26);
     if (cars.some(c => c.i === i && c.j === j && c.d === d && Math.abs(c.s - s) < 14)) continue;
     const c = makeCar(kinds, i, j, d, s);
@@ -1330,10 +1398,28 @@ function planTurn(c) {
   const [fx, fz] = DIRS[c.d], [gx, gz] = DIRS[d2], bx = node(bi), bz = node(bj);
   const P0 = [bx - fx * 7 - fz * LANE, bz - fz * 7 + fx * LANE];
   const P2 = [bx + gx * 7 - gz * LANE, bz + gz * 7 + gx * LANE];
-  const P1 = d2 === c.d ? [(P0[0] + P2[0]) / 2, (P0[1] + P2[1]) / 2] : [bx - fz * LANE - gz * LANE, bz + fx * LANE + gx * LANE];
-  let len = 0, prev = P0;
-  for (let k = 1; k <= 8; k++) { const p = bez(P0, P1, P2, k / 8); len += Math.hypot(p[0] - prev[0], p[1] - prev[1]); prev = p; }
-  c.turn = { P0, P1, P2, len, t: 0, d2, bi, bj, straight: d2 === c.d };
+  const pts = [P0];
+  if (ROUND.has(bi + ',' + bj)) { // Kreisel: rechts hinein, die Insel links lassen, im Kreis bis zur Ausfahrt
+    const a0 = Math.atan2(P0[1] - bz, P0[0] - bx), a1 = Math.atan2(P2[1] - bz, P2[0] - bx);
+    let span = ((a0 - a1) % (Math.PI * 2) + Math.PI * 2) % (Math.PI * 2); // im Kreis rückwärts (Winkel nimmt ab)
+    if (span < 0.6) span += Math.PI * 2; // Wenden: einmal ganz herum
+    const from = a0 - 0.45, to = a0 - span + 0.45, n = Math.max(4, Math.ceil((from - to) / 0.25));
+    for (let k = 0; k <= n; k++) { const a = from - (from - to) * k / n; pts.push([bx + Math.cos(a) * ROUND_R, bz + Math.sin(a) * ROUND_R]); }
+  } else {
+    const P1 = d2 === c.d ? [(P0[0] + P2[0]) / 2, (P0[1] + P2[1]) / 2] : [bx - fz * LANE - gz * LANE, bz + fx * LANE + gx * LANE];
+    for (let k = 1; k < 8; k++) pts.push(bez(P0, P1, P2, k / 8));
+  }
+  pts.push(P2);
+  const cum = [0];
+  for (let k = 1; k < pts.length; k++) cum.push(cum[k - 1] + Math.hypot(pts[k][0] - pts[k - 1][0], pts[k][1] - pts[k - 1][1]));
+  c.turn = { pts, cum, len: cum[cum.length - 1], t: 0, d2, bi, bj, straight: d2 === c.d && !ROUND.has(bi + ',' + bj) };
+}
+// Punkt auf dem Weg durch die Kreuzung (t = 0 … 1 nach Länge)
+function turnAt(T, t) {
+  const L = t * T.len, cum = T.cum;
+  let k = 1; while (k < cum.length - 1 && cum[k] < L) k++;
+  const a = T.pts[k - 1], b = T.pts[k], f = Math.min(1, Math.max(0, (L - cum[k - 1]) / ((cum[k] - cum[k - 1]) || 1)));
+  return [a[0] + (b[0] - a[0]) * f, a[1] + (b[1] - a[1]) * f];
 }
 function bez(a, b, c, t) { const u = 1 - t; return [u * u * a[0] + 2 * u * t * b[0] + t * t * c[0], u * u * a[1] + 2 * u * t * b[1] + t * t * c[1]]; }
 
@@ -1380,7 +1466,7 @@ function stepTraffic(dt) {
       if (q) { enterLot(c, q); showCar(c, dt); continue; }
     }
     if (c.s < 10) c.lotAsk = false;
-    let limit = c.turn ? c.cruise * (c.turn.straight ? 1 : 0.55) : c.cruise;
+    let limit = c.turn ? c.cruise * (c.turn.straight ? 1 : 0.5) : c.cruise;
     if (c.rush || c.reckless) limit *= 1.5; // Raser
     let atLight = false;
     if (!c.turn && !c.reckless) { // rote oder gelbe Ampel vorne? (Raser fahren einfach durch)
@@ -1391,6 +1477,15 @@ function stepTraffic(dt) {
           limit = Math.min(limit, Math.sqrt(Math.max(0, 2 * 5 * (stop - c.s - 0.3))));
           atLight = stop - c.s < 25;
         }
+      }
+    }
+    if (!c.turn && c.s > BLOCK - 22) { // vor dem Kreisel: warten, wenn schon jemand im Kreis an der Einfahrt ist
+      const bi = c.i + DIRS[c.d][0], bj = c.j + DIRS[c.d][1];
+      if (ROUND.has(bi + ',' + bj)) {
+        const [fx, fz] = DIRS[c.d], ex = node(bi) - fx * 7 - fz * LANE, ez = node(bj) - fz * 7 + fx * LANE;
+        limit = Math.min(limit, c.cruise * 0.6);
+        if (city.cars.some(o => o !== c && o.turn && o.turn.bi === bi && o.turn.bj === bj && o.turn.t > 0.08 && Math.hypot(o.x - ex, o.z - ez) < 7.5))
+          limit = Math.min(limit, Math.sqrt(Math.max(0, 2 * 5 * (BLOCK - 8 - c.s))));
       }
     }
     const f = followLimit(c, me);
@@ -1421,7 +1516,7 @@ function stepTraffic(dt) {
     if (c.turn) {
       const T = c.turn;
       T.t = Math.min(1, T.t + c.speed * dt / T.len);
-      const p = bez(T.P0, T.P1, T.P2, T.t), p2 = bez(T.P0, T.P1, T.P2, Math.min(1, T.t + 0.02));
+      const p = turnAt(T, T.t), p2 = turnAt(T, Math.min(1, T.t + 0.6 / T.len));
       if (p2[0] !== p[0] || p2[1] !== p[1]) c.h = Math.atan2(p2[1] - p[1], p2[0] - p[0]);
       c.x = p[0]; c.z = p[1];
       if (T.t >= 1) { c.i = T.bi; c.j = T.bj; c.d = T.d2; c.s = 7; c.turn = null; c.reckless = c.rush = false; placeOnSegment(c); }
@@ -1488,7 +1583,7 @@ function setupTrafficSpecials(kinds) {
   const used = new Set();
   for (let tries = 0; tries < 200 && city.stopList.length < 14; tries++) { // Haltestellen auf zufälligen Strassenstücken
     const i = Math.floor(Math.random() * (N + 1)), j = Math.floor(Math.random() * (N + 1)), d = Math.floor(Math.random() * 4);
-    if (!inGrid(i + DIRS[d][0], j + DIRS[d][1]) || used.has(i + ',' + j) || (d % 2 === 0 ? j === 0 : i === 0)) continue;
+    if (!inGrid(i + DIRS[d][0], j + DIRS[d][1]) || isPed(i, j, d) || used.has(i + ',' + j) || (d % 2 === 0 ? j === 0 : i === 0)) continue;
     used.add(i + ',' + j);
     const [fx, fz] = DIRS[d], s0 = 30, x = node(i) + fx * s0 - fz * (ROAD / 2 + 1.6), z = node(j) + fz * s0 + fx * (ROAD / 2 + 1.6);
     const st = { i, j, d, s: s0, x, z, people: [], away: 0 };
@@ -1904,6 +1999,7 @@ function stepSleep(dt) {
 // Ab und zu ist ein Strassenstück zwischen zwei Kreuzungen ein paar Minuten gesperrt: Absperrungen mit Umleitungsschild,
 // Bagger und Arbeiter. Die Autos biegen vorher ab (planTurn), du musst einen anderen Weg fahren.
 const isClosed = (i, j, d) => {
+  if (isPed(i, j, d)) return true; // Fussgängerzone
   const W = city && city.works; if (!W) return false;
   const i2 = i + DIRS[d][0], j2 = j + DIRS[d][1];
   return (W.a[0] === i && W.a[1] === j && W.b[0] === i2 && W.b[1] === j2) || (W.b[0] === i && W.b[1] === j && W.a[0] === i2 && W.a[1] === j2);
@@ -1924,6 +2020,7 @@ function startWorks() {
     const a = [i, j], b = ax ? [i + 1, j] : [i, j + 1], mxp = (node(a[0]) + node(b[0])) / 2, mzp = (node(a[1]) + node(b[1])) / 2;
     if (Math.hypot(mxp - cam.x, mzp - cam.z) < 160) continue;
     if (B && ax && j === B.seg.j && i === B.seg.i) continue; // nicht vor der Blauen Zone
+    if (isPed(i, j, ax ? 0 : 1)) continue; // Fussgängerzone ist schon zu
     city.works = { a, b, ax, x: mxp, z: mzp, t: 200 + Math.random() * 120, meshes: [], solids: [], told: false };
     break;
   }
@@ -2512,7 +2609,7 @@ function clearWreck(c) {
   // abgeschleppt: woanders weit weg wieder einsetzen
   for (let tries = 0; tries < 40; tries++) {
     const i = Math.floor(Math.random() * (N + 1)), j = Math.floor(Math.random() * (N + 1)), d = Math.floor(Math.random() * 4);
-    if (!inGrid(i + DIRS[d][0], j + DIRS[d][1])) continue;
+    if (!inGrid(i + DIRS[d][0], j + DIRS[d][1]) || isClosed(i, j, d)) continue;
     Object.assign(c, { i, j, d, s: 10 + Math.random() * (BLOCK - 26), turn: null, speed: 4 });
     placeOnSegment(c);
     if (Math.hypot(c.x - city.me.pos.x, c.z - city.me.pos.z) > 150) break;
@@ -4024,7 +4121,7 @@ function roadPoint(minD, maxD, from) {
   for (let k = 0; k < 300; k++) {
     const i = Math.floor(Math.random() * (N + 1)), j = Math.floor(Math.random() * (N + 1)), d = Math.floor(Math.random() * 4);
     const [fx, fz] = DIRS[d];
-    if (!inGrid(i + fx, j + fz)) continue;
+    if (!inGrid(i + fx, j + fz) || isPed(i, j, d)) continue;
     const sAlong = 16 + Math.random() * (BLOCK - 32), x = node(i) + fx * sAlong - fz * LANE, z = node(j) + fz * sAlong + fx * LANE;
     const dist = Math.hypot(x - from.x, z - from.z);
     if (dist >= minD && dist <= maxD) return { x, z };
@@ -4769,10 +4866,16 @@ function drawMinimapBase() {
   g.font = '13px system-ui, sans-serif'; g.textAlign = 'center'; g.textBaseline = 'middle';
   for (const [k, icon] of [['gas', '⛽'], ['wash', '🫧'], ['pizza', '🍕'], ['jail', '🔒'], ['repair', '🔧'], ['dealer', '🚗'], ['hospital', '🏥'], ['house', '🏡'], ['blue', '🅿️'], ['park', '🅿️'], ['order', '🍔'], ['kino', '🎬'], ['stadium', '⚽']]) { const p = S.places[k] && { x: S.places[k].x ?? S.places[k].cx, z: S.places[k].z ?? S.places[k].cz }; if (p) g.fillText(icon, mpx(p.x, p.z), mpz(p.x, p.z)); }
   g.strokeStyle = 'rgba(220,225,235,0.85)'; g.lineWidth = Math.max(2, ROAD * mapScale);
-  for (let i = 0; i <= N; i++) for (const ax of [0, 1]) {
+  for (let i = 0; i <= N; i++) for (const ax of [0, 1]) for (let k = 0; k < N; k++) { // Strasse i, Stück k (Fussgängerzonen hell und dünn)
+    const ped = ax ? isPed(k, i, 0) : isPed(i, k, 1);
+    g.save(); if (ped) { g.strokeStyle = 'rgba(232,214,170,0.9)'; g.lineWidth = 2; }
     g.beginPath();
-    for (let t = -HALF; t <= HALF; t += 8) { const q = ax ? mp(t, node(i)) : mp(node(i), t); t > -HALF ? g.lineTo(mx(q.x), mx(q.z)) : g.moveTo(mx(q.x), mx(q.z)); }
-    g.stroke();
+    for (let t = node(k); t <= node(k + 1) + 0.1; t += 8) { const q = ax ? mp(t, node(i)) : mp(node(i), t); t > node(k) ? g.lineTo(mx(q.x), mx(q.z)) : g.moveTo(mx(q.x), mx(q.z)); }
+    g.stroke(); g.restore();
+  }
+  for (const key of ROUND) { // Kreisel: grüne Insel
+    const [i, j] = key.split(',').map(Number), q = mp(node(i), node(j));
+    g.fillStyle = '#4a9b3f'; g.beginPath(); g.arc(mx(q.x), mx(q.z), 1.6, 0, Math.PI * 2); g.fill();
   }
   return c;
 }
