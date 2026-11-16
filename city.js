@@ -9,6 +9,7 @@ import { createCarSound, crash, gearbox, horn, createSiren } from './sound.js';
 import { buildMoon, stepMoon, inMoon, moonGround, moonAllowed, MOON, MOON_G, MOON_ROCKET, MOON_BUGGY } from './moon.js';
 import { buildCountry, stepCountry, countryDist, countryDrivable, countrySurface, inCountry, inWater, nearPier, BOAT_Y, BOAT_HOME, RIDES_INFO, FARM, countryBlocked, SPACE, skiH, skiFade } from './country.js';
 import { makeNetCars } from './netcars.js';
+import { buildSuburbs, suburbDist, inSuburb, suburbRoad, drawSuburbs } from './suburbs.js';
 import { loadLook, makeLook, skyEnvironment, lookWanted, setLookWanted } from './look.js';
 import { makeChat } from './chat.js';
 import { buildHighway, outskirtsDist, hwDrivable, onHighway, makeHighwayTraffic, stepHighway, hwProject, hwPoint, HW, HW_LEN, HW_LIMIT, REST, REST_ZONES, makePath, pathAt, turnTo,
@@ -470,7 +471,7 @@ function buildWorld() {
     const rr = Math.max(Math.abs(x), Math.abs(z));
     if (rr <= HALF + 60) return -0.06;
     if (inPassRegion(x, z)) return passTerrain(x, z, natural(x, z), 15); // am Berg: das feinere Gelände liegt darüber
-    let gs = groundShape(x, z); const cd = countryDist(x, z); if (cd < gs.d) gs = { d: cd, y: 0 }; // auch Bauernhof und Strand eben
+    let gs = groundShape(x, z); const cd = Math.min(countryDist(x, z), suburbDist(x, z)); if (cd < gs.d) gs = { d: cd, y: 0 }; // auch Bauernhof, Strand und Vororte eben
     const f = smoothstep(24, 100, gs.d); // unter Autobahn, Hafen und Flughafen eben (Hafenbecken tiefer); breiter
     // ebener Rand, sonst ragt das grobe Gelände (20-m-Raster) über die äusserste Spur
     return smoothstep(HALF + 90, HALF + 500, rr) * NZ.fbm(x / 260, z / 260, 4) * 190 * f * skiFade(x, z) + gs.y * (1 - f) + skiH(x, z) - 0.06; // + Schneeberg
@@ -976,6 +977,47 @@ function buildWorld() {
   const block = 50, inner = 44, curbMat = mat({ color: 0xc9ccd1, roughness: 0.9 });
   const trees = [];
   const shapeR = rng(4711); // Formen der Häuser (rund, Turm, weiche Kanten)
+  const layR = rng(5150); // Block-Arten (lockerer bauen)
+  const lotLines = quads(), lotTar = quads(1 / 8), greenQ = quads(1 / 4), plazaM = mat({ color: 0xb8ad9c, roughness: 0.9 });
+  // Freier Quadrant (etwa 20 × 20 m): Parkplatz, Grün oder Plätzchen
+  function fillQuad(kind, x, z, sx, sz) {
+    if (kind === 'lot') { // Parkplatz mit Feldern und Parkuhr
+      lotTar.add(x - 10, z - 10, x + 10, z + 10, 0.18);
+      for (let k = 0; k <= 5; k++) { lotLines.rect(x - 10 + k * 4, z - 6, 0.15, 5, 0.19); lotLines.rect(x - 10 + k * 4, z + 6, 0.15, 5, 0.19); }
+      box(0.3, 1.3, 0.3, metal, x + sx * 9.5, 0.82, z + sz * 9.5, true);
+      return;
+    }
+    if (kind === 'green') { // Wiese mit Bäumen, Hecke und Bank
+      greenQ.add(x - 10, z - 10, x + 10, z + 10, 0.17);
+      for (let k = 0; k < 3; k++) trees.push([x + (layR() - 0.5) * 14, 0.17, z + (layR() - 0.5) * 14, 0.7 + layR() * 0.4]);
+      box(18, 0.9, 0.8, mat({ color: 0x3f6f35, roughness: 1 }), x, 0.6, z - sz * 9.6); // Hecke zum Haus hin
+      street.push([x, z + sz * 6, sz > 0 ? Math.PI : 0]);
+      return;
+    }
+    // Plätzchen: anderer Stein, Brunnen, Bäume, Bänke, Kiosk
+    const pl = new THREE.Mesh(new THREE.BoxGeometry(20, 0.03, 20), plazaM); pl.position.set(x, 0.175, z); decor.add(pl);
+    const basin = new THREE.Mesh(new THREE.CylinderGeometry(2.2, 2.4, 0.6, 24), mat({ color: 0xc9c2b4, roughness: 0.85 })); basin.position.set(x, 0.45, z); basin.castShadow = true; decor.add(basin);
+    const wat = new THREE.Mesh(new THREE.CylinderGeometry(1.95, 1.95, 0.05, 24), mat({ color: 0x3b8bd0, roughness: 0.05, metalness: 0.3 })); wat.position.set(x, 0.72, z); decor.add(wat);
+    const col = new THREE.Mesh(new THREE.CylinderGeometry(0.25, 0.35, 1.8, 10), mat({ color: 0xc9c2b4 })); col.position.set(x, 1.2, z); decor.add(col);
+    round.push({ x, z, r: 2.4, h: 0.8 });
+    for (const [tx, tz] of [[-7, -7], [7, 7], [-7, 7], [7, -7]]) trees.push([x + tx, 0.17, z + tz, 0.6]);
+    street.push([x - 5, z, Math.PI / 2], [x + 5, z, -Math.PI / 2]);
+    box(2.6, 2.6, 2.2, mat({ color: 0x166534, roughness: 0.7 }), x + sx * 6, 1.47, z - sz * 6, true); // Kiosk
+  }
+  // Ein Haus rund um den Block mit grünem Innenhof (Blockrand), Läden zur Strasse
+  function buildCourt(cx, cz, h) {
+    const wm = walls[Math.floor(layR() * walls.length)], D = 10, O = 20; // Flügeltiefe, halbe Aussenbreite
+    for (const [x, z, w, d] of [[cx, cz - O + D / 2, 2 * O, D], [cx, cz + O - D / 2, 2 * O, D], [cx - O + D / 2, cz, D, 2 * O - 2 * D], [cx + O - D / 2, cz, D, 2 * O - 2 * D]]) {
+      const b = wallBox(w, h, d, wm); b.position.set(x, 0.16 + h / 2, z); decor.add(b);
+      const roof = new THREE.Mesh(new THREE.BoxGeometry(w + 0.5, 0.6, d + 0.5), roofMat); roof.position.set(x, 0.16 + h + 0.3, z); roof.castShadow = true; decor.add(roof);
+      solid.push({ x0: x - w / 2, x1: x + w / 2, z0: z - d / 2, z1: z + d / 2, h: h + 2 });
+    }
+    shops.push([cx, cz - O - 0.05, 2 * O - 4, 0], [cx, cz + O + 0.05, 2 * O - 4, 0], [cx - O - 0.05, cz, 2 * O - 4, Math.PI / 2], [cx + O + 0.05, cz, 2 * O - 4, Math.PI / 2]);
+    greenQ.add(cx - O + D, cz - O + D, cx + O - D, cz + O - D, 0.17); // Innenhof
+    trees.push([cx - 4, 0.17, cz - 3, 0.8], [cx + 5, 0.17, cz + 4, 0.7]);
+    const slide = new THREE.Mesh(new THREE.BoxGeometry(3, 1.2, 1), mat({ color: 0xef4444 })); slide.position.set(cx + 4, 0.77, cz - 5); decor.add(slide); // Spielplatz
+    const sand = new THREE.Mesh(new THREE.BoxGeometry(4, 0.1, 4), mat({ color: 0xe8d39a, roughness: 1 })); sand.position.set(cx - 5, 0.2, cz + 5); decor.add(sand);
+  }
   const copper = mat({ color: 0x5f9e88, metalness: 0.55, roughness: 0.45 }), slate = mat({ color: 0x3b4252, metalness: 0.3, roughness: 0.6 });
   for (let bi = 0; bi < N; bi++) for (let bj = 0; bj < N; bj++) {
     const cx = (node(bi) + node(bi + 1)) / 2, cz = (node(bj) + node(bj + 1)) / 2;
@@ -1031,10 +1073,25 @@ function buildWorld() {
     for (const k of [-16, -8, 8, 16]) for (const [tx, tz] of [[cx + k, cz - 22.2], [cx + k, cz + 22.2], [cx - 22.2, cz + k], [cx + 22.2, cz + k]])
       trees.push([tx, 0.16, tz, 0.55 + r() * 0.2]); // Strassenbäume auf dem Trottoir
     for (const k of [-12, 12]) street.push([cx + k, cz - 22.6, 0], [cx + k, cz + 22.6, Math.PI], [cx - 22.6, cz + k, Math.PI / 2], [cx + 22.6, cz + k, -Math.PI / 2]); // Bänke
+    // Block-Art (eigener Zufall): four = 4 Häuser (dicht, eher in der Mitte), three = 3 Häuser + Plätzchen oder Grün,
+    // pair = 2 Häuser + Parkplatz + Grün, court = ein Haus rundherum mit Innenhof. So ist die Stadt lockerer und jeder Block anders.
+    const lr = layR(), dense = Math.max(0, center);
+    const lay = lr < 0.15 + dense * 0.45 ? 'four' : lr < 0.38 + dense * 0.3 ? 'court' : lr < 0.72 + dense * 0.15 ? 'three' : 'pair';
+    const Q = lay === 'four' ? ['b', 'b', 'b', 'b'] : lay === 'court' ? ['c', 'c', 'c', 'c'] : ['b', 'b', 'b', 'b'];
+    if (lay === 'three') Q[Math.floor(layR() * 4)] = layR() < 0.5 ? 'plaza' : 'green';
+    if (lay === 'pair') { const k = Math.floor(layR() * 4); Q[k] = 'lot'; Q[3 - k] = 'green'; } // Quadranten 0..3: diagonal gegenüber = 3 - k
+    let qi = 0, courtH = 0;
     for (const ox of [-11, 11]) for (const oz of [-11, 11]) {
       const w = 14 + r() * 5, d = 14 + r() * 5, hgt = 7 + r() * (8 + 42 * Math.max(0, center) ** 1.4);
       const bx = cx + ox, bz = cz + oz;
       const sx = Math.sign(ox), sz = Math.sign(oz);
+      const qk = Q[qi++];
+      if (qk !== 'b') { // kein Haus hier: gleich viel Zufall verbrauchen wie ein Haus (sonst ändert sich der Rest der Stadt)
+        shapeR(); r(); if (r() < 0.6) { r(); r(); r(); r(); }
+        courtH += hgt;
+        if (qk !== 'c') fillQuad(qk, bx, bz, sx, sz);
+        continue;
+      }
       // Form (eigener Zufall, damit Grösse, Höhe und die Schlüssel auf den Dächern gleich bleiben):
       // tower = runder Turm mit Kuppel, corner = runde Ecke zur Kreuzung, soft = weiche Kanten, box = wie früher
       const rk = shapeR(), mn = Math.min(w, d), Rc = Math.min(mn * 0.42, mn - 8.5);
@@ -1089,8 +1146,10 @@ function buildWorld() {
         round.push({ x: bx + sx * (w / 2 - Rc), z: bz + sz * (d / 2 - Rc), r: Rc, h: hgt + 2 });
       } else solid.push({ x0: bx - w / 2, x1: bx + w / 2, z0: bz - d / 2, z1: bz + d / 2, h: hgt + 2 });
     }
+    if (lay === 'court') buildCourt(cx, cz, Math.min(30, 9 + courtH / 4 * 0.6));
   }
 
+  decor.add(lotTar.mesh(tarmac), lotLines.mesh(lineMat), greenQ.mesh(grassMat)); // Parkplätze, Wiesen und Innenhöfe der Blöcke
   // Fussgängerzonen: Pflaster statt Strasse, Bäume in der Mitte, Bänke, Blumentröge
   const rz = rng(909), flowerM = [0xdc2626, 0xf59e0b, 0xdb2777, 0x7c3aed].map(c => mat({ color: c, roughness: 0.8 })), troughM = mat({ color: 0x78716c, roughness: 0.9 });
   for (const Z of PED.list) {
@@ -1136,12 +1195,15 @@ function buildWorld() {
     }
   }
 
+  // Vororte (suburbs.js): Ostquartier und Westquartier mit eigenen Strassen und Häusern
+  const lampHeadMat = mat({ color: 0xffffff, emissive: 0xfff2cc, emissiveIntensity: 0.6 }); // Lampenköpfe in Stadt und Vororten (nachts heller)
+  buildSuburbs({ group: decor, asphaltMat, lineMat, grassMat, paveMat, sign, wallBox, homeWalls, walls, roofTiles, roofMat, lampHead: lampHeadMat, trees, round, solid, rng });
   // Bäume: in den Parks und als Waldgürtel rund um die Stadt
   // (die Stadt ist quadratisch: Bäume aus einem Kreis landeten sonst in den Ecken auf Strassen und Häusern)
   for (let k = 0; k < 360;) {
     const a = r() * Math.PI * 2, rr = HALF + 30 + r() * 150;
     const tx = Math.cos(a) * rr * 1.1, tz = Math.sin(a) * rr * 1.1;
-    if (Math.max(Math.abs(tx), Math.abs(tz)) < HALF + ROAD / 2 + 12 || groundShape(tx, tz).d < 14 || countryDist(tx, tz) < 14 || (inPassRegion(tx, tz) && passNearest(tx, tz).d < 16)) continue; // nicht auf Strassen und Plätzen
+    if (Math.max(Math.abs(tx), Math.abs(tz)) < HALF + ROAD / 2 + 12 || suburbDist(tx, tz) < 14 || groundShape(tx, tz).d < 14 || countryDist(tx, tz) < 14 || (inPassRegion(tx, tz) && passNearest(tx, tz).d < 16)) continue; // nicht auf Strassen und Plätzen
     trees.push([tx, height(tx, tz), tz, 0.9 + r() * 0.9]);
     k++;
   }
@@ -1186,7 +1248,7 @@ function buildWorld() {
     if (j < N) for (const side of [-1, 1]) lampPos.push([node(i) + side * 8.3, node(j) + s]);
   }
   const poleM = new THREE.InstancedMesh(new THREE.CylinderGeometry(0.09, 0.13, 6, 8), mat({ color: 0x3a3f4b, metalness: 0.6, roughness: 0.4 }), lampPos.length);
-  const headM = new THREE.InstancedMesh(new THREE.BoxGeometry(0.9, 0.18, 0.4), mat({ color: 0xffffff, emissive: 0xfff2cc, emissiveIntensity: 0.6 }), lampPos.length);
+  const headM = new THREE.InstancedMesh(new THREE.BoxGeometry(0.9, 0.18, 0.4), lampHeadMat, lampPos.length);
   lampPos.forEach(([x, z], k) => {
     poleM.setMatrixAt(k, m4.makeTranslation(x, 3.1, z));
     headM.setMatrixAt(k, m4.makeTranslation(x, 6.05, z));
@@ -2913,7 +2975,7 @@ function groundAt(x, z) {
   if (pg) return pg;
   if (Math.abs(x) <= LIMIT && Math.abs(z) <= LIMIT) return 0;
   if (inPassRegion(x, z)) return Math.max(0, S.country.ground(x, z));
-  if (onHighway(x, z) || inArea(x, z) || inCountry(x, z)) return 0;
+  if (onHighway(x, z) || inArea(x, z) || inCountry(x, z) || inSuburb(x, z)) return 0;
   const gx = (x + 1100) / 20, gz = (z + 1100) / 20, i = Math.floor(gx), j = Math.floor(gz), fx = gx - i, fz = gz - j;
   const a = landAt(i, j), b = landAt(i, j + 1), c = landAt(i + 1, j + 1), d = landAt(i + 1, j);
   return Math.max(0, fx + fz <= 1 ? a + (d - a) * fx + (b - a) * fz : c + (b - c) * (1 - fx) + (d - c) * (1 - fz));
@@ -4536,7 +4598,7 @@ function surfaceAt(x, z) {
   if (city && city.boat && !city.walk) return 'water';
   if (inMoon(x, z)) return 'moon';
   if (Math.abs(x) > HALF + ROAD / 2 || Math.abs(z) > HALF + ROAD / 2) {
-    if (onHighway(x, z) || inArea(x, z)) return 'asphalt';
+    if (onHighway(x, z) || inArea(x, z) || suburbRoad(x, z)) return 'asphalt';
     return countrySurface(x, z) || (onPass(x, z) ? 'asphalt' : 'grass');
   }
   const bi = Math.floor(x / BLOCK + N / 2), bj = Math.floor(z / BLOCK + N / 2);
@@ -4899,6 +4961,7 @@ function drawWideMap(g) {
   for (let s = 0; s <= HW_LEN; s += 40) { const p = hwPoint(s); if (s) g.lineTo(wx(p.x), wz(p.z)); else g.moveTo(wx(p.x), wz(p.z)); }
   g.stroke();
   g.beginPath(); g.moveTo(wx(0), wz(HALF)); g.lineTo(wx(0), wz(HW.cz - HW.R)); g.stroke();
+  drawSuburbs(g, wx, wz); // Vororte
   g.fillStyle = '#fde047';
   for (const c of city.hw) if (c.dir) g.fillRect(wx(c.x) - 1, wz(c.z) - 1, 2, 2);
   g.fillStyle = '#f59e0b'; g.fillRect(wx(REST.x - 150), wz(REST.z + 20), 300 * sc, 110 * sc); // Raststätte

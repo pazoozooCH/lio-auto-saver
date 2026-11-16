@@ -26,6 +26,8 @@ Browser-Spiel ohne Build: `index.html` + `game.js` (Spiellogik, Menüs und 2D-Ze
   Runde Häuser: `roundRectPts`/`circlePts` + `prism` (Wand mit Fassade rundherum); Form per eigenem Zufall `shapeR`
   (Grösse/Höhe und damit die Dach-Schlüssel bleiben gleich): Turm mit Kuppel/Spitzdach (Kreis in `round` + Quadrat in `solid`),
   runde Ecke zur Kreuzung (zwei Rechtecke + Viertelkreis), weiche Kanten, Kasten.
+  Block-Arten (`layR`, lockerer bauen): four (4 Häuser, dicht in der Mitte), three (+ Plätzchen/Grün), pair (+ Parkplatz und
+  Grün, `fillQuad`), court (Haus rundherum mit Innenhof, `buildCourt`); freie Plätze verbrauchen gleich viel `r()` wie ein Haus.
   Drehung: `warpDir` dreht genau in die eigene Blickrichtung (sonst stehen Autos schief zur gebogenen Strasse).
   Karte: rund, Ausschnitt um den Spieler, vorne = oben (`drawMinimap`, Inhalt in `drawMapContent` auf `S.mapFull`);
   antippen = ganze Karte gross (`city.bigMap`).
@@ -94,6 +96,10 @@ Browser-Spiel ohne Build: `index.html` + `game.js` (Spiellogik, Menüs und 2D-Ze
 - `online.js`: Online-Spiel (Lobby, Räume, Live-Daten) über Firebase Realtime Database mit anonymer Anmeldung.
   Regeln in `database.rules.json`, Einrichtung und Admin-Befehle im README. Freundes-Schlüssel nie ins Repo schreiben.
 - `sound.js`: Geräusche aus dem Synthesizer (Motor mit Gängen, Reifen, Gras/Kies/Randstein, Wind, Crashs), ohne Tondateien.
+- `suburbs.js`: Vororte ausserhalb des Rings (Ostquartier zwischen Stadt und Raumbahnhof, Westquartier zwischen Hafen und
+  Autobahn): frei geschwungene Strassen (`SUBURBS[].roads`, kein Verkehr) mit Trottoir, Lampen, Wendeplatz; Einfamilienhäuser
+  (Kreise in `round`), Schule mit Sportplatz, Quartierladen, Bäckerei, Spielplätze. `suburbDist` macht das Gelände flach
+  (height in city.js) und hält den Wald fern, `suburbRoad` = Asphalt, `inSuburb` = Boden 0, Karte über `drawSuburbs`.
 - `look.js`: schöne Grafik für Stadt, Rennen, Stuntpark: Nachbearbeitung mit den Bibliotheken `postprocessing` und `n8ao`
   (Import-Map in `index.html`): weiche Schatten in Ecken (N8AO, `transparencyAware` aus = schnell), Leuchten, SMAA, ACES.
   `skyEnvironment` = Spiegelungen vom Himmel. Knopf ✨ in der Stadt (Spielstand `autoRetterGfx`); zu langsam = schaltet ab;
