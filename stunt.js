@@ -9,6 +9,7 @@ import { makeNoise, rng, smoothstep, surface, terrain, cloudDome } from './world
 import { createCarSound, crash, gearbox } from './sound.js';
 import { makeNetCars } from './netcars.js';
 import { makeChat } from './chat.js';
+import { loadLook, makeLook, lookWanted } from './look.js';
 import { makeEffects, camView, cockpit, COCKPIT, CAM_NAMES, FLY_HTML, FLY_KEYS, flyCss, flyHelp, flyToggle, flyStep } from './fx.js';
 
 const G = 9.81;
@@ -734,6 +735,7 @@ function layout() {
   st.left = (vw - w) / 2 + 'px'; st.top = (vh - h) / 2 + 'px';
   st.transform = rotated ? 'rotate(90deg)' : 'none';
   S.renderer.setSize(w, h, false);
+  if (S.look) S.look.setSize(w, h);
   S.camera.aspect = w / h;
   S.camera.updateProjectionMatrix();
 }
@@ -751,6 +753,11 @@ export function startStunt({ player, kinds, topSpeed, onExit, earn = () => {}, n
     S.ui = buildDom();
     S.ui.root.prepend(S.renderer.domElement);
     S.fx = makeEffects(S.scene);
+    if (!LITE) loadLook().then(ok => { // schöne Grafik (look.js), nicht auf dem Handy
+      if (!ok || !S || S.look) return;
+      S.look = makeLook(S.renderer, S.scene, S.camera, { ao: 2.5 });
+      if (S.look) { const sz = S.renderer.getSize(new THREE.Vector2()); S.look.setSize(sz.x, sz.y); }
+    });
     window.addEventListener('resize', () => S && !S.ui.root.hidden && layout());
   }
   S.fx.clear();
@@ -864,7 +871,7 @@ function render(dt) {
   S.sun.target.position.set(me.x, me.y, me.z);
   S.clouds.position.set(cam.position.x, 0, cam.position.z);
   S.fx.update(dt, cam, S.renderer);
-  S.renderer.render(S.scene, cam);
+  if (S.look && S.look.on && lookWanted()) { S.look.watch(dt); S.look.render(dt); } else S.renderer.render(S.scene, cam);
 }
 
 function endStunt() {

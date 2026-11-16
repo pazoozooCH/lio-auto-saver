@@ -18,6 +18,9 @@ Browser-Spiel ohne Build: `index.html` + `game.js` (Spiellogik, Menüs und 2D-Ze
   Beim Bauen `warpStatic` (Formen und Instanzen mit Weltkoordinaten am Ursprung, lange Dreiecke geteilt), jedes Bild
   `warpFrame`/`unwarpFrame` in `render` (alles mit eigener Lage kurz verschieben); `userData.noWarp` = nicht verbiegen.
   Neue Effekte mit Weltkoordinaten (wie Rauch/Bremsspuren in `S.fx`) selbst mit `warpXZ` verschieben; Minikarte über `mp`.
+  Drehung: `warpDir` dreht genau in die eigene Blickrichtung (sonst stehen Autos schief zur gebogenen Strasse).
+  Karte: rund, Ausschnitt um den Spieler, vorne = oben (`drawMinimap`, Inhalt in `drawMapContent` auf `S.mapFull`);
+  antippen = ganze Karte gross (`city.bigMap`).
   Testen: `startCityMode()`, dann `window.__city()` (`me`, `cars`, `input`). 🚪/X: aussteigen und zu Fuss gehen (`city.walk`),
   einsteigen ins eigene Auto oder in eines der eigenen Base.
   Polizei nur nach einem Blitzer: Rotlicht-Kamera an jeder zehnten Ampel (`S.redCams`) oder Radarkasten (`S.speedCams`,
@@ -83,6 +86,11 @@ Browser-Spiel ohne Build: `index.html` + `game.js` (Spiellogik, Menüs und 2D-Ze
 - `online.js`: Online-Spiel (Lobby, Räume, Live-Daten) über Firebase Realtime Database mit anonymer Anmeldung.
   Regeln in `database.rules.json`, Einrichtung und Admin-Befehle im README. Freundes-Schlüssel nie ins Repo schreiben.
 - `sound.js`: Geräusche aus dem Synthesizer (Motor mit Gängen, Reifen, Gras/Kies/Randstein, Wind, Crashs), ohne Tondateien.
+- `look.js`: schöne Grafik für Stadt, Rennen, Stuntpark: Nachbearbeitung mit den Bibliotheken `postprocessing` und `n8ao`
+  (Import-Map in `index.html`): weiche Schatten in Ecken (N8AO, `transparencyAware` aus = schnell), Leuchten, SMAA, ACES.
+  `skyEnvironment` = Spiegelungen vom Himmel. Knopf ✨ in der Stadt (Spielstand `autoRetterGfx`); zu langsam = schaltet ab;
+  nicht auf dem Handy (LITE) im Rennen/Stuntpark. Ohne Netz fehlt nur die Nachbearbeitung. Im Rennen braucht der
+  Rückspiegel bei schöner Grafik ein eigenes Bild ohne Tonwert (`rtLin`), sonst wechseln die Shader jedes Bild.
 - `world3d.js`: Baukasten für die Landschaften (Rauschen, Oberflächen mit Relief, Gelände, Wolken, Staub, Lichtstrahlen).
 Texte im Spiel sind Deutsch (Schweizer Schreibweise, kein ß).
 

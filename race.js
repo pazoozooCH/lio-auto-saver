@@ -8,6 +8,7 @@ import { buildCar, animateCar, warmUp, makeQuality, mergeStatic } from './cars3d
 import { makeNoise, rng, smoothstep, surface, terrain, cloudDome } from './world3d.js';
 import { createCarSound, crash, gearbox } from './sound.js';
 import { TRACKS, THEMES, buildTheme } from './tracks.js';
+import { loadLook, makeLook, lookWanted } from './look.js';
 
 const TRACK_W = 14;          // Fahrbahnbreite in Metern
 const GRIP = 13;             // so viel Querbeschleunigung (m/s²) halten die Reifen in Kurven
@@ -795,6 +796,7 @@ function layout() {
   st.left = (vw - w) / 2 + 'px'; st.top = (vh - h) / 2 + 'px';
   st.transform = rotated ? 'rotate(90deg)' : 'none';
   R.renderer.setSize(w, h, false);
+  if (R.look) R.look.setSize(w, h);
   R.camera.aspect = w / h;
   R.camera.updateProjectionMatrix();
 }
@@ -810,6 +812,7 @@ export function startRace({ player, opponents, kinds, topSpeed, onFinish, net = 
   if (!R) {
     R = { renderer: makeRenderer(), worlds: {} };
     R.env = new THREE.PMREMGenerator(R.renderer).fromScene(new RoomEnvironment(), 0.04).texture;
+    loadLook().then(ok => { if (R) R.lookOk = ok; });
     R.ui = buildDom();
     R.renderer.domElement.className = 'r3d';
     R.ui.root.prepend(R.renderer.domElement);
@@ -1271,7 +1274,7 @@ function render(dt) {
   R.clouds.position.set(R.camera.position.x, 0, R.camera.position.z);
   R.update(dt, race.t, R.camera);
   R.fx.update(dt, R.camera, R.renderer);
-  R.renderer.render(R.scene, R.camera);
+  if (lookOn()) { if (R.look.watch(dt)) R.lookOff = true; R.look.render(dt); } else R.renderer.render(R.scene, R.camera);
   renderMirror(me);
 }
 
@@ -1289,15 +1292,26 @@ function renderMirror(me) {
     rt.texture.colorSpace = THREE.SRGBColorSpace;
     const scene = new THREE.Scene();
     scene.add(new THREE.Mesh(new THREE.PlaneGeometry(2, 2), new THREE.ShaderMaterial({
-      uniforms: { map: { value: rt.texture } },
+      uniforms: { map: { value: rt.texture }, raw: { value: 0 }, expo: { value: 1 } },
       vertexShader: 'varying vec2 vUv; void main() { vUv = vec2(1.0 - uv.x, uv.y); gl_Position = vec4(position.xy, 0.0, 1.0); }', // links und rechts tauschen = Spiegel
-      fragmentShader: 'uniform sampler2D map; varying vec2 vUv; void main() { gl_FragColor = texture2D(map, vUv); }',
+      // raw = 1: Bild ist noch hell/linear (schöne Grafik) → hier ACES-Filmlook und sRGB wie im Hauptbild
+      fragmentShader: `uniform sampler2D map; uniform float raw, expo; varying vec2 vUv;
+        vec3 fit(vec3 v) { vec3 a = v * (v + 0.0245786) - 0.000090537; vec3 b = v * (0.983729 * v + 0.4329510) + 0.238081; return a / b; }
+        vec3 aces(vec3 c) {
+          const mat3 I = mat3(vec3(0.59719, 0.07600, 0.02840), vec3(0.35458, 0.90834, 0.13383), vec3(0.04823, 0.01566, 0.83777));
+          const mat3 O = mat3(vec3(1.60475, -0.10208, -0.00327), vec3(-0.53108, 1.10813, -0.07276), vec3(-0.07367, -0.00605, 1.07602));
+          return clamp(O * fit(I * (c * expo / 0.6)), 0.0, 1.0); }
+        void main() { vec4 t = texture2D(map, vUv);
+          if (raw > 0.5) { vec3 c = aces(t.rgb); t.rgb = mix(c * 12.92, 1.055 * pow(c, vec3(1.0 / 2.4)) - 0.055, step(0.0031308, c)); }
+          gl_FragColor = t; }`,
       depthTest: false, depthWrite: false,
     })));
     const cam = new THREE.PerspectiveCamera(50, 3, 0.5, 6000); // nur Ebene 0: ohne ferne Bäume und Wolken
-    R.mirror = { rt, scene, cam, flat: new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1), frame: 0 };
+    const rtLin = new THREE.WebGLRenderTarget(360, 120, { type: THREE.HalfFloatType }); // für die schöne Grafik
+    R.mirror = { rt, rtLin, scene, cam, quad: scene.children[0].material, flat: new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1), frame: 0 };
   }
-  const M = R.mirror;
+  const M = R.mirror, lin = !!(R.look && R.look.on && lookOn());
+  M.quad.uniforms.raw.value = lin ? 1 : 0; M.quad.uniforms.map.value = (lin ? M.rtLin : M.rt).texture; M.quad.uniforms.expo.value = r.toneMappingExposure;
   if (M.frame++ % 2 === 0) {
     const fx = Math.cos(me.heading), fz = Math.sin(me.heading);
     const my = me.y || 0;
@@ -1305,7 +1319,7 @@ function renderMirror(me) {
     M.cam.lookAt(me.pos.x - fx * 40, my + 0.9, me.pos.z - fz * 40);
     me.mesh.visible = false; // das eigene Auto nicht im Spiegel
     r.shadowMap.autoUpdate = false;
-    r.setRenderTarget(M.rt);
+    r.setRenderTarget(lin ? M.rtLin : M.rt);
     r.render(R.scene, M.cam);
     r.setRenderTarget(null);
     r.shadowMap.autoUpdate = true;
@@ -1321,6 +1335,18 @@ function renderMirror(me) {
   r.autoClear = true;
   const st = R.ui.mirror.style;
   if (st.width !== w + 'px') Object.assign(st, { width: w + 'px', height: h + 'px', left: x + 'px' });
+}
+
+// Schöne Grafik (look.js): je Strecke eine eigene Szene, darum bei jedem Streckenwechsel neu; nicht auf dem Handy
+function lookOn() {
+  if (LITE || !R.lookOk || R.lookOff || !lookWanted()) return false;
+  if (!R.look || R.look.scene !== R.scene) {
+    if (R.look) R.look.dispose();
+    R.look = makeLook(R.renderer, R.scene, R.camera, { ao: 2.5 });
+    if (!R.look) return false;
+    const sz = R.renderer.getSize(mirrorSize); R.look.setSize(sz.x, sz.y);
+  }
+  return R.look.on;
 }
 
 let mapInfo = null;
