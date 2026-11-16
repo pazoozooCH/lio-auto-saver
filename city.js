@@ -40,17 +40,33 @@ const node = i => (i - N / 2) * BLOCK;
 
 // ---------- Stadt wie gewachsen: geschwungene Strassen, schiefe Blöcke ----------
 // Gerechnet wird weiter im geraden Gitter (Verkehr, Zusammenstösse, Zonen); nur beim Zeichnen wird alles verbogen:
-// warpXZ schiebt einen Punkt, warpRot dreht dort mit. Am Ring (±HALF) und draussen ist die Verbiegung null.
-const WB = t => { const a = Math.abs(t); return a >= HALF ? 0 : Math.cos(Math.PI * a / (2 * HALF)); };
+// warpXZ schiebt einen Punkt, warpRot dreht dort mit.
+// - jede Strasse hat ihre eigene Welle (SW.v[i] für die Strasse x = node(i), SW.h[j] für z = node(j)), dazwischen gemischt
+// - die Stadt ist rund statt viereckig: die Ecken werden nach innen gezogen (WARP_ROUND, Quadrat → Kreis)
+// - ausserhalb des Rings läuft alles bis WARP_OUT sanft aus; dort und weiter draussen ist die Verbiegung null
+const WARP_OUT = HALF + 70, WARP_ROUND = 0.55;
+const SW = (() => {
+  const r = rng(1312), mk = () => { const calm = r() < 0.25; // ein paar Strassen fast gerade
+    return { a: calm ? 1 + r() * 2 : 3 + r() * 6, l: 40 + r() * 40, p: r() * 6.28, b: calm ? 0 : r() * 3, m: 20 + r() * 12, q: r() * 6.28 }; };
+  return { v: Array.from({ length: N + 1 }, mk), h: Array.from({ length: N + 1 }, mk) };
+})();
+const wave = (w, t) => w.a * Math.sin(t / w.l + w.p) + w.b * Math.sin(t / w.m + w.q);
 function warpXZ(x, z, out) {
-  const b = WB(x) * WB(z);
-  out.x = b ? x + b * (19 * Math.sin(z / 80 + 1.3) + 5 * Math.sin((x + z) / 55 + 0.7)) : x;
-  out.z = b ? z + b * (17 * Math.sin(x / 85 + 0.4) + 5 * Math.sin((x - z) / 60 + 2.1)) : z;
+  const m = Math.max(Math.abs(x), Math.abs(z));
+  if (m >= WARP_OUT) { out.x = x; out.z = z; return out; }
+  const F = m <= HALF ? 1 : 1 - smoothstep(HALF, WARP_OUT, m);
+  const u = Math.max(-1, Math.min(1, x / HALF)), v = Math.max(-1, Math.min(1, z / HALF));
+  let dx = (u * Math.sqrt(1 - v * v / 2) - u) * HALF * WARP_ROUND, dz = (v * Math.sqrt(1 - u * u / 2) - v) * HALF * WARP_ROUND;
+  const fi = Math.max(0, Math.min(N - 1e-9, (x + HALF) / BLOCK)), i = Math.floor(fi), ti = fi - i;
+  const fj = Math.max(0, Math.min(N - 1e-9, (z + HALF) / BLOCK)), j = Math.floor(fj), tj = fj - j;
+  dx += wave(SW.v[i], z) * (1 - ti) + wave(SW.v[i + 1], z) * ti;
+  dz += wave(SW.h[j], x) * (1 - tj) + wave(SW.h[j + 1], x) * tj;
+  out.x = x + dx * F; out.z = z + dz * F;
   return out;
 }
 const _wa = { x: 0, z: 0 }, _wb = { x: 0, z: 0 };
 function warpRot(x, z) { // Drehung (um y, wie rotation.y) der Gegend um (x, z)
-  if (Math.abs(x) >= HALF || Math.abs(z) >= HALF) return 0;
+  if (Math.abs(x) >= WARP_OUT || Math.abs(z) >= WARP_OUT) return 0;
   warpXZ(x + 0.5, z, _wa); warpXZ(x - 0.5, z, _wb);
   const t1 = Math.atan2(-(_wa.z - _wb.z), _wa.x - _wb.x);
   warpXZ(x, z + 0.5, _wa); warpXZ(x, z - 0.5, _wb);
@@ -60,12 +76,12 @@ function warpRot(x, z) { // Drehung (um y, wie rotation.y) der Gegend um (x, z)
 // Drehung genau für die Richtung, in die etwas schaut (ry wie rotation.y; die eigene x-Achse = vorne bei Autos):
 // so stehen Autos parallel zur gebogenen Strasse statt um einen Mittelwert gedreht (das sah schief aus)
 function warpDir(x, z, ry) {
-  if (Math.abs(x) >= HALF || Math.abs(z) >= HALF) return ry;
+  if (Math.abs(x) >= WARP_OUT || Math.abs(z) >= WARP_OUT) return ry;
   const dx = Math.cos(ry), dz = -Math.sin(ry);
   warpXZ(x + dx * 0.5, z + dz * 0.5, _wa); warpXZ(x - dx * 0.5, z - dz * 0.5, _wb);
   return -Math.atan2(_wa.z - _wb.z, _wa.x - _wb.x);
 }
-const inWarp = (x, z) => Math.abs(x) < HALF && Math.abs(z) < HALF;
+const inWarp = (x, z) => Math.abs(x) < WARP_OUT && Math.abs(z) < WARP_OUT;
 const isIdent = o => o.position.x === 0 && o.position.z === 0 && o.rotation.x === 0 && o.rotation.y === 0 && o.rotation.z === 0;
 // Lange Dreiecke in der Stadt teilen (sonst wird eine 50 m lange Strasse nur an den Ecken verbogen)
 function splitGeo(g0, maxLen = 16) {
@@ -79,7 +95,7 @@ function splitGeo(g0, maxLen = 16) {
   const tri = (a, b, c, depth) => {
     const ab = L(a, b), bc = L(b, c), ca = L(c, a), m = Math.max(ab, bc, ca);
     const x0 = Math.min(a[px], b[px], c[px]), x1 = Math.max(a[px], b[px], c[px]), z0 = Math.min(a[pz], b[pz], c[pz]), z1 = Math.max(a[pz], b[pz], c[pz]);
-    if (m <= maxLen || depth > 9 || x0 >= HALF || x1 <= -HALF || z0 >= HALF || z1 <= -HALF) { push(a); push(b); push(c); return; }
+    if (m <= maxLen || depth > 9 || x0 >= WARP_OUT || x1 <= -WARP_OUT || z0 >= WARP_OUT || z1 <= -WARP_OUT) { push(a); push(b); push(c); return; }
     if (m === ab) { const d = mid(a, b); tri(a, d, c, depth + 1); tri(d, b, c, depth + 1); }
     else if (m === bc) { const d = mid(b, c); tri(a, b, d, depth + 1); tri(a, d, c, depth + 1); }
     else { const d = mid(c, a); tri(a, b, d, depth + 1); tri(d, b, c, depth + 1); }
@@ -88,7 +104,7 @@ function splitGeo(g0, maxLen = 16) {
   if (n % 3) return g;
   const need = k => { // muss dieses Dreieck geteilt werden? (direkt aus den Zahlen, ohne Hilfslisten: geht schneller)
     const ax = P[k * 3], az = P[k * 3 + 2], bx = P[k * 3 + 3], bz = P[k * 3 + 5], cx = P[k * 3 + 6], cz = P[k * 3 + 8];
-    if (Math.min(ax, bx, cx) >= HALF || Math.max(ax, bx, cx) <= -HALF || Math.min(az, bz, cz) >= HALF || Math.max(az, bz, cz) <= -HALF) return false;
+    if (Math.min(ax, bx, cx) >= WARP_OUT || Math.max(ax, bx, cx) <= -WARP_OUT || Math.min(az, bz, cz) >= WARP_OUT || Math.max(az, bz, cz) <= -WARP_OUT) return false;
     return Math.max(Math.hypot(ax - bx, az - bz), Math.hypot(bx - cx, bz - cz), Math.hypot(cx - ax, cz - az)) > maxLen;
   };
   let any = false;
@@ -129,7 +145,7 @@ function warpStatic(o, skip, done = new Map()) {
     else {
       g.computeBoundingBox();
       const bb = g.boundingBox;
-      if (!(bb.min.x >= HALF || bb.max.x <= -HALF || bb.min.z >= HALF || bb.max.z <= -HALF)) {
+      if (!(bb.min.x >= WARP_OUT || bb.max.x <= -WARP_OUT || bb.min.z >= WARP_OUT || bb.max.z <= -WARP_OUT)) {
         const g2 = o.isMesh ? splitGeo(g) : g.clone(), P = g2.attributes.position, Nm = g2.attributes.normal;
         for (let k = 0; k < P.count; k++) {
           const x = P.getX(k), z = P.getZ(k);
@@ -4773,7 +4789,9 @@ function drawWideMap(g) {
   g.stroke();
   rect(FARM, '#8a9a3a'); // Bauernhof (Alp am Pass)
   rect({ x0: -702, x1: -646, z0: -660, z1: -170 }, '#e8d39a'); rect({ x0: -646, x1: -250, z0: -200, z1: -184 }, '#9ca3af'); // Strand
-  g.fillStyle = '#7b8490'; g.fillRect(wx(-HALF), wz(-HALF), 2 * HALF * sc, 2 * HALF * sc);
+  g.fillStyle = '#7b8490'; g.beginPath(); // Stadt: Umriss so verbogen wie im Bild (rund, gewellt)
+  for (let k = 0; k < 64; k++) { const t = (k % 16) / 16 * 2 - 1, side = k >> 4, P = mp(...[[t * HALF, -HALF], [HALF, t * HALF], [-t * HALF, HALF], [-HALF, -t * HALF]][side]); k ? g.lineTo(wx(P.x), wz(P.z)) : g.moveTo(wx(P.x), wz(P.z)); }
+  g.closePath(); g.fill();
   g.strokeStyle = '#e5e7eb'; g.lineWidth = 3; g.beginPath();
   for (let s = 0; s <= HW_LEN; s += 40) { const p = hwPoint(s); if (s) g.lineTo(wx(p.x), wz(p.z)); else g.moveTo(wx(p.x), wz(p.z)); }
   g.stroke();
