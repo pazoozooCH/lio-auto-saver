@@ -109,8 +109,8 @@ function ribbon(line, a, b, y, skip = null) {
   return g;
 }
 
-export function buildSuburbs({ group, asphaltMat, lineMat, grassMat, paveMat, sign, wallBox, homeWalls, walls, roofTiles, roofMat, lampHead, trees, round, solid, rng }) {
-  const r = rng(2468), mat = o => new THREE.MeshStandardMaterial({ roughness: 0.8, ...o });
+export function buildSuburbs({ group, asphaltMat, lineMat, grassMat, paveMat, sign, wallBox, homeWalls, walls, roofTiles, roofMat, lampHead, trees, round, solid, rng, veg = null }) {
+  const r = rng(2468), vr = rng(8642), mat = o => new THREE.MeshStandardMaterial({ roughness: 0.8, ...o });
   const add = (geo, m, x, y, z, ry = 0, parent = group) => { const o = new THREE.Mesh(geo, m); o.position.set(x, y, z); o.rotation.y = ry; o.castShadow = o.receiveShadow = true; parent.add(o); return o; };
   const lampPole = new THREE.CylinderGeometry(0.08, 0.11, 5.5, 8), poleM = mat({ color: 0x3a3f4b, metalness: 0.6, roughness: 0.4 }), headG = new THREE.BoxGeometry(0.8, 0.16, 0.35);
   const hedgeM = mat({ color: 0x3f6f35, roughness: 1 }), fenceM = mat({ color: 0xf5f5f4 }), glassM = mat({ color: 0x1e293b, metalness: 0.6, roughness: 0.1 });
@@ -234,6 +234,12 @@ export function buildSuburbs({ group, asphaltMat, lineMat, grassMat, paveMat, si
     // Zusammenstösse: zwei Kreise entlang der Hausbreite; Baum im Garten hinten
     for (const k of [-1, 1]) round.push({ x: x + tx * k * w * 0.25, z: z + tz * k * w * 0.25, r: Math.max(w * 0.3, d * 0.55), h: top });
     if (r() < 0.7) trees.push([x - nx * (d / 2 + 6) + tx * (r() - 0.5) * 8, 0, z - nz * (d / 2 + 6) + tz * (r() - 0.5) * 8, 0.7 + r() * 0.5]);
+    if (veg) { // Garten: Gras hinten und seitlich, Büsche neben der Tür, Blumenbeet vorne
+      const at = (a, b) => [x + tx * a - nx * b, z + tz * a - nz * b]; // a = entlang der Strasse, b = von der Strasse weg
+      for (let k = 0; k < 22; k++) { const [px, pz] = at((vr() - 0.5) * (w + 10), d / 2 + 1.5 + vr() * 8); veg.tufts.push([px, 0, pz, 0.8 + vr() * 0.6]); }
+      for (const sgn of [-1, 1]) { const [px, pz] = at(-gs * 1.5 + sgn * 1.4, -d / 2 - 0.9); veg.bushes.push([px, 0, pz, 0.55 + vr() * 0.25]); }
+      for (let k = 0; k < 7; k++) { const [px, pz] = at(-gs * (w * 0.25) + (vr() - 0.5) * 3, -d / 2 - 1.8 - vr() * 0.8); veg.flowers.push([px, 0, pz, 0.8 + vr() * 0.4]); }
+    }
   }
   return { houses: houses.length };
 }

@@ -34,13 +34,13 @@ export function makeLook(renderer, scene, camera, opts = {}) {
   const rp = new RenderPass(scene, camera);
   composer.addPass(rp);
   const ao = new AO(scene, camera, size.x, size.y);
-  Object.assign(ao.configuration, { aoRadius: opts.ao || 3, distanceFalloff: 1, intensity: 2.6, halfRes: true, color: new THREE.Color(0, 0, 0), gammaCorrection: false,
+  Object.assign(ao.configuration, { aoRadius: opts.ao || 3, distanceFalloff: 1, intensity: 3.1, halfRes: true, color: new THREE.Color(0, 0, 0), gammaCorrection: false,
     transparencyAware: false }); // sonst zeichnet N8AO alles Durchsichtige nochmals
   ao.setQualityMode('Low');
   composer.addPass(ao);
   const bloom = new BloomEffect({ luminanceThreshold: 1.0, luminanceSmoothing: 0.25, intensity: 0.55, mipmapBlur: true, radius: 0.7 });
   const tone = new ToneMappingEffect({ mode: ToneMappingMode.ACES_FILMIC });
-  const grade = new HueSaturationEffect({ saturation: 0.08 }), bc = new BrightnessContrastEffect({ contrast: 0.06 });
+  const grade = new HueSaturationEffect({ saturation: 0.13 }), bc = new BrightnessContrastEffect({ contrast: 0.1 }); // farbig, kräftig
   const vig = new VignetteEffect({ offset: 0.32, darkness: 0.42 });
   composer.addPass(new EffectPass(camera, bloom, tone, grade, bc, vig));
   composer.addPass(new EffectPass(camera, new SMAAEffect({ preset: SMAAPreset.MEDIUM }))); // Kantenglättung nach dem Tonwert
@@ -51,7 +51,7 @@ export function makeLook(renderer, scene, camera, opts = {}) {
     setSize(w, h) { composer.setSize(w, h, false); },
     render(dt) { const a = renderer.autoClear; renderer.autoClear = false; composer.render(dt); renderer.autoClear = a; },
     // nachts mehr Leuchten (Lampen, Fenster), am Tag weniger
-    night(k) { bloom.intensity = 0.5 + k * 0.9; ao.configuration.intensity = 2.6 - k * 1.2; },
+    night(k) { bloom.intensity = 0.5 + k * 0.9; ao.configuration.intensity = 3.1 - k * 1.5; },
     dispose() { composer.dispose(); },
     // für Modi ohne eigenen Sparmodus: ist es 3 Sekunden lang unter 40 Bildern pro Sekunde, schaltet es sich ab (gibt dann true)
     watch(dt) { if (dt > 0.1 || !L.on) return false; acc += dt; n++; if (acc < 3) return false; const slow = acc / n > 1 / 40; acc = n = 0; if (slow) L.on = false; return slow; },
