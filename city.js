@@ -7,7 +7,7 @@ import { buildCar, animateCar, warmUp, makeQuality, mergeStatic } from './cars3d
 import { makeNoise, rng, smoothstep, surface, terrain, cloudDome } from './world3d.js';
 import { createCarSound, crash, gearbox, horn, createSiren } from './sound.js';
 import { buildMoon, stepMoon, inMoon, moonGround, moonAllowed, MOON, MOON_G, MOON_ROCKET, MOON_BUGGY } from './moon.js';
-import { buildCountry, stepCountry, countryDist, countryDrivable, countrySurface, inCountry, inWater, nearPier, BOAT_Y, BOAT_HOME, RIDES_INFO, FARM, countryBlocked, LIFT, SPACE } from './country.js';
+import { buildCountry, stepCountry, countryDist, countryDrivable, countrySurface, inCountry, inWater, nearPier, BOAT_Y, BOAT_HOME, RIDES_INFO, FARM, countryBlocked, SPACE, skiH, skiFade } from './country.js';
 import { makeNetCars } from './netcars.js';
 import { makeChat } from './chat.js';
 import { buildHighway, outskirtsDist, hwDrivable, onHighway, makeHighwayTraffic, stepHighway, hwProject, hwPoint, HW, HW_LEN, HW_LIMIT, REST, REST_ZONES, makePath, pathAt, turnTo,
@@ -198,16 +198,16 @@ function buildWorld() {
     let gs = groundShape(x, z); const cd = countryDist(x, z); if (cd < gs.d) gs = { d: cd, y: 0 }; // auch Bauernhof und Strand eben
     const f = smoothstep(24, 100, gs.d); // unter Autobahn, Hafen und Flughafen eben (Hafenbecken tiefer); breiter
     // ebener Rand, sonst ragt das grobe Gelände (20-m-Raster) über die äusserste Spur
-    return smoothstep(HALF + 90, HALF + 500, rr) * NZ.fbm(x / 260, z / 260, 4) * 190 * f + gs.y * (1 - f) - 0.06;
+    return smoothstep(HALF + 90, HALF + 500, rr) * NZ.fbm(x / 260, z / 260, 4) * 190 * f * skiFade(x, z) + gs.y * (1 - f) + skiH(x, z) - 0.06; // + Schneeberg
   };
-  const C = h => new THREE.Color(h), gA = C(0x5e9142), gB = C(0x4a7c35), rock = C(0x857b70);
+  const C = h => new THREE.Color(h), gA = C(0x5e9142), gB = C(0x4a7c35), rock = C(0x857b70), snowC = C(0xf1f5f9);
   const land = terrain({ size: 2200, segments: 110, height, detail: grassDetail, detailRepeat: 260,
-    color: (x, z, y, steep, c) => { c.lerpColors(gA, gB, NZ.fbm(x / 80, z / 80, 3)); c.lerp(rock, smoothstep(0.2, 0.4, steep)); } });
+    color: (x, z, y, steep, c) => { c.lerpColors(gA, gB, NZ.fbm(x / 80, z / 80, 3)); c.lerp(rock, smoothstep(0.2, 0.4, steep)); c.lerp(snowC, smoothstep(1, 10, skiH(x, z)) * 0.95); } });
   land.material.normalScale.set(0.35, 0.35);
   scene.add(land);
   // Süden: ein zweites Stück Gelände für die lange Autobahn und die Raststätte (gleiches Material, gleiches Raster)
   const landS = terrain({ size: 2200, segments: 110, center: [0, 2200], height, detail: grassDetail, detailRepeat: 260,
-    color: (x, z, y, steep, c) => { c.lerpColors(gA, gB, NZ.fbm(x / 80, z / 80, 3)); c.lerp(rock, smoothstep(0.2, 0.4, steep)); } });
+    color: (x, z, y, steep, c) => { c.lerpColors(gA, gB, NZ.fbm(x / 80, z / 80, 3)); c.lerp(rock, smoothstep(0.2, 0.4, steep)); c.lerp(snowC, smoothstep(1, 10, skiH(x, z)) * 0.95); } });
   landS.material.dispose(); landS.material = land.material;
   scene.add(landS);
 
@@ -935,8 +935,8 @@ function buildWorld() {
 
   buildHighway({ group: decor, asphaltMat, lineMat, sign, grassMat }); // Autobahn im Süden (outskirts.js)
   const areas = buildAreas({ group: decor, scene, asphaltMat, lineMat, sign }); // Hafen und Flughafen
-  const country = buildCountry({ scene, group: decor, asphaltMat, grassMat, sign, natural, makePerson }); // Bauernhof, Strand, Skigebiet
-  round.push(...(country.round || [])); // Tannen und Felsen am Berg sind fest
+  const country = buildCountry({ scene, group: decor, asphaltMat, grassMat, sign, natural, makePerson, height }); // Bauernhof, Strand, Skigebiet
+  round.push(...(country.round || []), ...(country.skiRound || [])); // Tannen und Felsen am Berg sind fest
   const moon = buildMoon({ scene }); // der Mond (weit weg, nur mit der Rakete)
   solid.push(...areas.solids);
   areas.pass = buildPass({ scene, group: decor, asphaltMat, lineMat, sign, natural, // Passstrasse im Norden
@@ -1755,9 +1755,8 @@ function drawMoonMap(g) {
 // ---------- Skifahren (Skigebiet am Pass) ----------
 // Zu Fuss zur Talstation, X: im Sessellift hinauf. Oben bekommt man Ski: ⬅️➡️ lenken, ⬆️ anschieben, ⬇️ bremsen (Pflug),
 // bergab wird man von selber schneller. Unten an der Talstation wieder X = nochmals hinauf; sonst X = Ski aus.
-function startLift(w) {
-  const T = S.country.lift.towers;
-  w.lift = { u: 0, len: Math.hypot(T[T.length - 1].x - T[0].x, T[T.length - 1].z - T[0].z) };
+function startLift(w, Lf) {
+  w.lift = { u: 0, len: Lf.len, L: Lf };
   w.target = null;
   if (!w.chair) { // Sessel unter dir
     const ch = new THREE.Group(), m = new THREE.MeshStandardMaterial({ color: 0x2563eb });
@@ -1767,13 +1766,13 @@ function startLift(w) {
     w.chair = ch;
   }
   w.mesh.add(w.chair);
-  showMsg('🚡 Es geht hinauf! Gas oder ▲ halten = schneller', 2.2);
+  showMsg(Lf.name + ': es geht hinauf! Gas oder ▲ halten = schneller', 2.2);
 }
 function stepLift(w, dt) {
-  const L = w.lift, C = S.country, T = C.lift.towers, n = T.length - 1;
+  const L = w.lift, Lf = L.L, T = Lf.towers, n = T.length - 1;
   L.u = Math.min(1, L.u + dt * (city.input.drift || city.input.up || city.input.gas ? 36 : 9) / L.len); // Leertaste, ▲ oder Gas: viermal so schnell
   const f = Math.min(n - 1e-6, L.u * n), k = Math.floor(f), q = f - k, a = T[k], b = T[k + 1];
-  w.x = a.x + (b.x - a.x) * q + C.lift.sx; w.z = a.z + (b.z - a.z) * q + C.lift.sz;
+  w.x = a.x + (b.x - a.x) * q + Lf.sx; w.z = a.z + (b.z - a.z) * q + Lf.sz;
   w.gy = a.y + (b.y - a.y) * q - 2.9;
   w.h = Math.atan2(T[n].z - T[0].z, T[n].x - T[0].x);
   w.mesh.position.set(w.x, w.gy, w.z); w.mesh.rotation.set(0, -w.h, 0);
@@ -1781,8 +1780,8 @@ function stepLift(w, dt) {
   w.mesh.userData.arms.forEach(a => { a.rotation.z = 0.3; });
   if (L.u >= 1) { // oben: aussteigen, Ski an
     w.lift = null; w.mesh.remove(w.chair);
-    const back = Math.atan2(T[0].z - T[n].z, T[0].x - T[n].x); // die Abfahrt beginnt nach der Kuppe oben (ab da geht es nur noch hinunter)
-    w.x = T[0].x + (T[n].x - T[0].x) * 0.54 - C.lift.sx * 3; w.z = T[0].z + (T[n].z - T[0].z) * 0.54 - C.lift.sz * 3; w.h = back; w.speed = 3;
+    const back = Math.atan2(T[0].z - T[n].z, T[0].x - T[n].x); // oben aussteigen, Blick ins Tal
+    w.x = Lf.B.x + Math.cos(back) * 10 - Lf.sx * 3; w.z = Lf.B.z + Math.sin(back) * 10 - Lf.sz * 3; w.h = back; w.speed = 3;
     skiOn(w);
   }
 }
@@ -1825,9 +1824,9 @@ function stepSki(w, dt) {
     w.mesh.userData.legs.forEach(l => { l.rotation.z = 0.35; }); (w.mesh.userData.knees || []).forEach(k => { k.rotation.z = -0.6; });
     w.mesh.userData.arms.forEach((a, i) => { a.rotation.z = 0.5 + (input.gas ? Math.sin(city.t * 8 + i) * 0.5 : 0); });
   }
-  const atLift = Math.hypot(w.x - LIFT.A.x, w.z - LIFT.A.z) < 14;
-  if (atLift && !(w.target && w.target.lift)) showMsg('🚡 Talstation – X: nochmals hinauf', 1.6);
-  w.target = atLift ? { lift: true } : null;
+  const atLift = S.country.lifts.find(Lf => Math.hypot(w.x - Lf.A.x, w.z - Lf.A.z) < 12);
+  if (atLift && !(w.target && w.target.lift)) showMsg(atLift.name + ' – X: nochmals hinauf', 1.6);
+  w.target = atLift ? { lift: atLift } : null;
   S.ui.walkbtn.classList.toggle('ready', atLift);
   S.ui.kmh.textContent = Math.round(Math.abs(v) * 3.6);
 }
@@ -3002,7 +3001,7 @@ function getIn() {
   const w = city.walk, t = w.target;
   if (city.movie) { city.movie = null; w.mesh.visible = true; showMsg('🎬 Aufgestanden', 1.2); return; }
   if (t && t.movie) { city.movie = { t: 0 }; w.mesh.visible = false; showMsg('🍿 Film läuft – X zum Aufstehen', 2.4); return; }
-  if (t && t.lift) { startLift(w); return; }
+  if (t && t.lift) { startLift(w, t.lift); return; }
   if (t && t.rocket) { startLaunch(); return; }
   if (t && t.bed) { goSleep(w); return; }
   if (w.ski) { skiOff(w); return; }
@@ -3077,7 +3076,7 @@ function stepWalk(dt) {
     if (d < 1.6 && d < bd) { bd = d; best = { v: R.v, x: R.x, z: R.z, h: R.h, ride: R }; }
   }
   if (!city.boat && nearPier(w.x, w.z) && Math.hypot(w.x - BOAT_HOME.x, w.z - BOAT_HOME.z) < 12.5) { best = { boat: true }; bd = 0; } // Boot am Steg
-  if (Math.hypot(w.x - LIFT.A.x, w.z - LIFT.A.z) < 14) { best = { lift: true }; bd = 0; } // Sessellift (Talstation)
+  for (const Lf of S.country.lifts) if (Math.hypot(w.x - Lf.A.x, w.z - Lf.A.z) < 12) { best = { lift: Lf }; bd = 0; } // Talstation eines Lifts
   const KS = S.places.kino && S.places.kino.seats;
   if (KS && w.x > KS.x0 && w.x < KS.x1 && w.z > KS.z0 && w.z < KS.z1) { best = { movie: true }; bd = 0; } // im Kino bei den Sitzen
   const RK = city.moonOn ? MOON_ROCKET : SPACE;
@@ -3087,7 +3086,7 @@ function stepWalk(dt) {
   const HB = S.places.house && S.places.house.bed;
   if (HB && city.house.owned && Math.hypot(w.x - HB.x, w.z - HB.z) < 3) { best = { bed: true }; bd = 0; } // Bett im eigenen Haus
   if (best && (!w.target || w.target.v !== best.v || !!w.target.boat !== !!best.boat || !!w.target.lift !== !!best.lift || !!w.target.bed !== !!best.bed || !!w.target.plane !== !!best.plane || !!w.target.movie !== !!best.movie || !!w.target.rocket !== !!best.rocket))
-    showMsg(best.rocket ? (city.moonOn ? '🚀 Zurück zur Erde – X' : '🚀 Zum Mond fliegen – X') : best.movie ? '🍿 Film schauen – X' : best.plane ? '✈️ Flugzeug – X: einsteigen und fliegen' : best.bed ? '🛏️ Bett – X: schlafen' : best.lift ? '🚡 Sessellift – X: einsteigen und hinauffahren' : best.boat ? '🚤 Boot – einsteigen' : best.v ? '🔑 ' + ((city.kinds[best.v.kind] || {}).name || '') + ' – 🚗 einsteigen' : '🚗 Einsteigen?', 1.2);
+    showMsg(best.lift ? best.lift.name + ' – X: einsteigen' : best.rocket ? (city.moonOn ? '🚀 Zurück zur Erde – X' : '🚀 Zum Mond fliegen – X') : best.movie ? '🍿 Film schauen – X' : best.plane ? '✈️ Flugzeug – X: einsteigen und fliegen' : best.bed ? '🛏️ Bett – X: schlafen' : best.lift ? '🚡 Sessellift – X: einsteigen und hinauffahren' : best.boat ? '🚤 Boot – einsteigen' : best.v ? '🔑 ' + ((city.kinds[best.v.kind] || {}).name || '') + ' – 🚗 einsteigen' : '🚗 Einsteigen?', 1.2);
   w.target = best;
   S.ui.walkbtn.classList.toggle('ready', !!best);
 }
@@ -4463,7 +4462,7 @@ function drawWideMap(g) {
   const rect = (b, col) => { g.fillStyle = col; g.fillRect(wx(b.x0), wz(b.z0), (b.x1 - b.x0) * sc, (b.z1 - b.z0) * sc); };
   rect({ x0: -1100, x1: -702, z0: -700, z1: 700 }, '#1e5a8a'); // Wasser
   for (const A of Object.values(AREAS)) { rect(A.rect, city.keys.size >= A.need ? '#9ca3af' : '#4b5563'); rect(A.road, '#9ca3af'); }
-  rect({ x0: 400, x1: 980, z0: -175, z1: -125 }, '#e5e7eb'); // Piste
+  rect({ x0: -270, x1: 310, z0: 605, z1: 655 }, '#e5e7eb'); // Piste
   g.strokeStyle = city.keys.size >= PASS_AREA.need ? '#e5e7eb' : '#6b7280'; g.lineWidth = 2; g.beginPath(); // Passstrasse
   passPoints().forEach((p, i) => (i % 6 ? 0 : i ? g.lineTo(wx(p.x), wz(p.z)) : g.moveTo(wx(p.x), wz(p.z))));
   g.stroke();
@@ -4640,7 +4639,7 @@ function loop(now) {
   if (city) requestAnimationFrame(loop);
 }
 function step(now) {
-  const dt = Math.min(0.05, (now - city.last) / 1000);
+  const dt = Math.max(0, Math.min(0.05, (now - city.last) / 1000)); // nie rückwärts (Uhr springt)
   S.quality((now - city.last) / 1000);
   saveGpu((now - city.last) / 1000);
   city.last = now;

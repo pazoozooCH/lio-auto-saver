@@ -23,6 +23,9 @@ const EDGE = 17.6, MEDIAN = 0.4; // Leitplanken: aussen und in der Mitte
 const LANES = [14.1, 10.4, 6.6, 2.9]; // Spurmitte: ganz rechts … ganz links (Überholspur)
 const WIDE = EDGE + 1.2; // so weit reicht die Autobahn seitlich
 const inGap = s => s > GAP.s0 && s < GAP.s1;
+// Ausfahrt zum Flughafen: innen an der oberen Geraden (für Richtung +s = nach Osten), dort fehlt die innere Leitplanke
+const AIR_EXIT = { x0: 210, x1: 362, z0: HW.cz - HW.R + EDGE - 2, z1: HW.cz - HW.R + EDGE + 14 }; // dahinter: links Flughafen, rechts die Strasse zum Skigebiet
+const airGap = s => s > AIR_EXIT.x0 + HW.half && s < AIR_EXIT.x1 + HW.half;
 
 const arcAt = (cx, cz, a) => ({ x: cx + HW.R * Math.cos(a), z: cz + HW.R * Math.sin(a), tx: -Math.sin(a), tz: Math.cos(a) });
 export function hwPoint(s) {
@@ -68,6 +71,7 @@ export function hwDrivable(x, z, r = 1) {
   if (rwBlocked(p.s, p.lat, r)) return false; // Baustelle
   if (Math.abs(p.lat) <= EDGE - r * 0.8 && (Math.abs(p.lat) >= MEDIAN + r * 0.6 || gap)) return true;
   if (gap && p.lat < 0 && p.lat > -WIDE - 3) return true; // Einfahrt von der Zufahrt her
+  if (x > AIR_EXIT.x0 + r * 0.6 && x < AIR_EXIT.x1 - r * 0.6 && z > AIR_EXIT.z0 && z < AIR_EXIT.z1 - r * 0.6) return true; // Ausfahrt zum Flughafen
   if (restDrivable(x, z, r)) return true;
   return x > RAMP.x0 + r * 0.6 && x < RAMP.x1 - r * 0.6 && z > RAMP.z0 && z < RAMP.z1 + 8;
 }
@@ -349,9 +353,16 @@ export function buildHighway({ group, asphaltMat, lineMat, sign, grassMat }) {
   for (const l of [-MEDIAN, MEDIAN]) add(ribbon(l, l, 0, 0.85, concrete, noGap)); // Mittelleitplanke (Beton)
   add(ribbon(-MEDIAN, MEDIAN, 0.85, 0.85, concrete, noGap));
   const outer = s => noGap(s) && !restGap(s); // aussen fehlt die Leitplanke bei der Einfahrt und an der Raststätte
-  add(ribbon(EDGE, EDGE, 0.45, 0.8, rail)); add(ribbon(-EDGE, -EDGE, 0.45, 0.8, rail, outer)); // Leitplanken aussen
+  add(ribbon(EDGE, EDGE, 0.45, 0.8, rail, s => !airGap(s))); add(ribbon(-EDGE, -EDGE, 0.45, 0.8, rail, outer)); // Leitplanken aussen
   const posts = [];
-  for (let s = 0; s < HW_LEN; s += 4) for (const l of [EDGE + 0.1, -EDGE - 0.1]) if (l > 0 || outer(s)) posts.push(at(s, l));
+  for (let s = 0; s < HW_LEN; s += 4) for (const l of [EDGE + 0.1, -EDGE - 0.1]) if (l > 0 ? !airGap(s) : outer(s)) posts.push(at(s, l));
+  // Ausfahrt Flughafen: Belag und Schilder (Richtung Osten, innere Seite)
+  const ex = new THREE.Mesh(new THREE.PlaneGeometry(AIR_EXIT.x1 - AIR_EXIT.x0, AIR_EXIT.z1 - AIR_EXIT.z0).rotateX(-Math.PI / 2), asphaltMat);
+  ex.position.set((AIR_EXIT.x0 + AIR_EXIT.x1) / 2, 0.025, (AIR_EXIT.z0 + AIR_EXIT.z1) / 2); ex.receiveShadow = true; group.add(ex);
+  for (const [x, text] of [[-120, '✈️ FLUGHAFEN ⛷️ SKIGEBIET – Ausfahrt in 300 m'], [150, '✈️ ⛷️ Ausfahrt ↘ rechts raus']]) for (const side of [0, 1]) {
+    const sg = sign(text, '#1d4ed8', '#ffffff', 10, 1.5); sg.position.set(x + side * 0.05, 4.5, HW.cz - HW.R + EDGE + 1.6); sg.rotation.y = -Math.PI / 2 + side * Math.PI; group.add(sg);
+  }
+  for (const side of [0, 1]) { const sg = sign('✈️ Flughafen: auf der Autobahn nach Osten (links)', '#1d4ed8', '#ffffff', 11, 1.4); sg.position.set(-9.5, 4, RAMP.z1 - 60 + side * 0.05); sg.rotation.y = side * Math.PI; group.add(sg); }
   buildRest(group, { asphaltMat, lineMat, sign, grassMat, rail, posts });
   // Zufahrt
   const ramp = new THREE.Mesh(new THREE.PlaneGeometry(RAMP.x1 - RAMP.x0, RAMP.z1 + 4 - RAMP.z0).rotateX(-Math.PI / 2), asphaltMat);
@@ -862,10 +873,11 @@ export function stepHighway(cars, dt, t, me, cam, hooks) {
 // Flughafen im Osten mit Piste, Terminal, Tower und Flugzeugen (eines startet immer wieder).
 export const AREAS = {
   harbor: { need: 5, name: '⚓ Hafen', rect: { x0: -700, x1: -340, z0: -150, z1: 110 }, road: { x0: -350, x1: -256, z0: -7, z1: 7 }, gate: { x: -334, z: 0 } },
-  airport: { need: 12, name: '✈️ Flughafen', rect: { x0: 340, x1: 1000, z0: -260, z1: 60 }, road: { x0: 256, x1: 350, z0: -7, z1: 7 }, gate: { x: 334, z: 0 } },
+  // Flughafen: im Autobahn-Ring (Ausfahrt AIR_EXIT auf der inneren Seite der oberen Geraden, Richtung Osten)
+  airport: { need: 12, name: '✈️ Flughafen', rect: { x0: -330, x1: 330, z0: 520, z1: 840 }, road: { x0: 296, x1: 310, z0: 470, z1: 525 }, gate: { x: 303, z: 500, rot: Math.PI / 2 } },
 };
 const WATER = { x0: -1100, x1: -702, z0: -700, z1: 380, y: -4 }; // Hafenbecken (der Boden liegt tiefer), nicht bis zur Autobahn
-const RUNWAY = { x0: 400, x1: 980, z: -150, w: 50 };
+const RUNWAY = { x0: -270, x1: 310, z: 630, w: 50 };
 const inBox = (x, z, b, m = 0) => x > b.x0 + m && x < b.x1 - m && z > b.z0 + m && z < b.z1 - m;
 
 // Gelände: wie weit weg ist das nächste ebene Gebiet (d < 0: drin) und auf welche Höhe soll es (y)
@@ -981,27 +993,28 @@ export function buildAreas({ group, scene, asphaltMat, lineMat, sign }) {
   const F = AREAS.airport.rect;
   flat(group, M(0x5f9a45, { roughness: 1 }), F, 0.01);
   flat(group, asphaltMat, { x0: RUNWAY.x0, x1: RUNWAY.x1, z0: RUNWAY.z - RUNWAY.w / 2, z1: RUNWAY.z + RUNWAY.w / 2 }, 0.04);
-  flat(group, asphaltMat, { x0: 350, x1: 640, z0: -70, z1: 25 }, 0.035); // Vorfeld
-  flat(group, asphaltMat, { x0: 480, x1: 510, z0: RUNWAY.z + 20, z1: -65 }, 0.035); // Rollweg
+  flat(group, asphaltMat, { x0: -320, x1: -30, z0: 710, z1: 805 }, 0.035); // Vorfeld
+  flat(group, asphaltMat, { x0: -190, x1: -160, z0: RUNWAY.z + 20, z1: 715 }, 0.035); // Rollweg
+  flat(group, asphaltMat, { x0: -30, x1: 310, z0: 760, z1: 790 }, 0.035); // Zufahrt vom Tor zum Vorfeld
   for (let x = RUNWAY.x0 + 40; x < RUNWAY.x1 - 40; x += 30) flat(group, lineMat, { x0: x, x1: x + 15, z0: RUNWAY.z - 0.5, z1: RUNWAY.z + 0.5 }, 0.06);
   for (const x0 of [RUNWAY.x0 + 4, RUNWAY.x1 - 24]) for (let z = -20; z <= 20; z += 5) flat(group, lineMat, { x0, x1: x0 + 20, z0: RUNWAY.z + z - 1, z1: RUNWAY.z + z + 1 }, 0.06);
-  boxAt(group, solids, 150, 14, 26, M(0x93c5fd, { metalness: 0.4, roughness: 0.1 }), 480, 7, 45); // Terminal (Glas)
-  boxAt(group, solids, 152, 1, 28, M(0xf1f5f9), 480, 14.5, 45, false);
-  const tower = new THREE.Mesh(new THREE.CylinderGeometry(2.5, 3, 34, 16), M(0xe5e7eb)); tower.position.set(600, 17, 40); group.add(tower);
-  solids.push({ x0: 597, x1: 603, z0: 37, z1: 43, h: 40 });
-  const cab = new THREE.Mesh(new THREE.CylinderGeometry(6, 4.5, 6, 16), M(0x1e293b, { metalness: 0.7, roughness: 0.1 })); cab.position.set(600, 37, 40); group.add(cab);
+  boxAt(group, solids, 150, 14, 26, M(0x93c5fd, { metalness: 0.4, roughness: 0.1 }), -190, 7, 825); // Terminal (Glas)
+  boxAt(group, solids, 152, 1, 28, M(0xf1f5f9), -190, 14.5, 825, false);
+  const tower = new THREE.Mesh(new THREE.CylinderGeometry(2.5, 3, 34, 16), M(0xe5e7eb)); tower.position.set(-70, 17, 820); group.add(tower);
+  solids.push({ x0: -73, x1: -67, z0: 817, z1: 823, h: 40 });
+  const cab = new THREE.Mesh(new THREE.CylinderGeometry(6, 4.5, 6, 16), M(0x1e293b, { metalness: 0.7, roughness: 0.1 })); cab.position.set(-70, 37, 820); group.add(cab);
   for (const side of [0, 1]) {
-    const s1 = sign('✈️ FLUGHAFEN', '#1d4ed8', '#ffffff', 16, 2.4); s1.position.set(480, 17, 31.9 - side * 0.05); s1.rotation.y = side * Math.PI; group.add(s1);
+    const s1 = sign('✈️ FLUGHAFEN', '#1d4ed8', '#ffffff', 16, 2.4); s1.position.set(-190, 17, 811.9 - side * 0.05); s1.rotation.y = side * Math.PI; group.add(s1);
   }
-  for (const [x, col] of [[420, 0x1d4ed8], [540, 0xdc2626]]) {
-    const p = plane(0xffffff, col); p.rotation.y = Math.PI / 2; p.position.set(x, 0, -30); scene.add(p);
-    solids.push({ x0: x - 2.5, x1: x + 2.5, z0: -48, z1: -10, h: 6 }); // nur der Rumpf ist fest (unter den Flügeln kann man durch)
+  for (const [x, col] of [[-250, 0x1d4ed8], [-130, 0xdc2626]]) {
+    const p = plane(0xffffff, col); p.rotation.y = Math.PI / 2; p.position.set(x, 0, 750); scene.add(p);
+    solids.push({ x0: x - 2.5, x1: x + 2.5, z0: 732, z1: 770, h: 6 }); // nur der Rumpf ist fest (unter den Flügeln kann man durch)
   }
   // Dein Flugzeug (orange): zu Fuss hingehen und X (city.js: enterPlane)
   const fm = plane(0xffffff, 0xf59e0b); fm.rotation.order = 'YZX'; fm.userData = { wheels: [], length: 40, radius: 8, body: fm };
-  out.flyer = { mesh: fm, x: 615, z: -32, h: -Math.PI / 2, home: { x: 615, z: -32, h: -Math.PI / 2 }, start: { x: RUNWAY.x0 + 30, z: RUNWAY.z, h: 0 } };
-  fm.position.set(615, 0, -32); fm.rotation.y = Math.PI / 2; scene.add(fm);
-  for (const side of [0, 1]) { const s1 = sign('✈️ FLIEGEN – zu Fuss hin, X', '#f59e0b', '#111827', 9, 1.4); s1.position.set(615, 9, -4 - side * 0.05); s1.rotation.y = side ? Math.PI : 0; group.add(s1); }
+  out.flyer = { mesh: fm, x: -55, z: 748, h: -Math.PI / 2, home: { x: -55, z: 748, h: -Math.PI / 2 }, start: { x: RUNWAY.x0 + 30, z: RUNWAY.z, h: 0 } };
+  fm.position.set(-55, 0, 748); fm.rotation.y = Math.PI / 2; scene.add(fm);
+  for (const side of [0, 1]) { const s1 = sign('✈️ FLIEGEN – zu Fuss hin, X', '#f59e0b', '#111827', 9, 1.4); s1.position.set(-55, 9, 776 - side * 0.05); s1.rotation.y = side ? Math.PI : 0; group.add(s1); }
   out.jet = { mesh: plane(0xf8fafc, 0x16a34a), t: -10, x: RUNWAY.x0 + 20, y: 0, v: 0 };
   scene.add(out.jet.mesh);
   return out;

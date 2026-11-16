@@ -42,8 +42,34 @@ export const SPACE = { x: 700, z: 200, r: 26 }; // Startplatz mit der Mondrakete
 const SPACE_ROAD = { x0: 250, x1: 690, z0: 184, z1: 200 }; // Verlängerung der Stadtstrasse z = 192 nach Osten
 
 // ---------- Skigebiet ----------
-const LIFT_A = { x: 290, z: -650 }, LIFT_B = { x: 85, z: -955 }; // Tal- und Bergstation (die Bergstation weit genug neben der Passstrasse)
 const SNOW_ROAD = 55; // ab dieser Höhe liegt Schnee auf der Passstrasse
+// Skigebiet „Schneeberg“: ein eigener Berg im Autobahn-Ring (südlich vom Flughafen), Dorf mit Talstationen im Norden.
+// Drei Lifte (LIFTS: unten A, oben B) und fünf Pisten (PISTES: von oben nach unten, mit Farbe).
+export const SKI = { x: 420, z: 1650, r: 360, top: 150 };
+const SKI_BASE = { x0: 290, x1: 570, z0: 1210, z1: 1292 };
+const SKI_ROAD = { x0: 345, x1: 359, z0: 470, z1: 1222 }; // von der Autobahn-Ausfahrt (Flughafen) zum Skidorf
+export function skiH(x, z) { // Höhe des Bergs über dem Gelände
+  const d = Math.hypot(x - SKI.x, z - SKI.z);
+  if (d >= SKI.r) return 0;
+  const c = Math.cos(d / SKI.r * Math.PI / 2);
+  return SKI.top * c * c * (1 + 0.07 * Math.sin(Math.atan2(z - SKI.z, x - SKI.x) * 3) * (d / SKI.r));
+}
+export const skiFade = (x, z) => { const t = Math.min(1, Math.max(0, (Math.hypot(x - SKI.x, z - SKI.z) - SKI.r * 0.85) / (SKI.r * 0.5))); return t * t * (3 - 2 * t); }; // dort keine Hügel
+export const LIFTS = [
+  { name: '🚡 Gipfel-Sesselbahn', A: { x: 420, z: 1302 }, B: { x: 420, z: 1598 }, color: 0x2563eb },
+  { name: '🎿 Skilift West', A: { x: 330, z: 1305 }, B: { x: 268, z: 1488 }, color: 0x16a34a },
+  { name: '🚡 Sesselbahn Ost', A: { x: 520, z: 1305 }, B: { x: 602, z: 1498 }, color: 0xdc2626 },
+];
+const PISTES = [
+  { name: '🔵 1 Panorama', color: 0x2563eb, pts: [[400, 1585], [300, 1545], [245, 1455], [285, 1375], [360, 1318], [405, 1290]] },
+  { name: '🔴 2 Direttissima', color: 0xdc2626, pts: [[432, 1585], [446, 1480], [428, 1385], [440, 1292]] },
+  { name: '⚫ 3 Schwarze Wand', color: 0x111827, pts: [[452, 1592], [535, 1598], [602, 1556], [642, 1450], [592, 1330], [545, 1290]] },
+  { name: '🔵 4 Waldweg', color: 0x2563eb, pts: [[262, 1475], [226, 1400], [288, 1322], [340, 1290]] },
+  { name: '🔴 5 Ostflanke', color: 0xdc2626, pts: [[610, 1484], [652, 1400], [602, 1322], [556, 1290]] },
+];
+const pisteDist = (x, z) => { let best = 1e9; for (const P of PISTES) for (let k = 0; k < P.pts.length - 1; k++) {
+  const [ax, az] = P.pts[k], [bx, bz] = P.pts[k + 1], lx = bx - ax, lz = bz - az, t = Math.max(0, Math.min(1, ((x - ax) * lx + (z - az) * lz) / (lx * lx + lz * lz)));
+  best = Math.min(best, Math.hypot(x - ax - lx * t, z - az - lz * t)); } return best; };
 
 export const RIDES_INFO = { tractor: { ...TRACTOR, v: { id: 'farm-tractor', kind: 'tractor', color: '#3fa34d', ps: 95, name: 'Traktor' } } };
 
@@ -51,15 +77,15 @@ export const RIDES_INFO = { tractor: { ...TRACTOR, v: { id: 'farm-tractor', kind
 export function countryDist(x, z) {
   let d = Math.min(boxDist(x, z, FARM) - 4, boxDist(x, z, BEACH), boxDist(x, z, PROM), boxDist(x, z, BEACH_ROAD) - 4);
   for (const r of FARM_ROADS) d = Math.min(d, boxDist(x, z, r) - 4);
-  d = Math.min(d, boxDist(x, z, SPACE_ROAD) - 4, Math.hypot(x - SPACE.x, z - SPACE.z) - SPACE.r - 6);
+  d = Math.min(d, boxDist(x, z, SPACE_ROAD) - 4, Math.hypot(x - SPACE.x, z - SPACE.z) - SPACE.r - 6, boxDist(x, z, SKI_BASE) - 4, boxDist(x, z, SKI_ROAD) - 4);
   return d;
 }
 export const inCountry = (x, z) => box(FARM, x, z) || FARM_ROADS.some(r => box(r, x, z)) || box(BEACH, x, z) || box(PROM, x, z) || box(BEACH_ROAD, x, z) || box(PIER, x, z)
-  || box(SPACE_ROAD, x, z) || Math.hypot(x - SPACE.x, z - SPACE.z) < SPACE.r;
+  || box(SPACE_ROAD, x, z) || Math.hypot(x - SPACE.x, z - SPACE.z) < SPACE.r || box(SKI_ROAD, x, z) || box(SKI_BASE, x, z);
 export function countryDrivable(x, z, r = 1) {
   const m = r * 0.6;
   if (box(FARM, x, z, m)) return !FARM_SOLIDS.some(b => box(b, x, z, -m)) && !box(PASTURE, x, z, -m);
-  if (FARM_ROADS.some(b => box(b, x, z, m - 1)) || box(BEACH_ROAD, x, z, m - 1) || box(PROM, x, z, m - 1) || box(SPACE_ROAD, x, z, m - 1)) return true;
+  if (FARM_ROADS.some(b => box(b, x, z, m - 1)) || box(BEACH_ROAD, x, z, m - 1) || box(PROM, x, z, m - 1) || box(SPACE_ROAD, x, z, m - 1) || box(SKI_ROAD, x, z, m - 1) || box(SKI_BASE, x, z, m)) return true;
   if (Math.hypot(x - SPACE.x, z - SPACE.z) < SPACE.r - m) return Math.hypot(x - SPACE.x, z - SPACE.z) > 3 + m; // um die Rakete herum
   if (box(BEACH, x, z, m)) return !box(KIOSK, x, z, -m);
   return box(PIER, x, z, m - 0.5);
@@ -71,15 +97,15 @@ export function countrySurface(x, z) {
     return 'grass';
   }
   if (box(BEACH, x, z)) return 'sand';
-  if (box(BEACH_ROAD, x, z) || box(PROM, x, z) || box(PIER, x, z) || box(SPACE_ROAD, x, z) || Math.hypot(x - SPACE.x, z - SPACE.z) < SPACE.r) return 'asphalt';
-  if (passGround(x, z) > SNOW_ROAD) return 'snow';
+  if (box(BEACH_ROAD, x, z) || box(PROM, x, z) || box(PIER, x, z) || box(SPACE_ROAD, x, z) || Math.hypot(x - SPACE.x, z - SPACE.z) < SPACE.r || box(SKI_ROAD, x, z) || box(SKI_BASE, x, z)) return 'asphalt';
+  if (passGround(x, z) > SNOW_ROAD || skiH(x, z) > 2) return 'snow';
   return null;
 }
 // Feste Dinge (auch wenn man quer übers Gelände kommt): Gebäude auf dem Hof, Weide, Kiosk
 export const countryBlocked = (x, z, r = 1) => FARM_SOLIDS.some(b => box(b, x, z, -r * 0.6)) || box(PASTURE, x, z, -r * 0.6) || box(KIOSK, x, z, -r * 0.6)
   || Math.hypot(x - SPACE.x, z - SPACE.z) < 3 + r * 0.6;
 // Skigebiet: Talstation, Bergstation (für city.js: Lift fahren und selber Ski fahren)
-export const LIFT = { A: LIFT_A, B: LIFT_B };
+export const inSki = (x, z) => Math.hypot(x - SKI.x, z - SKI.z) < SKI.r + 30 || box(SKI_BASE, x, z);
 // Auf dem Wasser (für das Boot)
 export const inWater = (x, z, r = 2) => box(WATER, x, z, r + 6) && !box(PIER, x, z, -r);
 export const nearPier = (x, z) => Math.hypot(x - BOAT_HOME.x, z - BOAT_HOME.z) < 14;
@@ -103,7 +129,7 @@ function canvasTex(w, h, draw, rep = 1) {
   const c = document.createElement('canvas'); c.width = w; c.height = h; draw(c.getContext('2d'));
   const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; t.wrapS = t.wrapT = THREE.RepeatWrapping; t.repeat.set(rep, rep); return t;
 }
-export function buildCountry({ scene, group, asphaltMat, grassMat, sign, natural, makePerson }) {
+export function buildCountry({ scene, group, asphaltMat, grassMat, sign, natural, makePerson, height }) {
   const out = { cows: [], bales: [], chairs: [], skiers: [], blades: null, boat: null, natural };
   const add = (geo, m, x, y, z, parent = group) => { const o = new THREE.Mesh(geo, m); o.position.set(x, y, z); o.castShadow = o.receiveShadow = true; parent.add(o); return o; };
   const flat = (b, m, y = 0.04) => { const o = new THREE.Mesh(new THREE.PlaneGeometry(b.x1 - b.x0, b.z1 - b.z0).rotateX(-Math.PI / 2), m); o.position.set((b.x0 + b.x1) / 2, y, (b.z0 + b.z1) / 2); o.receiveShadow = true; group.add(o); return o; };
@@ -207,55 +233,78 @@ export function buildCountry({ scene, group, asphaltMat, grassMat, sign, natural
   signPair('🚀 MONDRAKETE – zu Fuss hin, X', '#111827', '#facc15', 10, 1.5, SPACE.x - 12, 3, SPACE.z - SPACE.r + 2, 0);
   signPair('🚀 RAUMBAHNHOF', '#111827', '#facc15', 8, 1.5, 300, 4, 205, -Math.PI / 2);
 
-  // ===== Skigebiet: Sessellift, Skihütte, Skifahrer =====
-  const ground = (x, z) => Math.max(passTerrain(x, z, natural(x, z)), passGround(x, z));
-  const towers = [], n = Math.ceil(Math.hypot(LIFT_B.x - LIFT_A.x, LIFT_B.z - LIFT_A.z) / 55);
-  for (let k = 0; k <= n; k++) {
-    let f = k / n; // Masten nicht auf die Strasse: nötigenfalls ein Stück verschieben
-    for (const df of [0, 0.03, -0.03, 0.06, -0.06, 0.09, -0.09]) {
-      const g = Math.min(1, Math.max(0, k / n + df));
-      if (passNearest(LIFT_A.x + (LIFT_B.x - LIFT_A.x) * g, LIFT_A.z + (LIFT_B.z - LIFT_A.z) * g).d > 14) { f = g; break; }
+  // ===== Skigebiet Schneeberg (im Autobahn-Ring) =====
+  const ground = (x, z) => Math.max(passTerrain(x, z, natural(x, z)), passGround(x, z)); // am Pass (feines Gelände)
+  const H = (x, z) => height(x, z); // Gelände der Welt (mit dem Schneeberg)
+  out.lifts = [];
+  const seatMs = {}, barM = M(0x374151);
+  for (const L of LIFTS) {
+    const dx = L.B.x - L.A.x, dz = L.B.z - L.A.z, dl = Math.hypot(dx, dz), n = Math.max(2, Math.ceil(dl / 50)), towers = [];
+    for (let k = 0; k <= n; k++) { const x = L.A.x + dx * k / n, z = L.A.z + dz * k / n, y = H(x, z);
+      add(new THREE.CylinderGeometry(0.35, 0.5, 11, 8), grey, x, y + 5.5, z); const arm = add(new THREE.BoxGeometry(0.4, 0.4, 5), grey, x, y + 11, z); arm.rotation.y = -Math.atan2(dz, dx);
+      towers.push({ x, y: y + 11, z }); }
+    const sx = -dz / dl * 2.2, sz = dx / dl * 2.2, cableM = new THREE.LineBasicMaterial({ color: 0x222222 });
+    for (const sd of [1, -1]) group.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(towers.map(t => new THREE.Vector3(t.x + sx * sd, t.y, t.z + sz * sd))), cableM));
+    const seatM = seatMs[L.color] || (seatMs[L.color] = M(L.color)), chairs = [];
+    const nc = Math.round(dl / 22);
+    for (let k = 0; k < nc; k++) { const c = new THREE.Group(); scene.add(c);
+      add(new THREE.BoxGeometry(0.05, 2.2, 0.05), barM, 0, -1.1, 0, c); add(new THREE.BoxGeometry(1.6, 0.15, 0.8), seatM, 0, -2.2, 0, c); add(new THREE.BoxGeometry(1.6, 0.8, 0.12), seatM, 0, -1.8, -0.4, c);
+      chairs.push({ mesh: c, u: k / nc }); }
+    // Stationen unten und oben
+    for (const [P, top] of [[L.A, false], [L.B, true]]) { const y = H(P.x, P.z), ang = -Math.atan2(dz, dx);
+      const hut = add(new THREE.BoxGeometry(7, 4, 6), wood, P.x - dx / dl * 5 * (top ? -1 : 1), y + 2, P.z - dz / dl * 5 * (top ? -1 : 1)); hut.rotation.y = ang;
+      const rf = add(new THREE.BoxGeometry(8, 0.5, 7), M(0xf8fafc), hut.position.x, y + 4.2, hut.position.z); rf.rotation.y = ang; }
+    signPair(L.name + (L === LIFTS[0] ? ' – X' : ''), '#1d4ed8', '#ffffff', 7, 1.2, L.A.x - sx * 3, H(L.A.x, L.A.z) + 6, L.A.z - sz * 3, 0);
+    out.lifts.push({ ...L, towers, sx, sz, chairs, len: dl });
+  }
+  // Pisten: Stangen in der Pistenfarbe links und rechts, Schild oben
+  const poleGeo = new THREE.CylinderGeometry(0.06, 0.06, 1.6, 6);
+  for (const P of PISTES) {
+    const pm = M(P.color), pts = [];
+    for (let k = 0; k < P.pts.length - 1; k++) { const [ax, az] = P.pts[k], [bx, bz] = P.pts[k + 1], len = Math.hypot(bx - ax, bz - az);
+      for (let d = 0; d < len; d += 22) { const t = d / len, x = ax + (bx - ax) * t, z = az + (bz - az) * t, nx = -(bz - az) / len, nz = (bx - ax) / len;
+        for (const sd of [-1, 1]) pts.push([x + nx * sd * 10, z + nz * sd * 10]); } }
+    const inst = new THREE.InstancedMesh(poleGeo, pm, pts.length), d0 = new THREE.Object3D();
+    pts.forEach(([x, z], k) => { d0.position.set(x, H(x, z) + 0.8, z); d0.updateMatrix(); inst.setMatrixAt(k, d0.matrix); }); scene.add(inst);
+    const [x0, z0] = P.pts[0]; signPair(P.name, P.color === 0x111827 ? '#111827' : '#' + P.color.toString(16).padStart(6, '0'), '#ffffff', 5.5, 1.1, x0, H(x0, z0) + 3, z0, 0);
+  }
+  // Dorf unten: Belag, Skischule, Restaurant oben, grosses Schild, Tannen am Berg (nicht auf Pisten und Liften)
+  flat(SKI_BASE, asphaltMat, 0.035); flat(SKI_ROAD, asphaltMat, 0.035);
+  signPair('⛷️ SKIGEBIET ↓', '#0e7490', '#ffffff', 6, 1.2, 365, 4, 492, Math.PI / 2);
+  const chalet = (x, z, text, w = 14) => { const y = H(x, z);
+    add(new THREE.BoxGeometry(w, 5, 9), wood, x, y + 2.5, z);
+    const rf = add(new THREE.ConeGeometry(w * 0.72, 4, 4), M(0xf8fafc), x, y + 7, z); rf.rotation.y = Math.PI / 4; rf.scale.z = 9 / w;
+    signPair(text, '#7c2d12', '#ffffff', w * 0.7, 1.4, x, y + 5.6, z - 4.8, 0); };
+  chalet(360, 1235, '🎿 SKISCHULE'); chalet(480, 1235, '☕ RESTAURANT'); chalet(430, 1612, '⛷️ BERGRESTAURANT', 16);
+  signPair('⛷️ SKIGEBIET SCHNEEBERG', '#0e7490', '#ffffff', 14, 2.2, 420, 9, 1212, 0);
+  {
+    const rnd = (() => { let q = 21; return () => (q = (q * 16807) % 2147483647) / 2147483647; })(), firs = [];
+    for (let tries = 0; tries < 3000 && firs.length < 260; tries++) {
+      const a = rnd() * Math.PI * 2, r = 60 + rnd() * (SKI.r - 40), x = SKI.x + Math.cos(a) * r, z = SKI.z + Math.sin(a) * r;
+      if (pisteDist(x, z) < 20 || LIFTS.some(L => { const lx = L.B.x - L.A.x, lz = L.B.z - L.A.z, t = Math.max(0, Math.min(1, ((x - L.A.x) * lx + (z - L.A.z) * lz) / (lx * lx + lz * lz))); return Math.hypot(x - L.A.x - lx * t, z - L.A.z - lz * t) < 12; }) || H(x, z) > 125) continue;
+      firs.push([x, H(x, z), z, 0.7 + rnd() * 0.7]);
     }
-    const x = LIFT_A.x + (LIFT_B.x - LIFT_A.x) * f, z = LIFT_A.z + (LIFT_B.z - LIFT_A.z) * f, y = ground(x, z);
-    add(new THREE.CylinderGeometry(0.35, 0.5, 11, 8), grey, x, y + 5.5, z);
-    const arm = add(new THREE.BoxGeometry(0.4, 0.4, 5), grey, x, y + 11, z); arm.rotation.y = -Math.atan2(LIFT_B.z - LIFT_A.z, LIFT_B.x - LIFT_A.x);
-    towers.push({ x, y: y + 11, z });
+    const cone = new THREE.ConeGeometry(2, 6, 8).translate(0, 3.8, 0), fm = new THREE.InstancedMesh(cone, M(0xffffff, { flatShading: true }), firs.length), tr = new THREE.InstancedMesh(new THREE.CylinderGeometry(0.25, 0.3, 1.2, 6).translate(0, 0.6, 0), M(0x5b4030), firs.length), d0 = new THREE.Object3D(), col = new THREE.Color();
+    firs.forEach(([x, y, z, sc], k) => { d0.position.set(x, y - 0.2, z); d0.scale.setScalar(sc); d0.updateMatrix(); fm.setMatrixAt(k, d0.matrix); tr.setMatrixAt(k, d0.matrix); fm.setColorAt(k, col.setHex(0x2f5d2a).lerp(new THREE.Color(0xeef2f7), 0.45)); });
+    fm.castShadow = true; scene.add(fm, tr);
+    out.skiRound = firs.map(([x, , z, sc]) => ({ x, z, r: 0.45 * sc, h: 7 * sc }));
   }
-  const dirX = (LIFT_B.x - LIFT_A.x), dirZ = (LIFT_B.z - LIFT_A.z), dl = Math.hypot(dirX, dirZ), sx = -dirZ / dl * 2.2, sz = dirX / dl * 2.2;
-  const cableM = new THREE.LineBasicMaterial({ color: 0x222222 });
-  for (const s of [1, -1]) group.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(towers.map(t => new THREE.Vector3(t.x + sx * s, t.y, t.z + sz * s))), cableM));
-  out.lift = { towers, sx, sz };
-  const seatM = M(0x2563eb), barM = M(0x374151);
-  for (let k = 0; k < 18; k++) {
-    const c = new THREE.Group(); scene.add(c);
-    add(new THREE.BoxGeometry(0.05, 2.2, 0.05), barM, 0, -1.1, 0, c); add(new THREE.BoxGeometry(1.6, 0.15, 0.8), seatM, 0, -2.2, 0, c); add(new THREE.BoxGeometry(1.6, 0.8, 0.12), seatM, 0, -1.8, -0.4, c);
-    out.chairs.push({ mesh: c, u: k / 18 });
-  }
-  for (const [p, text, bg] of [[LIFT_A, '🚡 SESSELLIFT', '#1d4ed8'], [LIFT_B, '⛷️ SKIHÜTTE', '#7c2d12']]) {
-    let hx = p.x, hz = p.z, bestD = -1; // Hütte neben der Station, möglichst weit weg von der Strasse
-    for (let a = 0; a < 8; a++) { const x = p.x + Math.cos(a * Math.PI / 4) * 13, z = p.z + Math.sin(a * Math.PI / 4) * 13, d = passNearest(x, z).d; if (d > bestD) { bestD = d; hx = x; hz = z; } }
-    const y = ground(hx, hz);
-    const hut = add(new THREE.BoxGeometry(9, 4, 7), wood, hx, y + 2, hz); hut.rotation.y = -Math.atan2(dirZ, dirX);
-    const rf = add(new THREE.ConeGeometry(7, 3, 4), M(0xf8fafc), hx, y + 5.5, hz); rf.rotation.y = Math.PI / 4 - Math.atan2(dirZ, dirX);
-    signPair(text, bg, '#ffffff', 6, 1.2, hx, y + 7.8, hz, 0);
-  }
-  if (makePerson) for (let k = 0; k < 9; k++) {
-    const pm = makePerson(colors[k % 5], 0x1b1b1b, 0xf2c9a0);
+  if (makePerson) for (const [pi, P] of PISTES.entries()) for (let k = 0; k < 2; k++) { // Skifahrer auf den Pisten
+    const pm = makePerson(colors[(pi * 2 + k) % 5], 0x1b1b1b, 0xf2c9a0);
     add(new THREE.BoxGeometry(1.7, 0.05, 0.12), M(0x111827), 0, 0.03, -0.12, pm); add(new THREE.BoxGeometry(1.7, 0.05, 0.12), M(0x111827), 0, 0.03, 0.12, pm);
     pm.userData.legs.forEach(l => { l.rotation.z = 0.35; }); pm.userData.arms.forEach(a => { a.rotation.z = 0.5; });
-    scene.add(pm);
-    out.skiers.push({ mesh: pm, u: k / 9, side: (k % 2 ? 1 : -1) * (8 + k * 2), ph: k });
+    pm.traverse(o => { o.castShadow = false; }); scene.add(pm);
+    out.skiers.push({ mesh: pm, P, u: k / 2 + Math.random() * 0.2, ph: pi * 3 + k, H });
   }
   out.ground = ground;
   // Am Berg: Tannen (oben verschneit), Felsen, rot-weisse Schneestangen und Schneewälle an der Strasse
   {
     const rnd = (() => { let q = 7; return () => (q = (q * 16807) % 2147483647) / 2147483647; })();
-    const lx = LIFT_B.x - LIFT_A.x, lz = LIFT_B.z - LIFT_A.z, ll = Math.hypot(lx, lz);
-    const pisteD = (x, z) => { const t = Math.max(0, Math.min(1, ((x - LIFT_A.x) * lx + (z - LIFT_A.z) * lz) / (ll * ll))); return Math.hypot(x - LIFT_A.x - lx * t, z - LIFT_A.z - lz * t); };
+
     const firs = [], rocks = [];
     for (let tries = 0; tries < 6000 && firs.length < 520; tries++) {
       const x = -400 + rnd() * 800, z = -1100 + rnd() * 790;
-      if (passNearest(x, z).d < 12 || Math.hypot(x - SUMMIT.x, z - SUMMIT.z) < SUMMIT.r + 8 || pisteD(x, z) < 48) continue; // nicht auf Strasse, Gipfel, Piste
+      if (passNearest(x, z).d < 12 || Math.hypot(x - SUMMIT.x, z - SUMMIT.z) < SUMMIT.r + 8 || false) continue; // nicht auf Strasse, Gipfel, Piste
       const y = ground(x, z);
       if (y > 118) continue; // ganz oben wächst nichts
       if (rnd() < 0.18) rocks.push([x, y, z, 0.8 + rnd() * 2.2]); else firs.push([x, y, z, 0.7 + rnd() * 0.8]);
@@ -360,25 +409,23 @@ export function stepCountry(C, dt, { t, me, cam, tractor, onBale }) {
     if (b.gone > 0) { if ((b.gone -= dt) <= 0) b.mesh.visible = true; continue; }
     if (tractor && Math.hypot(me.x - b.x, me.z - b.z) < 3) { b.gone = 120; b.mesh.visible = false; onBale(); }
   }
-  if (C.lift && near(LIFT_A.x, (LIFT_A.z + LIFT_B.z) / 2, 700)) {
-    const T = C.lift.towers, n = T.length - 1;
-    const at = (u, s) => { // u 0…1 entlang der Seile, s = 1 hinauf, −1 hinunter
-      const f = Math.min(n - 1e-6, u * n), k = Math.floor(f), w = f - k, a = T[k], b = T[k + 1];
-      return [a.x + (b.x - a.x) * w + C.lift.sx * s, a.y + (b.y - a.y) * w - 0.2, a.z + (b.z - a.z) * w + C.lift.sz * s];
-    };
-    const ry = -Math.atan2(T[n].z - T[0].z, T[n].x - T[0].x) + Math.PI / 2;
-    for (const ch of C.chairs) {
-      ch.u = (ch.u + dt * 0.012) % 1;
-      const up = ch.u < 0.5, [x, y, z] = at(up ? ch.u * 2 : 2 - ch.u * 2, up ? 1 : -1);
-      ch.mesh.position.set(x, y, z); ch.mesh.rotation.y = ry + (up ? 0 : Math.PI);
+  if (C.lifts && near(SKI.x, SKI.z, 900)) {
+    for (const L of C.lifts) {
+      const T = L.towers, n = T.length - 1, ry = -Math.atan2(L.B.z - L.A.z, L.B.x - L.A.x) + Math.PI / 2;
+      for (const ch of L.chairs) {
+        ch.u = (ch.u + dt * 3 / L.len) % 1;
+        const up = ch.u < 0.5, u = up ? ch.u * 2 : 2 - ch.u * 2, sd = up ? 1 : -1;
+        const f = Math.min(n - 1e-6, u * n), k = Math.floor(f), w = f - k, a = T[k], b = T[k + 1];
+        ch.mesh.position.set(a.x + (b.x - a.x) * w + L.sx * sd, a.y + (b.y - a.y) * w - 0.2, a.z + (b.z - a.z) * w + L.sz * sd); ch.mesh.rotation.y = ry + (up ? 0 : Math.PI);
+      }
     }
-    for (const s of C.skiers) { // von der Berg- zur Talstation im Zickzack
-      s.u = (s.u + dt * 0.012) % 1;
-      const bx = LIFT_B.x + (LIFT_A.x - LIFT_B.x) * s.u, bz = LIFT_B.z + (LIFT_A.z - LIFT_B.z) * s.u, dl = Math.hypot(LIFT_A.x - LIFT_B.x, LIFT_A.z - LIFT_B.z);
-      const px = -(LIFT_A.z - LIFT_B.z) / dl, pz = (LIFT_A.x - LIFT_B.x) / dl, wig = Math.sin(s.u * 40 + s.ph) * 14, side = s.side + wig;
-      const x = bx + px * (side + 30), z = bz + pz * (side + 30);
-      const dw = Math.cos(s.u * 40 + s.ph) * 14 * 40 / dl, h = Math.atan2(LIFT_A.z - LIFT_B.z + pz * dw * dl, LIFT_A.x - LIFT_B.x + px * dw * dl);
-      s.mesh.position.set(x, C.ground(x, z) + 0.05, z); s.mesh.rotation.y = -h; s.mesh.rotation.x = Math.sin(s.u * 40 + s.ph) * 0.25;
+    for (const s of C.skiers) { // den Pisten entlang hinunter, mit Bögen
+      const P = s.P.pts, segs = P.length - 1;
+      s.u += dt * 0.025; if (s.u >= 1) s.u = 0;
+      const f = s.u * segs, k = Math.min(segs - 1, Math.floor(f)), w = f - k, [ax, az] = P[k], [bx, bz] = P[k + 1], len = Math.hypot(bx - ax, bz - az);
+      const nx = -(bz - az) / len, nz = (bx - ax) / len, wig = Math.sin(s.u * 60 + s.ph) * 6, x = ax + (bx - ax) * w + nx * wig, z = az + (bz - az) * w + nz * wig;
+      const h = Math.atan2(bz - az, bx - ax) + Math.cos(s.u * 60 + s.ph) * 0.6;
+      s.mesh.position.set(x, s.H(x, z) + 0.05, z); s.mesh.rotation.y = -h; s.mesh.rotation.x = Math.sin(s.u * 60 + s.ph) * 0.25;
     }
   }
   if (C.boat && C.boat.userData.body) C.boat.userData.body.rotation.z = Math.sin(t * 1.3) * 0.03; // schaukelt
