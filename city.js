@@ -314,6 +314,53 @@ function wallBox(w, h, d, mat, tile = 12) {
   return m;
 }
 
+// Runde Häuser: Grundriss als Rechteck w × d mit runden Ecken (rad je Ecke: [+x+z, −x+z, −x−z, +x−z]) …
+function roundRectPts(w, d, rad, seg = 7) {
+  const pts = [], C = [[1, 1], [-1, 1], [-1, -1], [1, -1]];
+  C.forEach(([sx, sz], k) => {
+    const R = rad[k], cx = sx * (w / 2 - R), cz = sz * (d / 2 - R), a0 = k * Math.PI / 2;
+    if (R < 0.01) { pts.push([sx * w / 2, sz * d / 2]); return; }
+    for (let i = 0; i <= seg; i++) { const a = a0 + i / seg * Math.PI / 2; pts.push([cx + Math.cos(a) * R, cz + Math.sin(a) * R]); }
+  });
+  return pts;
+}
+const circlePts = (R, n = 28) => Array.from({ length: n }, (_, i) => [Math.cos(i / n * Math.PI * 2) * R, Math.sin(i / n * Math.PI * 2) * R]);
+// … und daraus eine Wand der Höhe h (Fassade läuft um die Rundung herum, tile = Meter pro Bildkachel), cap = Deckel oben
+function prism(pts, h, material, tile = 12, cap = false) {
+  const n = pts.length, pos = [], nor = [], uv = [];
+  const sn = pts.map((p, i) => { // Normale je Wandstück, nach aussen
+    const q = pts[(i + 1) % n]; let nx = q[1] - p[1], nz = p[0] - q[0]; const l = Math.hypot(nx, nz) || 1; nx /= l; nz /= l;
+    if (nx * (p[0] + q[0]) + nz * (p[1] + q[1]) < 0) { nx = -nx; nz = -nz; }
+    return [nx, nz];
+  });
+  const vn = (i, j) => { const a = sn[i], b = sn[j]; if (a[0] * b[0] + a[1] * b[1] < 0.8) return a; const x = a[0] + b[0], z = a[1] + b[1], l = Math.hypot(x, z); return [x / l, z / l]; };
+  let u = 0;
+  for (let i = 0; i < n; i++) {
+    const p = pts[i], q = pts[(i + 1) % n], len = Math.hypot(q[0] - p[0], q[1] - p[1]), u1 = u + len / tile, v = h / tile;
+    const np = vn(i, (i - 1 + n) % n), nq = vn(i, (i + 1) % n);
+    let A = [p, np, u], B = [q, nq, u1];
+    if (-(q[1] - p[1]) * sn[i][0] + (q[0] - p[0]) * sn[i][1] < 0) { const t = A; A = B; B = t; } // Dreiecke von aussen sichtbar
+    for (const [V, y] of [[A, 0], [B, 0], [B, h], [A, 0], [B, h], [A, h]]) {
+      pos.push(V[0][0], y, V[0][1]); nor.push(V[1][0], 0, V[1][1]); uv.push(V[2], y / tile);
+    }
+    u = u1;
+  }
+  if (cap) {
+    const tri = THREE.ShapeUtils.triangulateShape(pts.map(([x, z]) => new THREE.Vector2(x, z)), []);
+    for (const t of tri) {
+      const [a, b, c] = t.map(k => pts[k]), up = (b[0] - a[0]) * (c[1] - a[1]) - (b[1] - a[1]) * (c[0] - a[0]) < 0; // Normale nach oben?
+      for (const P of up ? [a, b, c] : [a, c, b]) { pos.push(P[0], h, P[1]); nor.push(0, 1, 0); uv.push(P[0] / tile, P[1] / tile); }
+    }
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  g.setAttribute('normal', new THREE.Float32BufferAttribute(nor, 3));
+  g.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
+  const m = new THREE.Mesh(g, material);
+  m.castShadow = m.receiveShadow = true;
+  return m;
+}
+
 // ---------- Stadt bauen ----------
 function buildWorld() {
   const renderer = new THREE.WebGLRenderer({ antialias: true });
@@ -889,6 +936,8 @@ function buildWorld() {
     .map(([wall, frame]) => facadeMat(facade(wall, frame, r), 1));
   const block = 50, inner = 44, curbMat = mat({ color: 0xc9ccd1, roughness: 0.9 });
   const trees = [];
+  const shapeR = rng(4711); // Formen der Häuser (rund, Turm, weiche Kanten)
+  const copper = mat({ color: 0x5f9e88, metalness: 0.55, roughness: 0.45 }), slate = mat({ color: 0x3b4252, metalness: 0.3, roughness: 0.6 });
   for (let bi = 0; bi < N; bi++) for (let bj = 0; bj < N; bj++) {
     const cx = (node(bi) + node(bi + 1)) / 2, cz = (node(bj) + node(bj + 1)) / 2;
     const slab = new THREE.Mesh(new THREE.BoxGeometry(block, 0.16, block), paveMat);
@@ -946,24 +995,60 @@ function buildWorld() {
     for (const ox of [-11, 11]) for (const oz of [-11, 11]) {
       const w = 14 + r() * 5, d = 14 + r() * 5, hgt = 7 + r() * (8 + 42 * Math.max(0, center) ** 1.4);
       const bx = cx + ox, bz = cz + oz;
-      // Läden im Erdgeschoss (zur Strasse): Schaufenster und farbige Markise; niedrigere Häuser mit Balkonen
       const sx = Math.sign(ox), sz = Math.sign(oz);
-      shops.push([bx + sx * (w / 2 + 0.05), bz, d - 3, Math.PI / 2], [bx, bz + sz * (d / 2 + 0.05), w - 3, 0]);
-      if (hgt < 26) for (let fy = 4.6; fy < hgt - 1.5; fy += 3.2) for (const f of [-0.3, 0, 0.3]) {
-        balcs.push([bx + sx * (w / 2 + 0.55), 0.16 + fy, bz + f * d, Math.PI / 2, sx], [bx + f * w, 0.16 + fy, bz + sz * (d / 2 + 0.55), 0, sz]);
+      // Form (eigener Zufall, damit Grösse, Höhe und die Schlüssel auf den Dächern gleich bleiben):
+      // tower = runder Turm mit Kuppel, corner = runde Ecke zur Kreuzung, soft = weiche Kanten, box = wie früher
+      const rk = shapeR(), mn = Math.min(w, d), Rc = Math.min(mn * 0.42, mn - 8.5);
+      const shape = hgt > 20 && hgt < 46 && rk < 0.2 ? 'tower' : rk < 0.5 && Rc > 3 ? 'corner' : rk < 0.78 ? 'soft' : 'box';
+      const ck = sx > 0 ? (sz > 0 ? 0 : 3) : (sz > 0 ? 1 : 2), RS = 2.2;
+      const radii = shape === 'corner' ? [0, 1, 2, 3].map(k => (k === ck ? Rc : 0)) : [RS, RS, RS, RS];
+      // Läden im Erdgeschoss (zur Strasse): Schaufenster und farbige Markise; niedrigere Häuser mit Balkonen
+      // (an runden Ecken kürzer, damit nichts in der Luft hängt)
+      if (shape === 'corner') shops.push([bx + sx * (w / 2 + 0.05), bz + sz * (1.2 - Rc) / 2, d - Rc - 1.8, Math.PI / 2], [bx + sx * (1.2 - Rc) / 2, bz + sz * (d / 2 + 0.05), w - Rc - 1.8, 0]);
+      else if (shape === 'soft') shops.push([bx + sx * (w / 2 + 0.05), bz, d - 2 * RS - 1, Math.PI / 2], [bx, bz + sz * (d / 2 + 0.05), w - 2 * RS - 1, 0]);
+      else if (shape === 'box') shops.push([bx + sx * (w / 2 + 0.05), bz, d - 3, Math.PI / 2], [bx, bz + sz * (d / 2 + 0.05), w - 3, 0]);
+      const fitsX = f => shape === 'box' || (shape === 'soft' ? Math.abs(f) * d + 1.2 < d / 2 - RS : f * sz * d + 1.2 < d / 2 - Rc);
+      const fitsZ = f => shape === 'box' || (shape === 'soft' ? Math.abs(f) * w + 1.2 < w / 2 - RS : f * sx * w + 1.2 < w / 2 - Rc);
+      if (hgt < 26 && shape !== 'tower') for (let fy = 4.6; fy < hgt - 1.5; fy += 3.2) for (const f of [-0.3, 0, 0.3]) {
+        if (fitsX(f)) balcs.push([bx + sx * (w / 2 + 0.55), 0.16 + fy, bz + f * d, Math.PI / 2, sx]);
+        if (fitsZ(f)) balcs.push([bx + f * w, 0.16 + fy, bz + sz * (d / 2 + 0.55), 0, sz]);
       }
-      const b = wallBox(w, hgt, d, walls[Math.floor(r() * walls.length)]);
-      b.position.set(bx, 0.16 + hgt / 2, bz);
-      decor.add(b);
-      const roof = new THREE.Mesh(new THREE.BoxGeometry(w + 0.5, 0.6, d + 0.5), roofMat); // Dach mit Rand
-      roof.position.set(bx, 0.16 + hgt + 0.3, bz); roof.castShadow = true;
-      decor.add(roof);
+      const wm = walls[Math.floor(r() * walls.length)], R = mn / 2;
+      let topH = 2;
+      if (shape === 'box') {
+        const b = wallBox(w, hgt, d, wm);
+        b.position.set(bx, 0.16 + hgt / 2, bz);
+        decor.add(b);
+        const roof = new THREE.Mesh(new THREE.BoxGeometry(w + 0.5, 0.6, d + 0.5), roofMat); // Dach mit Rand
+        roof.position.set(bx, 0.16 + hgt + 0.3, bz); roof.castShadow = true;
+        decor.add(roof);
+      } else if (shape === 'tower') {
+        const b = prism(circlePts(R), hgt, wm); b.position.set(bx, 0.16, bz); decor.add(b);
+        const ring = prism(circlePts(R + 0.35), 0.6, roofMat, 12, true); ring.position.set(bx, 0.16 + hgt, bz); decor.add(ring);
+        const dome = shapeR() < 0.55;
+        const top = new THREE.Mesh(dome ? new THREE.SphereGeometry(R * 0.95, 28, 12, 0, Math.PI * 2, 0, Math.PI / 2) : new THREE.ConeGeometry(R * 0.98, R * 1.3, 28),
+          dome ? copper : slate);
+        top.position.set(bx, 0.16 + hgt + 0.6 + (dome ? 0 : R * 0.65), bz); top.castShadow = true; decor.add(top);
+        topH = 0.6 + (dome ? R * 0.95 : R * 1.3);
+        const spire = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.12, 3, 6), metal); spire.position.set(bx, 0.16 + hgt + topH + 1.4, bz); decor.add(spire);
+      } else {
+        const b = prism(roundRectPts(w, d, radii), hgt, wm); b.position.set(bx, 0.16, bz); decor.add(b);
+        const roof = prism(roundRectPts(w + 0.5, d + 0.5, radii.map(q => (q ? q + 0.25 : 0))), 0.6, roofMat, 12, true);
+        roof.position.set(bx, 0.16 + hgt, bz); decor.add(roof);
+      }
       if (r() < 0.6) { // Lüftung oder Wassertank auf dem Dach
-        const a = new THREE.Mesh(new THREE.BoxGeometry(2 + r() * 2, 1.2, 2 + r() * 2), metal);
-        a.position.set(bx + (r() - 0.5) * (w - 5), 0.16 + hgt + 1.2, bz + (r() - 0.5) * (d - 5)); a.castShadow = true;
-        decor.add(a);
+        const a = new THREE.Mesh(new THREE.BoxGeometry(2 + r() * 2, 1.2, 2 + r() * 2), metal), k = shape === 'corner' ? 0.45 : 1;
+        a.position.set(bx + (r() - 0.5) * (w - 5) * k, 0.16 + hgt + 1.2, bz + (r() - 0.5) * (d - 5) * k); a.castShadow = true;
+        if (shape !== 'tower') decor.add(a);
       }
-      solid.push({ x0: bx - w / 2, x1: bx + w / 2, z0: bz - d / 2, z1: bz + d / 2, h: hgt + 2 });
+      if (shape === 'tower') { // rund: Kreis; dazu ein Quadrat im Kreis (Dach für Schlüssel und Landen beim Fliegen)
+        round.push({ x: bx, z: bz, r: R, h: hgt + 2 });
+        solid.push({ x0: bx - R * 0.7, x1: bx + R * 0.7, z0: bz - R * 0.7, z1: bz + R * 0.7, h: hgt + topH });
+      } else if (shape === 'corner') { // Rechteck ohne die Ecke, dazu zwei Teile: Streifen und Viertelkreis
+        solid.push({ x0: bx - w / 2, x1: bx + w / 2, z0: sz > 0 ? bz - d / 2 : bz - d / 2 + Rc, z1: sz > 0 ? bz + d / 2 - Rc : bz + d / 2, h: hgt + 2 });
+        solid.push({ x0: sx > 0 ? bx - w / 2 : bx - w / 2 + Rc, x1: sx > 0 ? bx + w / 2 - Rc : bx + w / 2, z0: sz > 0 ? bz + d / 2 - Rc : bz - d / 2, z1: sz > 0 ? bz + d / 2 : bz - d / 2 + Rc, h: hgt + 2 });
+        round.push({ x: bx + sx * (w / 2 - Rc), z: bz + sz * (d / 2 - Rc), r: Rc, h: hgt + 2 });
+      } else solid.push({ x0: bx - w / 2, x1: bx + w / 2, z0: bz - d / 2, z1: bz + d / 2, h: hgt + 2 });
     }
   }
 

@@ -18,6 +18,9 @@ Browser-Spiel ohne Build: `index.html` + `game.js` (Spiellogik, Menüs und 2D-Ze
   Beim Bauen `warpStatic` (Formen und Instanzen mit Weltkoordinaten am Ursprung, lange Dreiecke geteilt), jedes Bild
   `warpFrame`/`unwarpFrame` in `render` (alles mit eigener Lage kurz verschieben); `userData.noWarp` = nicht verbiegen.
   Neue Effekte mit Weltkoordinaten (wie Rauch/Bremsspuren in `S.fx`) selbst mit `warpXZ` verschieben; Minikarte über `mp`.
+  Runde Häuser: `roundRectPts`/`circlePts` + `prism` (Wand mit Fassade rundherum); Form per eigenem Zufall `shapeR`
+  (Grösse/Höhe und damit die Dach-Schlüssel bleiben gleich): Turm mit Kuppel/Spitzdach (Kreis in `round` + Quadrat in `solid`),
+  runde Ecke zur Kreuzung (zwei Rechtecke + Viertelkreis), weiche Kanten, Kasten.
   Drehung: `warpDir` dreht genau in die eigene Blickrichtung (sonst stehen Autos schief zur gebogenen Strasse).
   Karte: rund, Ausschnitt um den Spieler, vorne = oben (`drawMinimap`, Inhalt in `drawMapContent` auf `S.mapFull`);
   antippen = ganze Karte gross (`city.bigMap`).
