@@ -14,6 +14,10 @@ Browser-Spiel ohne Build: `index.html` + `game.js` (Spiellogik, Menüs und 2D-Ze
   Normale Autos (Limousine, Kompakt, Kombi, Sport, Coupé, SUV, Schrägheck, Pickup) haben eine echte Karosserie
   (`REAL` + `realBody`: Querschnitte, Radkästen, Kabine mit Säulen, gemalte Front/Heck); `{ classic: true }` = alte Kastenform.
 - `city.js`: 3D-Stadt zum freien Herumfahren (Strassengitter, Häuser, Parks, Ampeln, Verkehr mit Abbiegen und Halten).
+  Geschwungene Strassen: gerechnet wird im geraden Gitter, nur das Bild wird verbogen (`warpXZ`/`warpRot`, null am Ring ±HALF).
+  Beim Bauen `warpStatic` (Formen und Instanzen mit Weltkoordinaten am Ursprung, lange Dreiecke geteilt), jedes Bild
+  `warpFrame`/`unwarpFrame` in `render` (alles mit eigener Lage kurz verschieben); `userData.noWarp` = nicht verbiegen.
+  Neue Effekte mit Weltkoordinaten (wie Rauch/Bremsspuren in `S.fx`) selbst mit `warpXZ` verschieben; Minikarte über `mp`.
   Testen: `startCityMode()`, dann `window.__city()` (`me`, `cars`, `input`). 🚪/X: aussteigen und zu Fuss gehen (`city.walk`),
   einsteigen ins eigene Auto oder in eines der eigenen Base.
   Polizei nur nach einem Blitzer: Rotlicht-Kamera an jeder zehnten Ampel (`S.redCams`) oder Radarkasten (`S.speedCams`,

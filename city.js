@@ -36,7 +36,126 @@ const POOL = ('car mini kombi kompakt taxi police van delivery pickup hatch coup
 const COLORS = ['#c0392b', '#2563eb', '#f4f4f4', '#22232b', '#9aa0aa', '#16a34a', '#f59e0b', '#7c3aed', '#0e7490', '#b45309'];
 
 const node = i => (i - N / 2) * BLOCK;
-const inGrid = (i, j) => i >= 0 && i <= N && j >= 0 && j <= N;
+
+// ---------- Stadt wie gewachsen: geschwungene Strassen, schiefe Blöcke ----------
+// Gerechnet wird weiter im geraden Gitter (Verkehr, Zusammenstösse, Zonen); nur beim Zeichnen wird alles verbogen:
+// warpXZ schiebt einen Punkt, warpRot dreht dort mit. Am Ring (±HALF) und draussen ist die Verbiegung null.
+const WB = t => { const a = Math.abs(t); return a >= HALF ? 0 : Math.cos(Math.PI * a / (2 * HALF)); };
+function warpXZ(x, z, out) {
+  const b = WB(x) * WB(z);
+  out.x = b ? x + b * (19 * Math.sin(z / 80 + 1.3) + 5 * Math.sin((x + z) / 55 + 0.7)) : x;
+  out.z = b ? z + b * (17 * Math.sin(x / 85 + 0.4) + 5 * Math.sin((x - z) / 60 + 2.1)) : z;
+  return out;
+}
+const _wa = { x: 0, z: 0 }, _wb = { x: 0, z: 0 };
+function warpRot(x, z) { // Drehung (um y, wie rotation.y) der Gegend um (x, z)
+  if (Math.abs(x) >= HALF || Math.abs(z) >= HALF) return 0;
+  warpXZ(x + 0.5, z, _wa); warpXZ(x - 0.5, z, _wb);
+  const t1 = Math.atan2(-(_wa.z - _wb.z), _wa.x - _wb.x);
+  warpXZ(x, z + 0.5, _wa); warpXZ(x, z - 0.5, _wb);
+  const t2 = Math.atan2(_wa.x - _wb.x, _wa.z - _wb.z);
+  return (t1 + t2) / 2;
+}
+const inWarp = (x, z) => Math.abs(x) < HALF && Math.abs(z) < HALF;
+const isIdent = o => o.position.x === 0 && o.position.z === 0 && o.rotation.x === 0 && o.rotation.y === 0 && o.rotation.z === 0;
+// Lange Dreiecke in der Stadt teilen (sonst wird eine 50 m lange Strasse nur an den Ecken verbogen)
+function splitGeo(g0, maxLen = 16) {
+  const g = g0.index ? g0.toNonIndexed() : g0.clone();
+  if (g.groups.length > 1) return g;
+  const names = Object.keys(g.attributes).filter(n => !g.attributes[n].isInterleavedBufferAttribute), A = names.map(n => g.attributes[n]);
+  const sz = A.map(a => a.itemSize), tot = sz.reduce((s, v) => s + v, 0), pOff = sz.slice(0, names.indexOf('position')).reduce((s, v) => s + v, 0);
+  const get = k => { const v = new Array(tot); let o = 0; A.forEach((a, q) => { for (let c = 0; c < sz[q]; c++) v[o++] = a.array[k * sz[q] + c]; }); return v; };
+  const out = [], push = v => { for (let i = 0; i < tot; i++) out.push(v[i]); };
+  const px = pOff, pz = pOff + 2, L = (u, v) => Math.hypot(u[px] - v[px], u[pz] - v[pz]), mid = (u, v) => u.map((x, i) => (x + v[i]) / 2);
+  const tri = (a, b, c, depth) => {
+    const ab = L(a, b), bc = L(b, c), ca = L(c, a), m = Math.max(ab, bc, ca);
+    const x0 = Math.min(a[px], b[px], c[px]), x1 = Math.max(a[px], b[px], c[px]), z0 = Math.min(a[pz], b[pz], c[pz]), z1 = Math.max(a[pz], b[pz], c[pz]);
+    if (m <= maxLen || depth > 9 || x0 >= HALF || x1 <= -HALF || z0 >= HALF || z1 <= -HALF) { push(a); push(b); push(c); return; }
+    if (m === ab) { const d = mid(a, b); tri(a, d, c, depth + 1); tri(d, b, c, depth + 1); }
+    else if (m === bc) { const d = mid(b, c); tri(a, b, d, depth + 1); tri(a, d, c, depth + 1); }
+    else { const d = mid(c, a); tri(a, b, d, depth + 1); tri(d, b, c, depth + 1); }
+  };
+  const n = g.attributes.position.count, P = g.attributes.position.array;
+  if (n % 3) return g;
+  const need = k => { // muss dieses Dreieck geteilt werden? (direkt aus den Zahlen, ohne Hilfslisten: geht schneller)
+    const ax = P[k * 3], az = P[k * 3 + 2], bx = P[k * 3 + 3], bz = P[k * 3 + 5], cx = P[k * 3 + 6], cz = P[k * 3 + 8];
+    if (Math.min(ax, bx, cx) >= HALF || Math.max(ax, bx, cx) <= -HALF || Math.min(az, bz, cz) >= HALF || Math.max(az, bz, cz) <= -HALF) return false;
+    return Math.max(Math.hypot(ax - bx, az - bz), Math.hypot(bx - cx, bz - cz), Math.hypot(cx - ax, cz - az)) > maxLen;
+  };
+  let any = false;
+  for (let k = 0; k < n && !any; k += 3) any = need(k);
+  if (!any) return g;
+  const raw = k => { for (let q = 0; q < A.length; q++) { const a = A[q].array, w = sz[q]; for (let c = 0; c < w; c++) out.push(a[k * w + c]); } };
+  for (let k = 0; k < n; k += 3) if (need(k)) tri(get(k), get(k + 1), get(k + 2), 0); else { raw(k); raw(k + 1); raw(k + 2); }
+  const cnt = out.length / tot, res = new THREE.BufferGeometry();
+  let o = 0;
+  A.forEach((a, q) => {
+    const arr = new Float32Array(cnt * sz[q]);
+    for (let k = 0; k < cnt; k++) for (let c = 0; c < sz[q]; c++) arr[k * sz[q] + c] = out[k * tot + o + c];
+    res.setAttribute(names[q], new THREE.BufferAttribute(arr, sz[q], a.normalized));
+    o += sz[q];
+  });
+  return res;
+}
+// Einmal beim Bauen: alles, was mit Weltkoordinaten am Ursprung liegt (zusammengefasste Häuser, Strassen, Instanzen), verbiegen
+const _wm = new THREE.Matrix4(), _wr = new THREE.Matrix4(), _wt = new THREE.Matrix4();
+function warpStatic(o, skip, done = new Map()) {
+  if (skip.has(o) || !isIdent(o)) return; // eigene Lage: wird in jedem Bild verschoben (warpFrame)
+  if (o.isInstancedMesh) {
+    for (let k = 0; k < o.count; k++) {
+      o.getMatrixAt(k, _wm);
+      const x = _wm.elements[12], z = _wm.elements[14];
+      if (!inWarp(x, z)) continue;
+      const p = warpXZ(x, z, _wa);
+      _wt.makeTranslation(-x, 0, -z).premultiply(_wr.makeRotationY(warpRot(x, z)));
+      _wt.elements[12] += p.x; _wt.elements[14] += p.z;
+      o.setMatrixAt(k, _wm.premultiply(_wt));
+    }
+    o.instanceMatrix.needsUpdate = true;
+    o.computeBoundingSphere(); o.computeBoundingBox && o.computeBoundingBox();
+  } else if ((o.isMesh || o.isLine) && o.geometry && o.geometry.attributes.position) {
+    let g = o.geometry;
+    if (done.has(g)) { o.geometry = done.get(g); }
+    else {
+      g.computeBoundingBox();
+      const bb = g.boundingBox;
+      if (!(bb.min.x >= HALF || bb.max.x <= -HALF || bb.min.z >= HALF || bb.max.z <= -HALF)) {
+        const g2 = o.isMesh ? splitGeo(g) : g.clone(), P = g2.attributes.position, Nm = g2.attributes.normal;
+        for (let k = 0; k < P.count; k++) {
+          const x = P.getX(k), z = P.getZ(k);
+          if (!inWarp(x, z)) continue;
+          warpXZ(x, z, _wa); P.setX(k, _wa.x); P.setZ(k, _wa.z);
+          if (Nm && Math.abs(Nm.getY(k)) < 0.999) {
+            const t = warpRot(x, z), c = Math.cos(t), s = Math.sin(t), nx = Nm.getX(k), nz = Nm.getZ(k);
+            Nm.setX(k, c * nx + s * nz); Nm.setZ(k, -s * nx + c * nz);
+          }
+        }
+        g2.computeBoundingBox(); g2.computeBoundingSphere();
+        done.set(g, g2); o.geometry = g2;
+      } else done.set(g, g);
+    }
+  }
+  for (const c of o.children) warpStatic(c, skip, done);
+}
+// Jedes Bild: alles mit eigener Lage (Autos, Leute, Schilder ...) kurz verschieben und drehen, zeichnen, dann zurück
+const warpList = [];
+function warpFrame(root) {
+  for (const o of root.children) {
+    if (!o.visible || o.userData.noWarp) continue;
+    if (isIdent(o)) { if (o.children.length) warpFrame(o); continue; }
+    const x = o.position.x, z = o.position.z;
+    if (!inWarp(x, z)) continue;
+    warpList.push(o, x, z, o.rotation.y);
+    warpXZ(x, z, _wa); o.position.x = _wa.x; o.position.z = _wa.z; o.rotation.y += warpRot(x, z);
+  }
+}
+function unwarpFrame() {
+  for (let k = 0; k < warpList.length; k += 4) { const o = warpList[k]; o.position.x = warpList[k + 1]; o.position.z = warpList[k + 2]; o.rotation.y = warpList[k + 3]; }
+  warpList.length = 0;
+}
+const warpV = v => { if (inWarp(v.x, v.z)) { warpXZ(v.x, v.z, _wa); v.x = _wa.x; v.z = _wa.z; } return v; };
+
+const inGrid =(i, j) => i >= 0 && i <= N && j >= 0 && j <= N;
 const hasLights = (i, j) => !((i === 0 || i === N) && (j === 0 || j === N)); // Ecken: nur Kurve, keine Ampel
 const axisOf = d => (d % 2 === 0 ? 'x' : 'z');
 // Tempolimit einer Strasse (k: Nummer der Strasse): aussen der Ring 80, durch die Mitte (Platz) 30, sonst 50 km/h
@@ -946,6 +1065,10 @@ function buildWorld() {
   const clouds = cloudDome({ radius: 2600, coverage: 0.52, shade: '#aebccd', seed: 9 });
   clouds.layers.set(1);
   scene.add(clouds);
+  for (const o of [clouds, sun, sun.target]) o.userData.noWarp = true; // folgen der Kamera bzw. dem eigenen Auto (render)
+  const t0 = performance.now();
+  for (const o of [...scene.children]) warpStatic(o, new Set([sky, stars, clouds, land, landS]));
+  console.log('Stadt verbogen in', Math.round(performance.now() - t0), 'ms');
   warmUp(renderer, scene, camera);
   const flash = new THREE.Mesh(new THREE.SphereGeometry(0.6, 12, 8), new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0, depthWrite: false }));
   flash.visible = false;
@@ -4435,6 +4558,8 @@ function showMsg(text, secs = 1.6) {
 // Minikarte: Strassen grau, Parks grün, Brunnen blau, Autos weiss, du gelb
 const MAP = 190, mapScale = (MAP - 12) / (2 * (HALF + 12));
 const mx = x => MAP / 2 + x * mapScale;
+const _mp = { x: 0, z: 0 }, mp = (x, z) => warpXZ(x, z, _mp); // Karte zeigt die Stadt verbogen wie im Bild
+const mpx = (x, z) => mx(mp(x, z).x), mpz = (x, z) => mx(mp(x, z).z);
 function drawMinimapBase() {
   const c = document.createElement('canvas');
   c.width = c.height = MAP;
@@ -4442,16 +4567,20 @@ function drawMinimapBase() {
   for (const key of S.parks) {
     const [bi, bj] = key.split(',').map(Number);
     g.fillStyle = '#3f7d34';
-    g.fillRect(mx(node(bi) + 7), mx(node(bj) + 7), (BLOCK - 14) * mapScale, (BLOCK - 14) * mapScale);
+    const x0 = node(bi) + 7, z0 = node(bj) + 7, L = BLOCK - 14, pts = [];
+    for (let k = 0; k < 4; k++) pts.push([x0 + L * k / 4, z0]); for (let k = 0; k < 4; k++) pts.push([x0 + L, z0 + L * k / 4]);
+    for (let k = 0; k < 4; k++) pts.push([x0 + L - L * k / 4, z0 + L]); for (let k = 0; k < 4; k++) pts.push([x0, z0 + L - L * k / 4]);
+    g.beginPath(); pts.forEach(([x, z], k) => { const q = mp(x, z); k ? g.lineTo(mx(q.x), mx(q.z)) : g.moveTo(mx(q.x), mx(q.z)); }); g.fill();
   }
   g.fillStyle = '#4aa3ff';
-  g.beginPath(); g.arc(mx(0), mx(0), 3, 0, Math.PI * 2); g.fill();
+  g.beginPath(); g.arc(mpx(0, 0), mpz(0, 0), 3, 0, Math.PI * 2); g.fill();
   g.font = '13px system-ui, sans-serif'; g.textAlign = 'center'; g.textBaseline = 'middle';
-  for (const [k, icon] of [['gas', '⛽'], ['wash', '🫧'], ['pizza', '🍕'], ['jail', '🔒'], ['repair', '🔧'], ['dealer', '🚗'], ['hospital', '🏥'], ['house', '🏡'], ['blue', '🅿️'], ['park', '🅿️'], ['order', '🍔'], ['kino', '🎬'], ['stadium', '⚽']]) { const p = S.places[k] && { x: S.places[k].x ?? S.places[k].cx, z: S.places[k].z ?? S.places[k].cz }; if (p) g.fillText(icon, mx(p.x), mx(p.z)); }
+  for (const [k, icon] of [['gas', '⛽'], ['wash', '🫧'], ['pizza', '🍕'], ['jail', '🔒'], ['repair', '🔧'], ['dealer', '🚗'], ['hospital', '🏥'], ['house', '🏡'], ['blue', '🅿️'], ['park', '🅿️'], ['order', '🍔'], ['kino', '🎬'], ['stadium', '⚽']]) { const p = S.places[k] && { x: S.places[k].x ?? S.places[k].cx, z: S.places[k].z ?? S.places[k].cz }; if (p) g.fillText(icon, mpx(p.x, p.z), mpz(p.x, p.z)); }
   g.strokeStyle = 'rgba(220,225,235,0.85)'; g.lineWidth = Math.max(2, ROAD * mapScale);
-  for (let i = 0; i <= N; i++) {
-    g.beginPath(); g.moveTo(mx(node(i)), mx(-HALF)); g.lineTo(mx(node(i)), mx(HALF)); g.stroke();
-    g.beginPath(); g.moveTo(mx(-HALF), mx(node(i))); g.lineTo(mx(HALF), mx(node(i))); g.stroke();
+  for (let i = 0; i <= N; i++) for (const ax of [0, 1]) {
+    g.beginPath();
+    for (let t = -HALF; t <= HALF; t += 8) { const q = ax ? mp(t, node(i)) : mp(node(i), t); t > -HALF ? g.lineTo(mx(q.x), mx(q.z)) : g.moveTo(mx(q.x), mx(q.z)); }
+    g.stroke();
   }
   return c;
 }
@@ -4485,33 +4614,34 @@ function drawMinimap() {
   if (city.moonOn) { drawMoonMap(g); return; }
   if (Math.max(Math.abs(city.me.pos.x), Math.abs(city.me.pos.z)) > LIMIT) { drawWideMap(g); return; }
   g.drawImage(S.mapBase, 0, 0);
-  if (city.works) { const W = city.works; g.strokeStyle = '#f97316'; g.lineWidth = 4; g.beginPath(); g.moveTo(mx(node(W.a[0])), mx(node(W.a[1]))); g.lineTo(mx(node(W.b[0])), mx(node(W.b[1]))); g.stroke(); }
+  if (city.works) { const W = city.works; g.strokeStyle = '#f97316'; g.lineWidth = 4; g.beginPath(); g.moveTo(mpx(node(W.a[0]), node(W.a[1])), mpz(node(W.a[0]), node(W.a[1]))); g.lineTo(mpx(node(W.b[0]), node(W.b[1])), mpz(node(W.b[0]), node(W.b[1]))); g.stroke(); }
   g.fillStyle = '#ffffff';
-  for (const c of city.cars) g.fillRect(mx(c.x) - 1.5, mx(c.z) - 1.5, 3, 3);
+  for (const c of city.cars) g.fillRect(mpx(c.x, c.z) - 1.5, mpz(c.x, c.z) - 1.5, 3, 3);
   S.places.bases.forEach((B, s) => { // eigene Base und die der Mitspieler
-    if (s === city.baseSlot) { g.font = '13px system-ui, sans-serif'; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText('🏠', mx(B.x), mx(B.z)); }
-    else if (baseOwner(s)) { g.fillStyle = BASE_COLORS[s]; g.fillRect(mx(B.x) - 3, mx(B.z) - 3, 6, 6); }
+    if (s === city.baseSlot) { g.font = '13px system-ui, sans-serif'; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText('🏠', mpx(B.x, B.z), mpz(B.x, B.z)); }
+    else if (baseOwner(s)) { g.fillStyle = BASE_COLORS[s]; g.fillRect(mpx(B.x, B.z) - 3, mpz(B.x, B.z) - 3, 6, 6); }
   });
   g.fillStyle = '#ffffff';
   if (city.police) {
     g.fillStyle = Math.floor(city.t * 6) % 2 ? '#3b82f6' : '#ef4444';
-    g.beginPath(); g.arc(mx(city.police.pos.x), mx(city.police.pos.z), 4.5, 0, Math.PI * 2); g.fill();
+    g.beginPath(); g.arc(mpx(city.police.pos.x, city.police.pos.z), mpz(city.police.pos.x, city.police.pos.z), 4.5, 0, Math.PI * 2); g.fill();
   }
   const it = city.net ? tagState() : null;
   if (city.netCars) for (const o of city.netCars.list()) { // Mitspieler als farbige Punkte, wer bei Fangis dran ist, mit rotem Ring
     g.fillStyle = o.color; g.strokeStyle = '#000'; g.lineWidth = 1.5;
-    g.beginPath(); g.arc(mx(o.x), mx(o.z), 5, 0, Math.PI * 2); g.fill(); g.stroke();
-    if (it && it.it === o.slot) { g.strokeStyle = Math.floor(city.t * 4) % 2 ? '#ff2020' : '#fff'; g.lineWidth = 2.5; g.beginPath(); g.arc(mx(o.x), mx(o.z), 9, 0, Math.PI * 2); g.stroke(); }
+    g.beginPath(); g.arc(mpx(o.x, o.z), mpz(o.x, o.z), 5, 0, Math.PI * 2); g.fill(); g.stroke();
+    if (it && it.it === o.slot) { g.strokeStyle = Math.floor(city.t * 4) % 2 ? '#ff2020' : '#fff'; g.lineWidth = 2.5; g.beginPath(); g.arc(mpx(o.x, o.z), mpz(o.x, o.z), 9, 0, Math.PI * 2); g.stroke(); }
   }
   g.font = '11px system-ui, sans-serif'; g.textAlign = 'center'; g.textBaseline = 'middle';
-  for (const c of city.cars) if (c.wreck > 0) g.fillText('⚠️', mx(c.x), mx(c.z)); // Unfälle
-  if (city.truck) g.fillText('🚚', mx(city.truck.x), mx(city.truck.z));
+  for (const c of city.cars) if (c.wreck > 0) g.fillText('⚠️', mpx(c.x, c.z), mpz(c.x, c.z)); // Unfälle
+  if (city.truck) g.fillText('🚚', mpx(city.truck.x, city.truck.z), mpz(city.truck.x, city.truck.z));
   const M = city.mission;
   if (M && M.target) { // Ziel des Auftrags blinkt
     g.fillStyle = Math.floor(city.t * 4) % 2 ? M.color : '#ffffff'; g.strokeStyle = '#000'; g.lineWidth = 1.5;
-    g.beginPath(); g.arc(mx(M.target.x), mx(M.target.z), 5.5, 0, Math.PI * 2); g.fill(); g.stroke();
+    g.beginPath(); g.arc(mpx(M.target.x, M.target.z), mpz(M.target.x, M.target.z), 5.5, 0, Math.PI * 2); g.fill(); g.stroke();
   }
-  const me = city.me, x = mx(me.pos.x), y = mx(me.pos.z), h = me.heading;
+  const me = city.me, x = mpx(me.pos.x, me.pos.z), y = mpz(me.pos.x, me.pos.z);
+  const h = Math.atan2(mpz(me.pos.x + Math.cos(me.heading), me.pos.z + Math.sin(me.heading)) - y, mpx(me.pos.x + Math.cos(me.heading), me.pos.z + Math.sin(me.heading)) - x);
   g.fillStyle = '#ffe066'; g.strokeStyle = '#000'; g.lineWidth = 1.5;
   g.beginPath();
   g.moveTo(x + Math.cos(h) * 7, y + Math.sin(h) * 7);
@@ -4537,7 +4667,8 @@ export function startCity({ player, kinds, topSpeed, onExit, pay = () => 0, earn
     S.ui = buildDom();
     S.ui.root.prepend(S.renderer.domElement);
     S.mapBase = drawMinimapBase();
-    S.fx = makeEffects(S.scene);
+    const fx0 = makeEffects(S.scene), wp = { x: 0, z: 0 }; // Rauch und Bremsspuren liegen in der verbogenen Stadt
+    S.fx = { ...fx0, puff(x, y, z, vx, vz) { warpXZ(x, z, wp); fx0.puff(wp.x, y, wp.z, vx, vz); }, mark(k, x, y, z, on) { warpXZ(x, z, wp); fx0.mark(k, wp.x, y, wp.z, on); } };
     window.addEventListener('resize', () => S && !S.ui.root.hidden && layout());
   }
   const mesh = buildCar(player, kinds);
@@ -4753,7 +4884,7 @@ function makeWeatherFx() {
   r.addColorStop(0, 'rgba(255,255,255,1)'); r.addColorStop(1, 'rgba(255,255,255,0)'); g.fillStyle = r; g.fillRect(0, 0, 32, 32);
   const sg = new THREE.BufferGeometry(); sg.setAttribute('position', new THREE.BufferAttribute(box(1800, 1), 3));
   const snow = new THREE.Points(sg, new THREE.PointsMaterial({ map: new THREE.CanvasTexture(dot), size: 0.35, transparent: true, opacity: 0, depthWrite: false }));
-  for (const o of [rain, snow]) { o.frustumCulled = false; o.visible = false; S.scene.add(o); }
+  for (const o of [rain, snow]) { o.frustumCulled = false; o.visible = false; o.userData.noWarp = true; S.scene.add(o); }
   const G = S.ground;
   return { rain, snow, base: { asphalt: G.asphalt.color.clone(), grass: G.grass.color.clone(), pave: G.pave.color.clone(), land: G.land.color.clone(), rough: G.asphalt.roughness } };
 }
@@ -4839,6 +4970,7 @@ function render(dt) {
   const me = city.me, cam = S.camera, w = city.walk;
   const fx = Math.cos(me.heading), fz = Math.sin(me.heading);
   const back = 8.5 + Math.abs(me.speed) * 0.03;
+  warpFrame(S.scene); // ab hier bis nach dem Zeichnen steht alles in der verbogenen Stadt
   if (city.launch) { // Raketenstart: von der Seite zuschauen
     const L = city.launch, ry = L.R.position.y;
     camWant.set(L.x + 34, L.y0 + 6 + Math.min(40, (ry - L.y0) * 0.35), L.z + 30); camAhead.set(L.x, ry + 14, L.z);
@@ -4868,6 +5000,7 @@ function render(dt) {
     if (pkIn(me.pos.x, me.pos.z) && ((city.pkR != null && city.pkR < 2) || (city.pkR == null && (city.pkL || 0) < 3))) camWant.y = Math.min(camWant.y, y + 2.9); // Parkhaus: unter der Decke
     camAhead.set(me.pos.x + fx * 6, y + 1.2, me.pos.z + fz * 6);
   }
+  warpV(camWant); warpV(camAhead);
   if (!cockpit(me.mesh, cam, camMode === COCKPIT && !w)) {
     if (w && me.mesh.userData.driver) me.mesh.userData.driver.visible = false; // ausgestiegen: Sitz bleibt leer
     cam.position.lerp(camWant, 1 - Math.exp(-dt * 6));
@@ -4876,13 +5009,15 @@ function render(dt) {
   }
   cam.fov = 62 + Math.min(16, Math.abs(me.speed) * 0.15);
   cam.updateProjectionMatrix();
-  S.sun.position.set(me.pos.x + 70, 110, me.pos.z - 40);
-  S.sun.position.y = 110 + city.gy;
-  S.sun.target.position.set(me.pos.x, city.gy, me.pos.z);
+  const sp = warpV(_sunP.set(me.pos.x, 0, me.pos.z));
+  S.sun.position.set(sp.x + 70, 110 + city.gy, sp.z - 40);
+  S.sun.target.position.set(sp.x, city.gy, sp.z);
   S.clouds.position.set(cam.position.x, 0, cam.position.z);
   S.fx.update(dt, cam, S.renderer);
   S.renderer.render(S.scene, cam);
+  unwarpFrame();
 }
+const _sunP = new THREE.Vector3();
 
 function endCity() {
   removePolice();
