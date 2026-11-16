@@ -1103,6 +1103,8 @@ export function passDrivable(x, z, r, keys) {
 }
 export const onPass = (x, z) => inRegion(x, z) && (passNearest(x, z).d < 9 || Math.hypot(x - SUMMIT.x, z - SUMMIT.z) < SUMMIT.r);
 // Gelände am Berg: natural = normales Gelände (von city.js), lower = so viel tiefer (für das grobe Gelände darunter)
+// Alp: ebene Wiese am Pass (dort steht der Bauernhof, country.js)
+export const ALP = { x0: 250, x1: 390, z0: -800, z1: -650, y: 40 };
 export function passTerrain(x, z, natural, lower = 0) {
   const P = passPath(), q = passNearest(x, z);
   let wsum = 0, ysum = 0;
@@ -1113,7 +1115,8 @@ export function passTerrain(x, z, natural, lower = 0) {
   const shelf = ds < SUMMIT.r + 6 ? PASS_TOP - 0.3 : q.y - 0.35, t = Math.min(smooth01((q.d - 7) / 20), smooth01((ds - SUMMIT.r - 6) / 20));
   const h = shelf * (1 - t) + base * t;
   const edge = Math.min(x - REGION.x0, REGION.x1 - x, z - REGION.z0, REGION.z1 - z), wr = smooth01(edge / 70);
-  return natural * (1 - wr) + h * wr - lower * smooth01(edge / 30);
+  const out = natural * (1 - wr) + h * wr - lower * smooth01(edge / 30), wa = 1 - smooth01(boxDist(x, z, ALP) / 40);
+  return out * (1 - wa) + ALP.y * wa; // auf der Alp eben
 }
 const smooth01 = v => { const t = Math.min(1, Math.max(0, v)); return t * t * (3 - 2 * t); };
 

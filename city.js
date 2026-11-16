@@ -4466,7 +4466,7 @@ function drawWideMap(g) {
   g.strokeStyle = city.keys.size >= PASS_AREA.need ? '#e5e7eb' : '#6b7280'; g.lineWidth = 2; g.beginPath(); // Passstrasse
   passPoints().forEach((p, i) => (i % 6 ? 0 : i ? g.lineTo(wx(p.x), wz(p.z)) : g.moveTo(wx(p.x), wz(p.z))));
   g.stroke();
-  rect(FARM, '#8a9a3a'); rect({ x0: 316, x1: 512, z0: -287, z1: -273 }, '#a47b4f'); rect({ x0: 250, x1: 330, z0: -263, z1: -249 }, '#a47b4f'); // Bauernhof
+  rect(FARM, '#8a9a3a'); // Bauernhof (Alp am Pass)
   rect({ x0: -702, x1: -646, z0: -660, z1: -170 }, '#e8d39a'); rect({ x0: -646, x1: -250, z0: -200, z1: -184 }, '#9ca3af'); // Strand
   g.fillStyle = '#7b8490'; g.fillRect(wx(-HALF), wz(-HALF), 2 * HALF * sc, 2 * HALF * sc);
   g.strokeStyle = '#e5e7eb'; g.lineWidth = 3; g.beginPath();
@@ -4596,7 +4596,7 @@ export function startCity({ player, kinds, topSpeed, onExit, pay = () => 0, earn
   city.cruise = { on: false, kmh: Math.min(80, cruiseMax()) }; showCruise();
   const TR = RIDES_INFO.tractor;
   if (kinds.tractor) { // Traktor auf dem Bauernhof: zu Fuss hin und einsteigen
-    const mesh = buildCar({ ...TR.v, special: null }, kinds); mesh.position.set(TR.x, 0, TR.z); mesh.rotation.y = -TR.h;
+    const mesh = buildCar({ ...TR.v, special: null }, kinds); mesh.position.set(TR.x, groundAt(TR.x, TR.z), TR.z); mesh.rotation.y = -TR.h;
     if (mesh.userData.driver) mesh.userData.driver.visible = false;
     S.scene.add(mesh); city.rides.push({ v: { ...TR.v }, x: TR.x, z: TR.z, h: TR.h, mesh });
   }

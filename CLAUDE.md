@@ -53,11 +53,13 @@ Browser-Spiel ohne Build: `index.html` + `game.js` (Spiellogik, Menüs und 2D-Ze
   Lastwagen, Normalen, Dränglern, Rasern; Tunnel mit Hügel, Baustelle mit Leitkegeln, Polizei jagt Raser,
   „Knapp vorbei“-Bonus über `hooks.nearMiss`; Unfälle mit Stau und Rettungsgasse: `startAccident`, Retter `cars.rescue`,
   wer die Gasse blockiert, bekommt über `hooks.gasse` einen Strafzettel), Hafen (Westen, ab 5 goldenen Schlüsseln), Flughafen (Osten, ab 12) und
-  Passstrasse mit Höhe (Norden, ab 20; `passGround` = Bodenhöhe, `passTerrain` formt das Gelände). In der Stadt:
+  Passstrasse mit Höhe (Norden, ab 20; `passGround` = Bodenhöhe, `passTerrain` formt das Gelände). Der Flughafen liegt im Autobahn-Ring
+  (Ausfahrt `AIR_EXIT` innen an der oberen Geraden, Richtung Osten). In der Stadt:
   Überraschungen (Feuer, Banküberfall, Notfall → Spital), 30 goldene Schlüssel (Spielstand `autoRetterKeys`).
-- `country.js`: neue Gebiete draussen (für `city.js`, frei zugänglich): Bauernhof im Nordosten (Feldweg, Felder, Matsch,
-  Kühe, Heuballen mit dem Traktor einsammeln, Traktor zum Einsteigen: `city.rides`), Strand im Westen (Promenade, Sand, Steg mit
-  Boot: `city.boat`, fährt nur auf dem Wasser) und Skigebiet am Pass (Schnee ab Höhe 55, Sessellift, Skifahrer).
+- `country.js`: neue Gebiete draussen (für `city.js`): Bauernhof auf der Alp am Pass (`ALP` in outskirts.js: ebene Wiese;
+  Matsch, Kühe, Heuballen mit dem Traktor, Traktor zum Einsteigen: `city.rides`), Strand im Westen (Promenade, Sand, Steg mit
+  Boot: `city.boat`), Skigebiet Schneeberg im Autobahn-Ring (`SKI`/`skiH`: Berg, `LIFTS` mit Sesseln, `PISTES`, Skidorf;
+  Strasse von der Flughafen-Ausfahrt), Raumbahnhof `SPACE`. Schnee auf der Passstrasse ab Höhe 55.
   Böden: `countrySurface` ('gravel', 'mud', 'sand', 'snow'), Wirkung in `stepMe` (`SURF`, `SURF_GRIP`).
 - `moon.js`: der Mond (für `city.js`, bei MOON weit weg): Krater (`moonGround`), Erde und Sterne, Mondbasis, Landefähre,
   Schweizer Fahne, Mondsteine (`stepMoon`), Mond-Buggy (`MOON_BUGGY` in `city.rides`). Hin und zurück mit der Mondrakete
