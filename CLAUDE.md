@@ -133,6 +133,11 @@ Browser-Spiel ohne Build: `index.html` + `game.js` (Spiellogik, Menüs und 2D-Ze
 - `world3d.js`: Baukasten für die Landschaften (Rauschen, Oberflächen mit Relief, Gelände, Wolken, Staub, Lichtstrahlen).
 Texte im Spiel sind Deutsch (Schweizer Schreibweise, kein ß).
 
+Meine Figur (game.js, Shop-Knopf 👕, `drawSkin`/`skinTap`, `SKIN_ITEMS`): Haut, Frisur, Farben gratis; Kopfbedeckung, Oberteil,
+Hose, Schuhe, Extras kosten Münzen (zweimal tippen = kaufen). Spielstand `autoRetterSkin` = { tone, hair, hairCol, head, headCol,
+top, topCol, legs, legsCol, shoes, shoesCol, extras[], owned[] }; city.js baut daraus die 3D-Figur (`loadSkin`, `makePlayer`).
+Neue Teile: in `SKIN_ITEMS` (game.js), in `drawSkinFigure` (2D) und in `makePlayer` (3D) eintragen.
+
 Tägliche Belohnung (game.js, `drawDaily`/`dailyTap`): 7-Tage-Kalender beim Start (Tag 1: 5 Münzen), Tag 7 mit Fahrzeug, verpasst = Tag 1;
 Spielstand `autoRetterDaily` = { last, day }.
 

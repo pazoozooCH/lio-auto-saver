@@ -3722,45 +3722,88 @@ function makePerson(shirtColor = 0x2563eb, hairColor = 0x5a3a1e, skinColor = 0xf
   g.userData = { legs, arms };
   return g;
 }
-// Deine Spielfigur (zu Fuss): Kappe, grosse Augen, Kapuzenpulli mit Reissverschluss und Bauchtasche, Rucksack, Jeans mit
-// Gurt, runde Turnschuhe; Knie und Ellbogen biegen sich. Aufbau: root (Ort, Richtung) → spin (Drehpunkt für Saltos) → body.
-function makePlayer() {
+// Deine Spielfigur (zu Fuss), so wie du sie im Shop unter „Meine Figur“ gestaltet hast (autoRetterSkin aus game.js):
+// Haut, Frisur, Kopfbedeckung, Oberteil, Hose, Schuhe, Extras. Knie und Ellbogen biegen sich.
+// Aufbau: root (Ort, Richtung) → spin (Drehpunkt in der Körpermitte, für Saltos) → body.
+const SKIN_DEF = { tone: '#f2c9a0', hair: 'short', hairCol: '#5a3a1e', head: 'cap', headCol: '#1d4ed8', top: 'hoodie', topCol: '#dc2626',
+  legs: 'jeans', legsCol: '#1e40af', shoes: 'sneaker', shoesCol: '#f8fafc', extras: ['backpack'] };
+function loadSkin() { try { return { ...SKIN_DEF, ...(JSON.parse(localStorage.getItem('autoRetterSkin')) || {}) }; } catch (err) { return { ...SKIN_DEF }; } }
+function makePlayer(cfg = loadSkin()) {
   const root = new THREE.Group(), spin = new THREE.Group(), body = new THREE.Group();
   root.add(spin); spin.position.y = 1.0; spin.add(body); body.position.y = -1.0;
-  const skin = 0xf2c9a0, hood = 0xdc2626, hoodDark = 0xb91c1c, white = 0xf8fafc, jeans = 0x1e40af, jeansDark = 0x1e3a8a, cap = 0x1d4ed8, hair = 0x5a3a1e, pack = 0xfacc15;
-  const joint = (parent, x, y, z, parts) => { const g = new THREE.Group(); g.position.set(x, y, z); parent.add(g); if (parts) g.add(figMesh(parts)); return g; };
+  const hx = c => parseInt(String(c || '#888888').slice(1), 16), X = new Set(cfg.extras || []);
+  const skin = hx(cfg.tone), white = 0xf8fafc, top = cfg.top, astro = top === 'astro';
+  const topC = top === 'tux' ? 0x111827 : astro ? 0xf1f5f9 : hx(cfg.topCol), topD = shade(topC, 0.78);
+  const legC = astro ? 0xf1f5f9 : hx(cfg.legsCol), legD = shade(legC, 0.8), shoeC = cfg.shoes === 'gold' ? 0xfacc15 : hx(cfg.shoesCol), hair = hx(cfg.hairCol), hatC = hx(cfg.headCol);
+  const shortSleeve = ['tee', 'jersey', 'hawaii'].includes(top);
+  const joint = (parent, x, y, z, parts) => { const g = new THREE.Group(); g.position.set(x, y, z); parent.add(g); if (parts && parts.length) g.add(figMesh(parts)); return g; };
   const legs = [], knees = [], arms = [], elbows = [];
-  for (const sz of [-1, 1]) { // Beine: Oberschenkel, Knie, Unterschenkel, runder Turnschuh mit Schnürsenkeln
-    const hip = joint(body, 0, 0.95, sz * 0.11, [[G.cap(0.098, 0.3), jeans, 0, -0.22, 0], [G.box(0.01, 0.34, 0.012), 0x93c5fd, 0, -0.22, sz * 0.097]]);
-    const knee = joint(hip, 0, -0.45, 0, [[G.cap(0.088, 0.3), jeans, 0, -0.2, 0], [G.cyl(0.098, 0.098, 0.05), jeansDark, 0, -0.37, 0], [G.box(0.01, 0.3, 0.012), 0x93c5fd, 0, -0.2, sz * 0.087],
-      [G.sph(0.11, 16, 12), white, 0.06, -0.47, 0, 0, 0, 0, 1.75, 0.9, 1.12], [G.sph(0.09, 12, 8), 0xe5e7eb, 0.16, -0.49, 0, 0, 0, 0, 0.9, 0.7, 1.1],
+  for (const sz of [-1, 1]) { // Beine: Oberschenkel, Knie, Unterschenkel, Schuh
+    const thigh = cfg.legs === 'skirt' ? [[G.cap(0.07, 0.3), skin, 0, -0.22, 0]]
+      : cfg.legs === 'shorts' ? [[G.cap(0.1, 0.12), legC, 0, -0.12, 0], [G.cap(0.075, 0.2), skin, 0, -0.3, 0]]
+      : [[G.cap(0.098, 0.3), legC, 0, -0.22, 0], [G.box(0.01, 0.34, 0.014), cfg.legs === 'track' ? white : 0x93c5fd, 0, -0.22, sz * 0.097]];
+    const hip = joint(body, 0, 0.95, sz * 0.11, thigh);
+    const bare = cfg.legs === 'skirt' || cfg.legs === 'shorts';
+    const shin = [[G.cap(bare ? 0.07 : 0.088, 0.3), bare ? skin : legC, 0, -0.2, 0]];
+    if (!bare) shin.push([G.cyl(0.098, 0.098, 0.05), legD, 0, -0.37, 0], [G.box(0.01, 0.3, 0.014), cfg.legs === 'track' ? white : 0x93c5fd, 0, -0.2, sz * 0.087]);
+    if (cfg.shoes === 'boots') shin.push([G.cyl(0.1, 0.11, 0.26, 14), 0x78350f, 0, -0.38, 0], [G.sph(0.11, 14, 10), 0x78350f, 0.06, -0.48, 0, 0, 0, 0, 1.7, 0.85, 1.12], [G.sph(0.11, 12, 6), 0x292524, 0.06, -0.535, 0, 0, 0, 0, 1.85, 0.28, 1.2]);
+    else shin.push([G.sph(0.11, 16, 12), shoeC, 0.06, -0.47, 0, 0, 0, 0, 1.75, 0.9, 1.12], [G.sph(0.09, 12, 8), cfg.shoes === 'gold' ? 0xfde68a : 0xe5e7eb, 0.16, -0.49, 0, 0, 0, 0, 0.9, 0.7, 1.1],
       [G.sph(0.11, 14, 6), 0x374151, 0.06, -0.535, 0, 0, 0, 0, 1.85, 0.28, 1.2], [G.box(0.11, 0.022, 0.012), 0xdc2626, 0.05, -0.46, sz * 0.122],
-      ...[0.04, 0.08, 0.12].map(dx => [G.box(0.012, 0.012, 0.08), 0x9ca3af, dx, -0.39 + dx * -0.15, 0])]);
+      ...[0.04, 0.08, 0.12].map(dx => [G.box(0.012, 0.012, 0.08), 0x9ca3af, dx, -0.39 + dx * -0.15, 0]));
+    const knee = joint(hip, 0, -0.45, 0, shin);
     legs.push(hip); knees.push(knee);
   }
-  // Pulli: Bauch, Reissverschluss, Bauchtasche, Kapuze hinten, Schnüre, Bund; Jeans mit Gurt und Schnalle; Rucksack
-  const torso = joint(body, 0, 0.98, 0, [
-    [G.cap(0.2, 0.34, 18), hood, 0, 0.3, 0, 0, 0, 0, 0.8, 1, 1.15], [G.cyl(0.165, 0.165, 0.07, 18), hoodDark, 0, 0.08, 0, 0, 0, 0, 0.82, 1, 1.15],
-    [G.box(0.012, 0.36, 0.022), 0xe5e7eb, 0.163, 0.34, 0], [G.box(0.02, 0.04, 0.02), 0x9ca3af, 0.17, 0.45, 0.02],
-    [G.box(0.03, 0.12, 0.26), hoodDark, 0.157, 0.18, 0], [G.half(0.16), hoodDark, -0.1, 0.55, 0, 0, 0, 0.9],
-    [G.cyl(0.008, 0.008, 0.16, 5), white, 0.16, 0.44, -0.05], [G.cyl(0.008, 0.008, 0.16, 5), white, 0.16, 0.44, 0.05],
-    [G.box(0.22, 0.12, 0.36), jeans, 0, 0.0, 0], [G.box(0.225, 0.035, 0.365), 0x3b2a1a, 0, 0.055, 0], [G.box(0.02, 0.04, 0.05), 0xfacc15, 0.115, 0.055, 0],
-    [G.box(0.02, 0.07, 0.08), jeansDark, -0.112, -0.02, 0.08], [G.box(0.02, 0.07, 0.08), jeansDark, -0.112, -0.02, -0.08],
-    [G.cap(0.12, 0.16, 14), pack, -0.24, 0.33, 0, 0, 0, 0, 0.6, 1, 1.15], [G.sph(0.08, 12, 8), 0xf59e0b, -0.32, 0.25, 0, 0, 0, 0, 0.5, 0.8, 1.2],
-    [G.box(0.02, 0.32, 0.035), 0xca8a04, 0.165, 0.36, 0.11], [G.box(0.02, 0.32, 0.035), 0xca8a04, 0.165, 0.36, -0.11],
-  ]);
+  // Oberkörper: Grundform in der Farbe des Oberteils, dazu je nach Kleid Reissverschluss, Taschen, Aufdruck …
+  const T = [[G.cap(0.2, 0.34, 18), topC, 0, 0.3, 0, 0, 0, 0, astro ? 0.9 : 0.8, 1, astro ? 1.25 : 1.15], [G.cyl(0.165, 0.165, 0.07, 18), topD, 0, 0.08, 0, 0, 0, 0, 0.82, 1, 1.15]];
+  if (top === 'hoodie') T.push([G.box(0.012, 0.36, 0.022), 0xe5e7eb, 0.163, 0.34, 0], [G.box(0.02, 0.04, 0.02), 0x9ca3af, 0.17, 0.45, 0.02], [G.box(0.03, 0.12, 0.26), topD, 0.157, 0.18, 0],
+    [G.half(0.16), topD, -0.1, 0.55, 0, 0, 0, 0.9], [G.cyl(0.008, 0.008, 0.16, 5), white, 0.16, 0.44, -0.05], [G.cyl(0.008, 0.008, 0.16, 5), white, 0.16, 0.44, 0.05]);
+  if (top === 'tee') T.push([G.sph(0.07, 12, 8), 0xfde047, 0.155, 0.36, 0, 0, 0, 0, 0.25, 1, 1]);
+  if (top === 'jersey') T.push([G.cyl(0.168, 0.168, 0.05, 18), white, 0, 0.36, 0, 0, 0, 0, 0.82, 1, 1.16], [new THREE.TorusGeometry(0.1, 0.025, 6, 14), white, 0, 0.58, 0, Math.PI / 2, 0, 0, 1, 1, 1.2]);
+  if (top === 'hawaii') for (const [y, z, x] of [[0.42, -0.08, 1], [0.28, 0.1, 1], [0.15, -0.05, 1], [0.38, 0.06, -1], [0.2, -0.1, -1]]) T.push([G.sph(0.03, 8, 6), z > 0 ? 0xfde047 : 0xf472b6, x * 0.155, y, z, 0, 0, 0, 0.3, 1, 1]);
+  if (top === 'jacket') T.push([G.box(0.012, 0.42, 0.022), 0x9ca3af, 0.163, 0.3, 0], [new THREE.TorusGeometry(0.11, 0.035, 6, 14), topD, 0, 0.56, 0, Math.PI / 2, 0, 0, 1, 1, 1.25]);
+  if (top === 'tux') T.push([G.box(0.02, 0.26, 0.12), white, 0.16, 0.42, 0], [G.sph(0.03, 8, 6), 0xdc2626, 0.175, 0.53, -0.03], [G.sph(0.03, 8, 6), 0xdc2626, 0.175, 0.53, 0.03],
+    ...[0.38, 0.3].map(y => [G.sph(0.012, 6, 4), 0x111827, 0.172, y, 0]));
+  if (top === 'hero') T.push([new THREE.OctahedronGeometry(0.07), 0xfacc15, 0.16, 0.4, 0, 0, 0, 0, 0.3, 1, 1], [G.box(0.22, 0.04, 0.37), 0xfacc15, 0, 0.12, 0]);
+  if (astro) T.push([G.box(0.03, 0.12, 0.18), 0xcbd5e1, 0.175, 0.36, 0], ...[[-0.05, 0xdc2626], [0, 0x22c55e], [0.05, 0x3b82f6]].map(([z, c]) => [G.sph(0.015, 6, 4), c, 0.192, 0.38, z]), [G.box(0.14, 0.34, 0.3), 0xe5e7eb, -0.22, 0.33, 0]);
+  if (cfg.legs === 'skirt') T.push([G.cyl(0.17, 0.3, 0.36, 18), legC, 0, -0.08, 0, 0, 0, 0, 1, 1, 1.1]);
+  else if (!['tux', 'hero', 'astro'].includes(top)) T.push([G.box(0.22, 0.12, 0.36), legC, 0, 0.0, 0], [G.box(0.225, 0.035, 0.365), 0x3b2a1a, 0, 0.055, 0], [G.box(0.02, 0.04, 0.05), 0xfacc15, 0.115, 0.055, 0]);
+  if (cfg.legs === 'jeans') T.push([G.box(0.02, 0.07, 0.08), legD, -0.112, -0.02, 0.08], [G.box(0.02, 0.07, 0.08), legD, -0.112, -0.02, -0.08]);
+  if (X.has('backpack') && !astro) T.push([G.cap(0.12, 0.16, 14), 0xfacc15, -0.24, 0.33, 0, 0, 0, 0, 0.6, 1, 1.15], [G.sph(0.08, 12, 8), 0xf59e0b, -0.32, 0.25, 0, 0, 0, 0, 0.5, 0.8, 1.2],
+    [G.box(0.02, 0.32, 0.035), 0xca8a04, 0.165, 0.36, 0.11], [G.box(0.02, 0.32, 0.035), 0xca8a04, 0.165, 0.36, -0.11]);
+  if (X.has('cape')) T.push([G.box(0.03, 1.0, 0.5), topC === 0xdc2626 ? 0x7c3aed : 0xdc2626, -0.21, 0.08, 0, 0, 0, -0.12, 1, 1, 1], [new THREE.TorusGeometry(0.12, 0.02, 6, 14), 0xfacc15, 0, 0.6, 0, Math.PI / 2, 0, 0, 1, 1, 1.2]);
+  if (X.has('wings')) for (const s of [-1, 1]) T.push([G.sph(0.3, 14, 10), white, -0.28, 0.45, s * 0.28, s * 0.5, 0, 0, 0.15, 1, 0.7], [G.sph(0.2, 12, 8), 0xe0f2fe, -0.3, 0.4, s * 0.3, s * 0.5, 0, 0, 0.12, 0.9, 0.6]);
+  const torso = joint(body, 0, 0.98, 0, T);
   for (const sz of [-1, 1]) { // Arme: Ärmel, Bündchen, runde Hand mit Daumen
-    const sh = joint(torso, 0, 0.5, sz * 0.28, [[G.cap(0.07, 0.22), hood, 0, -0.16, 0]]);
-    const el = joint(sh, 0, -0.33, 0, [[G.cap(0.064, 0.2), hood, 0, -0.14, 0], [G.cyl(0.07, 0.07, 0.045), hoodDark, 0, -0.27, 0],
-      [G.sph(0.068, 12, 10), skin, 0, -0.34, 0, 0, 0, 0, 1, 1.1, 0.85], [G.sph(0.03, 8, 6), skin, 0.045, -0.31, sz * 0.04]]);
+    const hand = astro ? 0xe5e7eb : skin;
+    const sh = joint(torso, 0, 0.5, sz * 0.28, shortSleeve ? [[G.cap(0.075, 0.06), topC, 0, -0.07, 0], [G.cap(0.06, 0.18), skin, 0, -0.18, 0]] : [[G.cap(0.07, 0.22), topC, 0, -0.16, 0]]);
+    const el = joint(sh, 0, -0.33, 0, [[G.cap(shortSleeve ? 0.055 : 0.064, 0.2), shortSleeve ? skin : topC, 0, -0.14, 0], ...(shortSleeve ? [] : [[G.cyl(0.07, 0.07, 0.045), topD, 0, -0.27, 0]]),
+      [G.sph(0.068, 12, 10), hand, 0, -0.34, 0, 0, 0, 0, 1, 1.1, 0.85], [G.sph(0.03, 8, 6), hand, 0.045, -0.31, sz * 0.04]]);
     arms.push(sh); elbows.push(el);
   }
-  // Kopf: rund und etwas grösser (Cartoon), Kappe mit Schirm, Knopf und Abzeichen, Haare darunter
-  const R = 0.16, hy = 0.2;
-  const head = joint(torso, 0, 0.62, 0, [[G.cyl(0.05, 0.06, 0.1), skin, 0, 0.02, 0], ...faceParts(skin, R, hy),
-    [new THREE.SphereGeometry(R * 0.98, 16, 8, 0, Math.PI * 2, Math.PI * 0.45, Math.PI * 0.25), hair, -0.01, hy - 0.01, 0],
-    [G.half(R * 1.06, 20, 10), cap, -0.005, hy + 0.035, 0], [G.cyl(0.12, 0.12, 0.022, 18), cap, 0.15, hy + 0.045, 0, 0, 0, -0.12, 1.1, 1, 0.95],
-    [G.sph(0.022, 8, 6), white, 0, hy + 0.21, 0], [G.sph(0.035, 10, 8), 0xfacc15, 0.14, hy + 0.12, 0, 0, 0, 0, 0.35, 1, 1]]);
+  // Kopf: rund (Cartoon), Frisur, Kopfbedeckung, Brille
+  const R = 0.16, hy = 0.2, H = [[G.cyl(0.05, 0.06, 0.1), skin, 0, 0.02, 0], ...faceParts(skin, R, hy)];
+  const hatOn = ['cap', 'beanie', 'hat', 'viking', 'wizard'].includes(cfg.head) || astro, hs = cfg.hair;
+  if (hs !== 'bald') {
+    if (hatOn) H.push([new THREE.SphereGeometry(R * 0.98, 16, 8, 0, Math.PI * 2, Math.PI * 0.45, Math.PI * 0.25), hair, -0.01, hy - 0.01, 0]); // Haare unter dem Hut
+    else H.push([G.half(R * 1.05, 20, 10), hair, -0.012, hy + 0.01, 0, 0, 0, 0.18]);
+    if (hs === 'long') H.push([G.cap(R * 0.85, 0.2, 14), hair, -0.09, hy - 0.12, 0, 0, 0, 0, 0.6, 1, 1.15]);
+    if (hs === 'bun' && !hatOn) H.push([G.sph(0.065, 12, 10), hair, -0.07, hy + 0.17, 0]);
+    if (hs === 'spiky' && !hatOn) for (let k = 0; k < 7; k++) { const a = k / 7 * Math.PI * 2; H.push([new THREE.ConeGeometry(0.035, 0.12, 6), hair, Math.cos(a) * 0.08 - 0.02, hy + 0.15, Math.sin(a) * 0.08, Math.sin(a) * 0.5, 0, -Math.cos(a) * 0.5]); }
+    if (hs === 'curly' && !hatOn) for (let k = 0; k < 9; k++) { const a = k / 9 * Math.PI * 2; H.push([G.sph(0.05, 8, 6), hair, Math.cos(a) * 0.12 - 0.02, hy + 0.1, Math.sin(a) * 0.12]); }
+  }
+  const hd = cfg.head;
+  if (hd === 'cap' && !astro) H.push([G.half(R * 1.06, 20, 10), hatC, -0.005, hy + 0.035, 0], [G.cyl(0.12, 0.12, 0.022, 18), hatC, 0.15, hy + 0.045, 0, 0, 0, -0.12, 1.1, 1, 0.95],
+    [G.sph(0.022, 8, 6), white, 0, hy + 0.21, 0], [G.sph(0.035, 10, 8), 0xfacc15, 0.14, hy + 0.12, 0, 0, 0, 0, 0.35, 1, 1]);
+  if (hd === 'beanie' && !astro) H.push([G.half(R * 1.08, 20, 10), hatC, -0.005, hy + 0.02, 0, 0, 0, 0, 1, 1.25, 1], [G.cyl(R * 1.09, R * 1.09, 0.06, 20), shade(hatC, 0.8), -0.005, hy + 0.04, 0], [G.sph(0.045, 10, 8), white, -0.005, hy + 0.24, 0]);
+  if (hd === 'hat' && !astro) H.push([G.cyl(0.3, 0.3, 0.02, 24), hatC, 0, hy + 0.07, 0], [G.cyl(0.13, 0.15, 0.14, 18), hatC, 0, hy + 0.15, 0], [G.cyl(0.152, 0.152, 0.035, 18), 0xdc2626, 0, hy + 0.1, 0]);
+  if (hd === 'headphones' && !astro) H.push([new THREE.TorusGeometry(R * 1.08, 0.018, 6, 20, Math.PI), 0x111827, 0, hy, 0, 0, Math.PI / 2, 0], ...[-1, 1].map(s => [G.cyl(0.06, 0.06, 0.05, 14), hatC, 0, hy, s * R * 1.05, Math.PI / 2, 0, 0]));
+  if (hd === 'wizard' && !astro) H.push([G.cyl(0.26, 0.26, 0.02, 24), hatC, 0, hy + 0.08, 0], [new THREE.ConeGeometry(0.15, 0.42, 16), hatC, -0.03, hy + 0.3, 0, 0, 0, 0.15], [G.sph(0.025, 8, 6), 0xfacc15, 0.1, hy + 0.25, 0.05], [G.sph(0.02, 8, 6), 0xfacc15, 0.07, hy + 0.36, -0.04]);
+  if (hd === 'viking' && !astro) H.push([G.half(R * 1.08, 20, 10), 0x9ca3af, -0.005, hy + 0.03, 0], [G.cyl(R * 1.09, R * 1.09, 0.04, 20), 0x78350f, -0.005, hy + 0.04, 0], ...[-1, 1].map(s => [new THREE.ConeGeometry(0.04, 0.2, 10), 0xfef3c7, 0, hy + 0.14, s * 0.2, s * 0.9, 0, 0]));
+  if (hd === 'crown' && !astro) H.push([G.cyl(0.12, 0.12, 0.08, 18), 0xfacc15, 0, hy + 0.17, 0], ...[0, 1, 2, 3, 4].map(k => { const a = k / 5 * Math.PI * 2; return [new THREE.ConeGeometry(0.025, 0.08, 6), 0xfacc15, Math.cos(a) * 0.11, hy + 0.25, Math.sin(a) * 0.11]; }), [G.sph(0.025, 8, 6), 0xdc2626, 0.12, hy + 0.17, 0]);
+  if (astro) H.push([new THREE.TorusGeometry(R * 1.32, 0.03, 8, 24), 0xe5e7eb, 0.02, hy, 0, 0, Math.PI / 2, 0], [new THREE.SphereGeometry(R * 1.35, 18, 12, Math.PI / 2, Math.PI), 0xf1f5f9, 0, hy, 0]);
+  if (X.has('glasses')) H.push(...[-1, 1].map(s => [new THREE.TorusGeometry(0.045, 0.008, 6, 14), 0x111111, R * 0.98, hy + R * 0.05, s * R * 0.38, 0, Math.PI / 2, 0]));
+  if (X.has('sunglasses')) H.push(...[-1, 1].map(s => [G.box(0.02, 0.06, 0.09), 0x111827, R * 0.98, hy + R * 0.05, s * R * 0.38]), [G.box(0.02, 0.012, 0.05), 0x111827, R * 1.0, hy + R * 0.08, 0]);
+  const head = joint(torso, 0, 0.62, 0, H);
   root.userData = { legs, knees, arms, elbows, spin, body, torso, head };
   return root;
 }
