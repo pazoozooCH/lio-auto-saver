@@ -117,6 +117,13 @@ Browser-Spiel ohne Build: `index.html` + `game.js` (Spiellogik, Menüs und 2D-Ze
   Bucht mit Strand und Hafen (`BAY`). `islandDist` (> 0 Land, < 0 Meer) braucht: height() in city.js (Klippen/Strand,
   Meeresgrund, tief draussen dunkel wie die Bodenplatte), `offroadWhy` ('water' = Auto nicht ins Meer), `inWater` (Boot
   überall rund um die Insel), Karte (`paintIsland`). Meer: grosse Fläche bei `SEA_Y`, Gelände-Netz 2 × 3400 m.
+- `monaco.js`: Diamantinsel (wie Monaco) im Westen vor der Bucht (`MONACO` in island.js: Form, Hafenbecken, Landzunge
+  mit Piste, Steg; `landDist` = Land irgendwo). Eigenes Gelände (`monGround`), Ringstrasse, Kehren zum Palast,
+  Zufahrt Piste (`MON_ROADS`), Villen mit Pool, Palmen, Jachten; teure Autos auf dem Ring (`makeMonacoTraffic`/
+  `stepMonacoTraffic`), Mietautos am Jachthafen (`city.rides`). Fähre (`FERRY`, `ferryAt`): Dock A am Frachthafen
+  (Lücke in der Kaimauer), Dock B im Jachthafen; aufs Deck fahren/gehen und anhalten = Überfahrt (`stepFerry`,
+  `city.ferryRide`, `onDeck` in allowedAt/groundAt); am anderen Kai wird sie gerufen. Boot: Steg auch dort
+  (`city.boatAt`), Flugzeug: Welt bis x −2750. Himmel und Sterne wandern mit der Kamera (der Himmel ist ein Würfel).
 - `look.js`: schöne Grafik für Stadt, Rennen, Stuntpark: Nachbearbeitung mit den Bibliotheken `postprocessing` und `n8ao`
   (Import-Map in `index.html`): weiche Schatten in Ecken (N8AO, `transparencyAware` aus = schnell), Leuchten, SMAA, ACES.
   `skyEnvironment` = Spiegelungen vom Himmel. Knopf ✨ in der Stadt (Spielstand `autoRetterGfx`); zu langsam = schaltet ab;

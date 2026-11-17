@@ -39,3 +39,29 @@ function bayDist(x, z) { // > 0 ausserhalb der Bucht (Rechteck mit runden Ecken,
 export function islandDist(x, z) { return Math.min(radial(x, z), bayDist(x, z)); }
 export const onIsland = (x, z, m = 0) => islandDist(x, z) > m;
 export const islandReady = () => !!R;
+
+// ---------- Diamantinsel (kleine Insel wie Monaco, im Westen vor der Bucht) ----------
+// Rund mit Wellen, im Osten ein Hafenbecken (Jachthafen mit Fährsteg), im Süden eine flache Landzunge mit Piste.
+export const MONACO = { x: -2150, z: -180, r: 300 };
+export const MON_HARBOR = { x0: MONACO.x + 225, x1: MONACO.x + 290, z0: MONACO.z - 70, z1: MONACO.z + 70 }; // flacher Kai
+export const MON_STRIP = { x0: MONACO.x - 160, x1: MONACO.x + 140, z0: MONACO.z + 255, z1: MONACO.z + 285 }; // Piste
+const MON_SPIT = { x0: MONACO.x - 185, x1: MONACO.x + 165, z0: MONACO.z + 225, z1: MONACO.z + 305 }; // Landzunge
+const MON_BASIN = { x0: MONACO.x + 290, x1: MONACO.x + 2000, z0: MONACO.z - 75, z1: MONACO.z + 75, r: 25 }; // Hafenbecken
+const sdBox = (x, z, b, r = 0) => { // < 0 innen, > 0 aussen (Meter)
+  const cx = (b.x0 + b.x1) / 2, cz = (b.z0 + b.z1) / 2, qx = Math.abs(x - cx) - ((b.x1 - b.x0) / 2 - r), qz = Math.abs(z - cz) - ((b.z1 - b.z0) / 2 - r);
+  return Math.hypot(Math.max(qx, 0), Math.max(qz, 0)) + Math.min(Math.max(qx, qz), 0) - r;
+};
+export const monRadius = a => MONACO.r * (1 + 0.12 * Math.sin(2 * a + 0.7) + 0.08 * Math.sin(3 * a + 2) + 0.05 * Math.sin(7 * a + 1));
+// > 0 auf der Diamantinsel, < 0 im Wasser (ungefähr Meter)
+export function monacoDist(x, z) {
+  const dx = x - MONACO.x, dz = z - MONACO.z;
+  if (dx * dx + dz * dz > 700 * 700) return -700;
+  let d = monRadius(Math.atan2(dz, dx)) - Math.hypot(dx, dz);
+  d = Math.min(Math.max(d, -sdBox(x, z, MON_SPIT, 20), -sdBox(x, z, MON_HARBOR)), sdBox(x, z, MON_BASIN, MON_BASIN.r));
+  return Math.max(d, -sdBox(x, z, MON_PIER)); // Bootssteg im Hafenbecken
+}
+export const MON_PIER = { x0: MONACO.x + 286, x1: MONACO.x + 320, z0: MONACO.z + 55, z1: MONACO.z + 59 }; // Steg fürs Boot
+export const MON_BOAT = { x: MONACO.x + 313, z: MONACO.z + 66, h: 0 }; // dort liegt das Boot, wenn man hier aussteigt
+export const inBox = (x, z, b, m = 0) => x > b.x0 - m && x < b.x1 + m && z > b.z0 - m && z < b.z1 + m;
+// Land irgendwo (Hauptinsel oder Diamantinsel): für Wasser, Boot und Auto
+export const landDist = (x, z) => Math.max(islandDist(x, z), monacoDist(x, z));

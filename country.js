@@ -8,7 +8,7 @@
 // Koordinaten wie in city.js (x nach Osten, z nach Süden). Bodenhöhe am Berg: passTerrain (wie das feine Gelände).
 import * as THREE from 'three';
 import { passPoints, passGround, passTerrain, passNearest, SUMMIT, ALP } from './outskirts.js';
-import { islandDist } from './island.js';
+import { landDist } from './island.js';
 
 const box = (b, x, z, m = 0) => x > b.x0 + m && x < b.x1 - m && z > b.z0 + m && z < b.z1 - m;
 const boxDist = (x, z, b) => {
@@ -107,7 +107,7 @@ export const countryBlocked = (x, z, r = 1) => FARM_SOLIDS.some(b => box(b, x, z
 // Skigebiet: Talstation, Bergstation (für city.js: Lift fahren und selber Ski fahren)
 export const inSki = (x, z) => Math.hypot(x - SKI.x, z - SKI.z) < SKI.r + 30 || box(SKI_BASE, x, z);
 // Auf dem Wasser (für das Boot)
-export const inWater = (x, z, r = 2) => { const d = islandDist(x, z); return d < -(r + 3) && d > -3500 && !box(PIER, x, z, -r); }; // Meer rund um die Insel
+export const inWater = (x, z, r = 2) => { const d = landDist(x, z); return d < -(r + 3) && d > -3500 && !box(PIER, x, z, -r); }; // Meer rund um beide Inseln
 export const nearPier = (x, z) => Math.hypot(x - BOAT_HOME.x, z - BOAT_HOME.z) < 14;
 export const BOAT_Y = -1.1; // Wasseroberfläche liegt bei −1,2 (outskirts.js), der Rumpf taucht etwas ein
 

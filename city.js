@@ -9,7 +9,9 @@ import { createCarSound, crash, gearbox, horn, createSiren } from './sound.js';
 import { buildMoon, stepMoon, inMoon, moonGround, moonAllowed, MOON, MOON_G, MOON_ROCKET, MOON_BUGGY } from './moon.js';
 import { buildCountry, stepCountry, countryDist, countryDrivable, countrySurface, inCountry, inWater, nearPier, BOAT_Y, BOAT_HOME, RIDES_INFO, FARM, countryBlocked, SPACE, SKI, skiH, skiFade } from './country.js';
 import { makeNetCars } from './netcars.js';
-import { setIsland, islandDist, SEA_Y, ISLAND_C } from './island.js';
+import { setIsland, islandDist, landDist, SEA_Y, ISLAND_C, MONACO } from './island.js';
+import { buildMonaco, monGround, monRoad, inMonaco, nearMonPier, MON_BOAT, MON_PIER, MON_ROADS, MON_NAME, FERRY, FERRY_Y, FERRY_LEN, FERRY_PATH, ferryAt, ferryLocal, ferryWorld, makeFerry,
+  makeMonacoTraffic, stepMonacoTraffic } from './monaco.js';
 import { buildSuburbs, suburbDist, inSuburb, suburbRoad, drawSuburbs, SUBURBS, SUB_PLACES } from './suburbs.js';
 import { loadLook, makeLook, skyEnvironment, lookWanted, setLookWanted } from './look.js';
 import { makeChat } from './chat.js';
@@ -1546,6 +1548,9 @@ function buildWorld() {
   solid.push(...areas.solids);
   areas.pass = buildPass({ scene, group: decor, asphaltMat, lineMat, sign, natural, // Passstrasse im Norden
     terrainMesh: o => terrain({ ...o, detail: grassDetail, detailRepeat: 100 }) });
+  // Diamantinsel (monaco.js): eigenes Gelände, Villen, Palast, Jachthafen, Piste
+  const monaco = buildMonaco({ scene, group: decor, asphaltMat, lineMat, paveMat, sign, rng, round, solid,
+    terrainMesh: o => terrain({ ...o, detail: grassDetail, detailRepeat: 160 }) });
   scene.add(decor);
   mergeStatic(decor);
   const clouds = cloudDome({ radius: 2600, coverage: 0.52, shade: '#aebccd', seed: 9 });
@@ -1559,7 +1564,8 @@ function buildWorld() {
   const flash = new THREE.Mesh(new THREE.SphereGeometry(0.6, 12, 8), new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0, depthWrite: false }));
   flash.visible = false;
   scene.add(flash);
-  return { renderer, scene, camera, sun, clouds, lamps, solid, round, parks, places, sign, country, height, moon, redCams, speedCams, flash, areas, ground: { asphalt: asphaltMat, grass: grassMat, pave: paveMat, land: land.material },
+  sky.userData.noWarp = stars.userData.noWarp = true; // wandern mit der Kamera (render): Himmel überall, auch weit draussen
+  return { skyMesh: sky, stars, monaco, renderer, scene, camera, sun, clouds, lamps, solid, round, parks, places, sign, country, height, moon, redCams, speedCams, flash, areas, ground: { asphalt: asphaltMat, grass: grassMat, pave: paveMat, land: land.material },
     night: { sky: su, hemi, envs: { ...envs, day: dayEnv }, walls: [...walls, ...homeWalls], heads: headM.material, pools, stars, headlight, fog: scene.fog } };
 }
 
@@ -2559,7 +2565,7 @@ function stepPlane(dt) {
     me.alt = Math.min(600, me.alt + P.vy * dt);
     P.pitch = Math.atan2(P.vy, me.speed) * 1.4;
     let nx = me.pos.x + Math.cos(me.heading) * me.speed * dt, nz = me.pos.z + Math.sin(me.heading) * me.speed * dt;
-    if (nx < -1080 || nx > 1080 || nz < -1080 || nz > 3280) { // Ende der Welt: umkehren
+    if (nx < -2750 || nx > 1750 || nz < -1700 || nz > 3400) { // Ende der Welt: umkehren (die Diamantinsel liegt im Westen)
       me.heading += Math.PI * dt * 0.8; nx = me.pos.x; nz = me.pos.z;
       if (city.msgT <= 0) showMsg('🌍 Ende der Welt – kehr um!', 1.4);
     }
@@ -2592,24 +2598,27 @@ function enterBoat() {
   city.boat = { car: me.mesh, carPos: { x: me.pos.x, z: me.pos.z }, carH: me.heading };
   C.boat.rotation.order = 'YZX';
   me.mesh = C.boat;
-  Object.assign(me.pos, { x: BOAT_HOME.x, z: BOAT_HOME.z }); me.heading = BOAT_HOME.h;
+  const bs = city.boatAt || BOAT_HOME;
+  Object.assign(me.pos, { x: bs.x, z: bs.z }); me.heading = bs.h;
   Object.assign(me, { speed: 0, vl: 0, steer: 0, fly: false, landing: false, alt: 0 });
   S.ui.flybtn.hidden = true;
   showMsg('🚤 Leinen los! Zum Aussteigen zurück zum Steg und 🚪', 2.6);
 }
 function leaveBoat() {
-  const me = city.me, B = city.boat, C = S.country;
-  C.boat.position.set(BOAT_HOME.x, BOAT_Y, BOAT_HOME.z); C.boat.rotation.set(0, -BOAT_HOME.h, 0);
+  const me = city.me, B = city.boat, C = S.country, mon = nearMonPier(me.pos.x, me.pos.z), bs = mon ? MON_BOAT : BOAT_HOME;
+  city.boatAt = mon ? MON_BOAT : null; // das Boot bleibt an diesem Steg
+  C.boat.position.set(bs.x, BOAT_Y, bs.z); C.boat.rotation.set(0, -bs.h, 0);
   me.mesh = B.car;
   Object.assign(me.pos, B.carPos); me.heading = B.carH;
   Object.assign(me, { speed: 0, vl: 0, alt: 0 });
   city.boat = null;
-  const w = city.walk = { x: -768, z: -420, h: 0, speed: 0, phase: 0, mesh: makePlayer(), target: null };
+  const w = city.walk = mon ? { x: MON_PIER.x0 + 3, z: (MON_PIER.z0 + MON_PIER.z1) / 2, h: Math.PI, speed: 0, phase: 0, mesh: makePlayer(), target: null }
+    : { x: -768, z: -420, h: 0, speed: 0, phase: 0, mesh: makePlayer(), target: null };
   w.mesh.position.set(w.x, 0, w.z);
   S.scene.add(w.mesh);
   S.ui.walkbtn.textContent = '🚗';
   S.ui.hint.textContent = '⬅️ ➡️ drehen · ⬆️ gehen (lange = rennen) · E springen · Q Backflip · X einsteigen';
-  showMsg('🚶 Am Steg ausgestiegen – geh zu deinem Auto', 2);
+  showMsg(mon ? '🚶 Willkommen auf der Diamantinsel! Nimm ein Auto vom Jachthafen' : '🚶 Am Steg ausgestiegen – geh zu deinem Auto', 2.4);
 }
 function onBale() {
   city.bales = (city.bales || 0) + 1;
@@ -3144,6 +3153,7 @@ function stepHw(dt) {
 const allowedAt = (x, z, r) => {
   if (inMoon(x, z)) return moonAllowed(x, z, r); // auf dem Mond
   if (city.boat && !city.walk) return inWater(x, z, r);
+  if (onDeck(x, z)) return true; // auf der Fähre
   const keys = city.keys ? city.keys.size : 0;
   if ((Math.abs(x) <= LIMIT && Math.abs(z) <= LIMIT) || hwDrivable(x, z, r) || countryDrivable(x, z, r) || areaDrivable(x, z, r, keys) || passDrivable(x, z, r, keys)) return true;
   return !offroadWhy(x, z, r, keys) && !countryBlocked(x, z, r);
@@ -3154,6 +3164,8 @@ const groundMemo = new Map();
 function landAt(i, j) { const k = i * 100000 + j; let h = groundMemo.get(k); if (h === undefined) { h = S.height(-1100 + i * 20, -1100 + j * 20); groundMemo.set(k, h); } return h; }
 function groundAt(x, z) {
   if (inMoon(x, z)) return moonGround(x, z);
+  if (onDeck(x, z)) return FERRY_Y; // Autodeck der Fähre
+  if (inMonaco(x, z)) return monGround(x, z); // Diamantinsel
   if (pkIn(x, z)) return parkY(x, z);
   const pg = passGround(x, z);
   if (pg) return pg;
@@ -3494,6 +3506,66 @@ function removeParked(P) {
   const k = city.parked.indexOf(P); if (k >= 0) city.parked.splice(k, 1);
   saveParked();
 }
+// ---------- Fähre zur Diamantinsel und Verkehr dort ----------
+// Die Fähre liegt am Frachthafen (A) oder im Jachthafen (B). Aufs Deck fahren (oder gehen) und anhalten = sie legt ab,
+// man fährt mit (Gas = schneller). Wartet sie am anderen Ufer, kommt sie, sobald man am Kai steht.
+function onDeck(x, z) {
+  const F = city && city.ferry; if (!F) return false;
+  const [lx, lz] = ferryLocal(F.pose, x, z);
+  return Math.abs(lx) < FERRY.halfL - 1 && Math.abs(lz) < FERRY.halfW + (F.moving ? 0 : 3); // angelegt: bis an den Kai
+}
+function placeRider() {
+  const F = city.ferry, R = F.rider; if (!R) return;
+  const [x, z] = ferryWorld(F.pose, R.lx, R.lz), h = F.pose.h + R.dh;
+  if (R.walk) { const w = city.walk; if (!w) return; Object.assign(w, { x, z, h, speed: 0, gy: FERRY_Y }); w.mesh.position.set(x, FERRY_Y, z); w.mesh.rotation.y = -h; }
+  else { const me = city.me; me.pos.x = x; me.pos.z = z; me.heading = h; me.speed = 0; me.vl = 0; city.gy = FERRY_Y; me.mesh.position.set(x, FERRY_Y, z); me.mesh.rotation.set(0, -h, 0); }
+}
+function stepFerry(dt) {
+  const F = city.ferry, me = city.me, w = city.walk;
+  F.pose = ferryAt(F.s);
+  S.ferryMesh.position.set(F.pose.x, 0, F.pose.z); S.ferryMesh.rotation.y = -F.pose.h;
+  if (F.moving) {
+    const v = F.rider ? (city.input.gas || city.input.up ? 75 : 26) : 70;
+    F.s += F.dir * v * dt;
+    if (F.s <= 0 || F.s >= FERRY_LEN) { // angekommen
+      F.s = F.dir > 0 ? FERRY_LEN : 0; F.moving = false; F.at = F.dir > 0 ? 'B' : 'A'; F.pose = ferryAt(F.s); placeRider();
+      if (F.rider) showMsg(F.at === 'B' ? '⛴️ Angekommen auf der Diamantinsel! Fahr von der Fähre' : '⛴️ Zurück im Frachthafen!', 3);
+      else showMsg('⛴️ Die Fähre ist da – fahr drauf und halte an', 2.4);
+      F.rider = null; city.ferryRide = false; F.wait = 0; F.cool = 5;
+    } else placeRider();
+    return;
+  }
+  F.cool = Math.max(0, (F.cool || 0) - dt);
+  const P = w ? { x: w.x, z: w.z, v: Math.abs(w.speed) } : { x: me.pos.x, z: me.pos.z, v: Math.abs(me.speed) };
+  if (city.boat || city.plane || city.launch) return;
+  const [lx, lz] = ferryLocal(F.pose, P.x, P.z);
+  if (F.cool <= 0 && Math.abs(lx) < FERRY.halfL - 3 && Math.abs(lz) < FERRY.halfW - 1.5) { // auf dem Deck
+    if (!F.told) { F.told = true; showMsg('⛴️ Anhalten – die Fähre legt ab! (Gas = schneller)', 2.4); }
+    F.wait = P.v < 0.8 ? F.wait + dt : 0;
+    if (F.wait > 1.2) {
+      F.rider = { walk: !!w, lx, lz, dh: (w ? w.h : me.heading) - F.pose.h }; F.moving = true; F.dir = F.at === 'A' ? 1 : -1; city.ferryRide = true;
+      showMsg(F.at === 'A' ? '⛴️ Leinen los – zur Diamantinsel!' : '⛴️ Zurück zum Frachthafen', 2.4);
+    }
+  } else { F.wait = 0; F.told = false; }
+  const here = F.at === 'A' ? FERRY.A : FERRY.B, there = F.at === 'A' ? FERRY.B : FERRY.A;
+  if (Math.hypot(P.x - there.x, P.z - there.z) < 45 && Math.hypot(P.x - here.x, P.z - here.z) > 200) { // am anderen Kai: Fähre rufen
+    F.moving = true; F.dir = F.at === 'A' ? 1 : -1; showMsg('⛴️ Die Fähre kommt – warte am Kai!', 2.6);
+  }
+}
+function stepMonaco(dt) {
+  const P = mapWho(), near = Math.hypot(P.x - MONACO.x, P.z - MONACO.z) < 800;
+  if (!S.monCars) return;
+  if (!near) { for (const c of S.monCars) c.mesh.visible = false; return; }
+  const me = city.me, w = city.walk, who = w ? { x: w.x, z: w.z, r: 0.5 } : { x: me.pos.x, z: me.pos.z, r: city.boat || city.plane ? -99 : me.radius * 0.8 };
+  const hit = stepMonacoTraffic(S.monCars, dt, who, S.camera.position, animateCar, city.t);
+  if (hit && !w && !city.ferryRide) { // Rempler: zurückprallen
+    const dx = me.pos.x - hit.x, dz = me.pos.z - hit.z, d = Math.hypot(dx, dz) || 1;
+    me.pos.x += dx / d * 1.2; me.pos.z += dz / d * 1.2;
+    if (Math.abs(me.speed) > 3 && (city.crashT || 0) <= 0) { crash(0.2 + Math.abs(me.speed) / 25, 'car'); hurt(Math.abs(me.speed) / 25, hit.x, hit.z); city.crashT = 0.5; }
+    me.speed *= -0.3;
+  } else if (hit && w) { const dx = w.x - hit.x, dz = w.z - hit.z, d = Math.hypot(dx, dz) || 1; w.x += dx / d * 0.8; w.z += dz / d * 0.8; }
+}
+
 // ---------- Dichtes Gras um dich herum ----------
 // Auf Wiesen stehen rund um den Spieler (42 m) tausende Grasbüschel; sie wandern mit. Jede Stelle hat immer dasselbe
 // Büschel (fester Zufall je Feld), darum flackert nichts. Nur wo Wiese ist (surfaceAt), nicht auf Strassen und im Wasser.
@@ -3514,7 +3586,7 @@ function stepGrass() {
   let n = 0;
   for (let i = i0; i <= i1 && n < GRASS.n; i++) for (let j = j0; j <= j1 && n < GRASS.n; j++) {
     const x = (i + gHash(i, j, 0)) * C, z = (j + gHash(i, j, 9)) * C;
-    if ((x - P.x) ** 2 + (z - P.z) ** 2 > GRASS.r * GRASS.r || surfaceAt(x, z) !== 'grass' || islandDist(x, z) < 12) continue;
+    if ((x - P.x) ** 2 + (z - P.z) ** 2 > GRASS.r * GRASS.r || surfaceAt(x, z) !== 'grass' || landDist(x, z) < 12) continue;
     if ((inPassRegion(x, z) && passNearest(x, z).d < 9) || [[1.5, 0], [-1.5, 0], [0, 1.5], [0, -1.5]].some(([a, b]) => surfaceAt(x + a, z + b) !== 'grass')) continue; // nicht auf Strassen und ihren Rändern
     const s = 0.8 + gHash(i, j, 4) * 0.8;
     warpXZ(x, z, w); // wie alles andere: in der Stadt verbogen
@@ -3749,7 +3821,7 @@ function toggleWalk() {
   if (city.walk) { getIn(); return; }
   const me = city.me;
   if (city.plane) { if (!city.plane.air && Math.abs(me.speed) < 3 && !(city.plane.crashT > 0)) leavePlane(); else showMsg('✈️ Zuerst landen und anhalten', 1.6); return; }
-  if (city.boat) { if (nearPier(me.pos.x, me.pos.z) && Math.abs(me.speed) < 5) leaveBoat(); else showMsg('🚤 Fahr zurück zum Steg, dort kannst du aussteigen', 1.8); return; }
+  if (city.boat) { if ((nearPier(me.pos.x, me.pos.z) || nearMonPier(me.pos.x, me.pos.z)) && Math.abs(me.speed) < 5) leaveBoat(); else showMsg('🚤 Fahr zu einem Steg (Strand oder Diamantinsel), dort kannst du aussteigen', 2); return; }
   if (city.police || city.ticket || city.pulled > 0) { showMsg('🚔 Nicht jetzt – die Polizei!', 1.4); return; }
   if (tagState()) { showMsg('🏃 Nicht während Fangis', 1.4); return; }
   if (Math.abs(me.speed) > 3 || me.alt > 0.5) { showMsg('Zuerst anhalten', 1.2); return; }
@@ -3850,7 +3922,8 @@ function stepWalk(dt) {
     const d = Math.hypot(R.x - w.x, R.z - w.z) - R.mesh.userData.length * 0.35;
     if (d < 1.6 && d < bd) { bd = d; best = { v: R.v, x: R.x, z: R.z, h: R.h, ride: R }; }
   }
-  if (!city.boat && nearPier(w.x, w.z) && Math.hypot(w.x - BOAT_HOME.x, w.z - BOAT_HOME.z) < 12.5) { best = { boat: true }; bd = 0; } // Boot am Steg
+  { const bs = city.boatAt || BOAT_HOME; // Boot an seinem Steg (Strand oder Diamantinsel)
+    if (!city.boat && (nearPier(w.x, w.z) || nearMonPier(w.x, w.z)) && Math.hypot(w.x - bs.x, w.z - bs.z) < 13) { best = { boat: true }; bd = 0; } }
   for (const Lf of S.country.lifts) if (Math.hypot(w.x - Lf.A.x, w.z - Lf.A.z) < 12) { best = { lift: Lf }; bd = 0; } // Talstation eines Lifts
   const KS = S.places.kino && S.places.kino.seats;
   if (KS && w.x > KS.x0 && w.x < KS.x1 && w.z > KS.z0 && w.z < KS.z1) { best = { movie: true }; bd = 0; } // im Kino bei den Sitzen
@@ -4918,7 +4991,7 @@ function surfaceAt(x, z) {
   if (city && city.boat && !city.walk) return 'water';
   if (inMoon(x, z)) return 'moon';
   if (Math.abs(x) > HALF + ROAD / 2 || Math.abs(z) > HALF + ROAD / 2) {
-    if (onHighway(x, z) || inArea(x, z) || suburbRoad(x, z)) return 'asphalt';
+    if (onHighway(x, z) || inArea(x, z) || suburbRoad(x, z) || monRoad(x, z) || onDeck(x, z)) return 'asphalt';
     return countrySurface(x, z) || (onPass(x, z) ? 'asphalt' : 'grass');
   }
   const bi = Math.floor(x / BLOCK + N / 2), bj = Math.floor(z / BLOCK + N / 2);
@@ -5143,7 +5216,7 @@ function buildDom() {
   mcv.addEventListener('pointerdown', e => {
     e.preventDefault(); if (!city) return;
     if (!city.bigMap) { setBigMap(true); return; }
-    mcv.setPointerCapture(e.pointerId);
+    try { mcv.setPointerCapture(e.pointerId); } catch (err) { /* ohne Zeiger */ }
     touches.set(e.pointerId, mapPoint(e));
     mdrag = { moved: 0, t: performance.now() };
   });
@@ -5265,7 +5338,7 @@ const mpx = (x, z) => mx(mp(x, z).x), mpz = (x, z) => mx(mp(x, z).z);
 // Eine Weltkarte für alles: Stadt (verbogen wie im Bild), Vororte, Autobahn, Hafen, Flughafen, Strand, Pass, Alp, Skigebiet,
 // Raumbahnhof. Das feste Bild (S.worldMap) wird nur neu gemalt, wenn sich Schlüssel ändern (gesperrte Gebiete grau).
 // Oben rechts: runder Ausschnitt um dich (vorne = oben); antippen = ganze Karte mit Namen (city.bigMap). Auf dem Mond eigene Karte.
-const WM = { x0: -1800, x1: 1800, z0: -1650, z1: 3300, K: 0.45 }; // ganze Insel mit Meer drumherum; Bildpunkte pro Meter
+const WM = { x0: -2700, x1: 1800, z0: -1650, z1: 3300, K: 0.45 }; // ganze Insel mit Meer drumherum; Bildpunkte pro Meter
 const WMW = Math.round((WM.x1 - WM.x0) * WM.K), WMH = Math.round((WM.z1 - WM.z0) * WM.K);
 const DM = { x0: -720, x1: 800, z0: -330, z1: 420, K: 1.1 }; // Stadt und Vororte genauer (eigenes Bild darüber)
 const SEA_COL = '#2f74b5';
@@ -5276,7 +5349,7 @@ const PLACE_ICONS = [['gas', '⛽'], ['wash', '🫧'], ['pizza', '🍕'], ['jail
 function paintIsland(g, x0, z0, W, H, K) {
   const img = g.createImageData(W, H), d = img.data, sea = [47, 116, 181], shallow = [92, 168, 214], sand = [233, 216, 166], grass = [63, 110, 58];
   for (let py = 0; py < H; py++) for (let px = 0; px < W; px++) {
-    const x = x0 + (px + 0.5) / K, z = z0 + (py + 0.5) / K, t = islandDist(x, z), i = (py * W + px) * 4;
+    const x = x0 + (px + 0.5) / K, z = z0 + (py + 0.5) / K, t = landDist(x, z), i = (py * W + px) * 4;
     const c = t > 14 ? grass : t > 0 ? sand : t > -40 ? shallow : sea, f = t <= 0 && t > -40 ? -t / 40 : 0;
     d[i] = f ? shallow[0] + (sea[0] - shallow[0]) * f : c[0]; d[i + 1] = f ? shallow[1] + (sea[1] - shallow[1]) * f : c[1]; d[i + 2] = f ? shallow[2] + (sea[2] - shallow[2]) * f : c[2]; d[i + 3] = 255;
   }
@@ -5299,6 +5372,13 @@ function paintWorld(g, P, K) {
   line([[0, HALF], [0, HW.cz - HW.R]], '#d4d8de', 14 * K);
   rect({ x0: REST.x - 150, x1: REST.x + 150, z0: REST.z + 20, z1: REST.z + 130 }, '#f59e0b'); // Raststätte
   drawSuburbs(g, P, K); // Vororte
+  // Diamantinsel: Fährlinie, Strassen, Villen, Kai, Piste, Palast
+  g.save(); g.setLineDash([8 * K, 8 * K]); line(FERRY_PATH, 'rgba(255,255,255,0.75)', Math.max(1.5, 3 * K)); g.restore();
+  for (const R of MON_ROADS) line(R.line, '#dfe3ea', 9 * K);
+  g.fillStyle = '#f5f5f4'; for (const v of S.monaco.villas) { const [x, y] = P(v.x, v.z); g.fillRect(x - 6 * K, y - 6 * K, 12 * K, 12 * K); }
+  rect({ x0: MONACO.x + 225, x1: MONACO.x + 290, z0: MONACO.z - 70, z1: MONACO.z + 70 }, '#cbd5e1');
+  rect({ x0: MONACO.x - 160, x1: MONACO.x + 140, z0: MONACO.z + 255, z1: MONACO.z + 285 }, '#9ca3af');
+  { const [x, y] = P(MONACO.x - 4, MONACO.z - 14); g.fillStyle = '#f9a8d4'; g.fillRect(x - 17 * K, y - 7 * K, 34 * K, 14 * K); }
   // Stadt: Fläche (verbogen), Parks, Strassen, Fussgängerzonen, Kreisel
   g.fillStyle = '#7b8490'; g.beginPath();
   for (let k = 0; k < 64; k++) { const t = (k % 16) / 16 * 2 - 1, side = k >> 4, q = P(...[[t * HALF, -HALF], [HALF, t * HALF], [-t * HALF, HALF], [-HALF, -t * HALF]][side]); k ? g.lineTo(q[0], q[1]) : g.moveTo(q[0], q[1]); }
@@ -5405,6 +5485,7 @@ function mapLabels() {
   const keys = city.keys.size, lock = (name, need) => (keys >= need ? name : '🔒 ' + name + ' (' + need + ' 🔑)');
   const L = [['🏙️ Stadt', 0, -HALF - 40], ['⛷️ Skigebiet', SKI.x, SKI.z], ['🐄 Alp', (FARM.x0 + FARM.x1) / 2, FARM.z0 - 30], ['🚀 Raumbahnhof', SPACE.x, SPACE.z + 50],
     ['🛣️ Raststätte', REST.x, REST.z + 170], ['🏖️ Strand', -674, -700], [lock('⛰️ Pass', PASS_AREA.need), SUMMIT.x, SUMMIT.z + 60], ['🛣️ Autobahn', -HW.half - 40, HW.cz + 400]];
+  L.push([MON_NAME, MONACO.x, MONACO.z - 330]);
   for (const S2 of SUBURBS) L.push([S2.name, (S2.rect.x0 + S2.rect.x1) / 2, S2.rect.z0 - 25]);
   for (const A of Object.values(AREAS)) L.push([lock(A.name, A.need), (A.rect.x0 + A.rect.x1) / 2, (A.rect.z0 + A.rect.z1) / 2]);
   return L;
@@ -5429,7 +5510,7 @@ function drawMinimap() {
     g.fillStyle = SEA_COL; g.fillRect(0, 0, W, H); // Meer bis zum Rand: kein Ende zu sehen
     g.save(); g.translate(ox, oy); g.scale(scale, scale); blitWorld(g); g.restore();
   } else {
-    const near = Math.max(Math.abs(P.x), Math.abs(P.z)) < LIMIT + 20 || inSuburb(P.x, P.z);
+    const near = Math.max(Math.abs(P.x), Math.abs(P.z)) < LIMIT + 20 || inSuburb(P.x, P.z) || inMonaco(P.x, P.z);
     city.mapS = (city.mapS || 0.9) + ((near ? 0.9 : 0.35) - (city.mapS || 0.9)) * 0.08; // Meter → Bildpunkte, sanft
     scale = city.mapS / K; const a = -hd - Math.PI / 2, ca = Math.cos(a), sa = Math.sin(a);
     toS = (x, z) => { const [u, v] = wmPt(x, z), dx = (u - pbx) * scale, dy = (v - pby) * scale; return [W / 2 + dx * ca - dy * sa, H / 2 + dx * sa + dy * ca]; };
@@ -5446,6 +5527,8 @@ function drawMinimap() {
   if (city.works) { const W2 = city.works, [a, b] = toS(node(W2.a[0]), node(W2.a[1])), [c2, d2] = toS(node(W2.b[0]), node(W2.b[1])); g.strokeStyle = '#f97316'; g.lineWidth = 4; g.beginPath(); g.moveTo(a, b); g.lineTo(c2, d2); g.stroke(); }
   for (const c of city.cars) if (!c.off) dot(c.x, c.z, '#ffffff', big ? 1.3 : 1.8);
   for (const c of city.hw || []) if (c.dir) dot(c.x, c.z, '#fde047', big ? 1 : 1.6);
+  for (const c of S.monCars || []) dot(c.x, c.z, '#facc15', big ? 1.3 : 1.8); // teure Autos auf der Diamantinsel
+  if (city.ferry) icon('⛴️', city.ferry.pose.x, city.ferry.pose.z, big ? 13 : 15);
   S.places.bases.forEach((B, s) => { if (s === city.baseSlot) icon('🏠', B.x, B.z, big ? 12 : 14); else if (baseOwner(s)) dot(B.x, B.z, BASE_COLORS[s], 3.5); });
   if (city.police) dot(city.police.pos.x, city.police.pos.z, Math.floor(city.t * 6) % 2 ? '#3b82f6' : '#ef4444', 4.5);
   const it = city.net ? tagState() : null;
@@ -5564,6 +5647,15 @@ export function startCity({ player, kinds, topSpeed, onExit, pay = () => 0, earn
     if (mesh.userData.driver) mesh.userData.driver.visible = false;
     S.scene.add(mesh); city.rides.push({ v: { ...TR.v }, x: TR.x, z: TR.z, h: TR.h, mesh });
   }
+  if (!S.ferryMesh) { S.ferryMesh = makeFerry(); S.scene.add(S.ferryMesh); }
+  city.ferry = { s: 0, at: 'A', moving: false, dir: 1, rider: null, wait: 0, pose: ferryAt(0) }; city.ferryRide = false; city.boatAt = null;
+  if (!S.monCars) S.monCars = makeMonacoTraffic(kinds, buildCar, S.scene);
+  for (const [kind, color, dz] of [['hyper', '#facc15', -45], ['cabrio', '#dc2626', -30], ['limo', '#f8fafc', 30]]) { // am Jachthafen: einsteigen und losfahren
+    if (!kinds[kind]) continue;
+    const v = { id: 'mon-' + kind, kind, color, ps: kind === 'hyper' ? 900 : 420, special: null }, x = MONACO.x + 236, z = MONACO.z + dz, h = -Math.PI / 2;
+    const mesh = buildCar(v, kinds); mesh.position.set(x, monGround(x, z), z); mesh.rotation.y = -h; if (mesh.userData.driver) mesh.userData.driver.visible = false;
+    S.scene.add(mesh); city.rides.push({ v, x, z, h, mesh });
+  }
   setupKeys();
   city.hw = makeHighwayTraffic(S.scene, kinds);
   for (const m of city.hw.meshes) noShadow(m);
@@ -5621,7 +5713,9 @@ function step(now) {
   stepMoonEnv(dt);
   stepLaunch(dt);
   if (city.pulled > 0) city.pulled -= dt;
-  if (city.walk) stepWalk(dt); else if (city.plane) stepPlane(dt); else stepMe(dt);
+  stepFerry(dt);
+  if (city.ferryRide) { /* auf der Fähre: nicht selber fahren */ } else if (city.walk) stepWalk(dt); else if (city.plane) stepPlane(dt); else stepMe(dt);
+  stepMonaco(dt);
   stepJail();
   stepRules(dt);
   stepDamage(dt);
@@ -5854,6 +5948,7 @@ function render(dt) {
   S.sun.position.set(sp.x + 70, 110 + city.gy, sp.z - 40);
   S.sun.target.position.set(sp.x, city.gy, sp.z);
   S.clouds.position.set(cam.position.x, 0, cam.position.z);
+  S.skyMesh.position.set(cam.position.x, 0, cam.position.z); S.stars.position.set(cam.position.x, 0, cam.position.z);
   S.fx.update(dt, cam, S.renderer);
   if (S.look && S.look.on) S.look.render(dt); else S.renderer.render(S.scene, cam);
   unwarpFrame();
