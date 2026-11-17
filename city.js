@@ -9,6 +9,7 @@ import { createCarSound, crash, gearbox, horn, createSiren } from './sound.js';
 import { buildMoon, stepMoon, inMoon, moonGround, moonAllowed, MOON, MOON_G, MOON_ROCKET, MOON_BUGGY } from './moon.js';
 import { buildCountry, stepCountry, countryDist, countryDrivable, countrySurface, inCountry, inWater, nearPier, BOAT_Y, BOAT_HOME, RIDES_INFO, FARM, countryBlocked, SPACE, SKI, skiH, skiFade } from './country.js';
 import { makeNetCars } from './netcars.js';
+import { setIsland, islandDist, SEA_Y, ISLAND_C } from './island.js';
 import { buildSuburbs, suburbDist, inSuburb, suburbRoad, drawSuburbs, SUBURBS, SUB_PLACES } from './suburbs.js';
 import { loadLook, makeLook, skyEnvironment, lookWanted, setLookWanted } from './look.js';
 import { makeChat } from './chat.js';
@@ -545,7 +546,26 @@ function buildWorld() {
 
   // Gelände rundherum: in der Stadt flach, draussen Hügel
   const natural = (x, z) => smoothstep(HALF + 90, HALF + 500, Math.max(Math.abs(x), Math.abs(z))) * NZ.fbm(x / 260, z / 260, 4) * 190 - 0.06;
-  const height = (x, z) => {
+  // Die Insel: die Küste wird um alles gelegt, was es gibt (island.js); das Gelände fällt dort zum Meer ab
+  const isle = [];
+  for (let s = 0; s <= HW_LEN; s += 25) { const p = hwPoint(s); for (const l of [-30, 30]) isle.push([p.x - p.tz * l, p.z + p.tx * l]); }
+  for (const p of passPoints()) for (const [ox, oz] of [[-25, 0], [25, 0], [0, -25], [0, 25]]) isle.push([p.x + ox, p.z + oz]);
+  const boxPts = (b, m = 30) => { for (const [x, z] of [[b.x0 - m, b.z0 - m], [b.x1 + m, b.z0 - m], [b.x0 - m, b.z1 + m], [b.x1 + m, b.z1 + m], [(b.x0 + b.x1) / 2, b.z0 - m], [(b.x0 + b.x1) / 2, b.z1 + m], [b.x0 - m, (b.z0 + b.z1) / 2], [b.x1 + m, (b.z0 + b.z1) / 2]]) isle.push([x, z]); };
+  for (const A of Object.values(AREAS)) { boxPts(A.rect); boxPts(A.road); }
+  boxPts({ x0: REST.x - REST.half - 40, x1: REST.x + REST.half + 40, z0: REST.z - 30, z1: REST.z + 250 });
+  boxPts(FARM, 60); boxPts({ x0: -HALF - 80, x1: HALF + 80, z0: -HALF - 80, z1: HALF + 80 }, 0);
+  for (const S2 of SUBURBS) boxPts(S2.rect, 40);
+  for (let a = 0; a < 6.3; a += 0.2) { isle.push([SKI.x + Math.cos(a) * (SKI.r + 60), SKI.z + Math.sin(a) * (SKI.r + 60)]); isle.push([SPACE.x + Math.cos(a) * 90, SPACE.z + Math.sin(a) * 90]); }
+  boxPts({ x0: -702, x1: -250, z0: -700, z1: -150 }, 10); // Strand und Promenade (die Bucht liegt westlich davon)
+  setIsland(isle);
+  const SEABED = -9;
+  const height = (x, z) => { // Land; an der Küste geht es hinunter ins Meer (bei Hügeln als Klippe)
+    const h = heightLand(x, z), d = islandDist(x, z);
+    if (d > 22) return h;
+    const bed = SEABED - 22 * smoothstep(-60, -260, d); // weiter draussen tiefer (dunkel wie der Meeresgrund überall)
+    return bed + (h - bed) * smoothstep(-45, 22, d);
+  };
+  const heightLand = (x, z) => {
     const rr = Math.max(Math.abs(x), Math.abs(z));
     if (rr <= HALF + 60) return -0.06;
     if (inPassRegion(x, z)) return passTerrain(x, z, natural(x, z), 15); // am Berg: das feinere Gelände liegt darüber
@@ -554,16 +574,26 @@ function buildWorld() {
     // ebener Rand, sonst ragt das grobe Gelände (20-m-Raster) über die äusserste Spur
     return smoothstep(HALF + 90, HALF + 500, rr) * NZ.fbm(x / 260, z / 260, 4) * 190 * f * skiFade(x, z) + gs.y * (1 - f) + skiH(x, z) - 0.06; // + Schneeberg
   };
-  const C = h => new THREE.Color(h), gA = C(0x5e9142), gB = C(0x4a7c35), gC = C(0x8db84f), rock = C(0x857b70), snowC = C(0xf1f5f9);
-  const land = terrain({ size: 2200, segments: 110, height, detail: grassDetail, detailRepeat: 260,
-    color: (x, z, y, steep, c) => { c.lerpColors(gA, gB, NZ.fbm(x / 80, z / 80, 3)); c.lerp(gC, smoothstep(0.5, 0.8, NZ.fbm(x / 37 + 5, z / 37, 2)) * 0.55); c.lerp(rock, smoothstep(0.2, 0.4, steep)); c.lerp(snowC, smoothstep(1, 10, skiH(x, z)) * 0.95); } });
+  const C = h => new THREE.Color(h), gA = C(0x5e9142), gB = C(0x4a7c35), gC = C(0x8db84f), rock = C(0x857b70), snowC = C(0xf1f5f9), sandC = C(0xe9d8a6), bedC = C(0x6f9f9a), deepC = C(0x0f3552);
+  const landColor = (x, z, y, steep, c) => {
+    c.lerpColors(gA, gB, NZ.fbm(x / 80, z / 80, 3)); c.lerp(gC, smoothstep(0.5, 0.8, NZ.fbm(x / 37 + 5, z / 37, 2)) * 0.55); c.lerp(rock, smoothstep(0.2, 0.4, steep)); c.lerp(snowC, smoothstep(1, 10, skiH(x, z)) * 0.95);
+    const d = islandDist(x, z); if (d < 40 && y < 5) c.lerp(sandC, smoothstep(40, 14, d) * smoothstep(5, 1, y)); // Sandstrand (nicht an Klippen)
+    if (y < SEA_Y) { c.lerp(bedC, smoothstep(SEA_Y, SEA_Y - 6, y)); c.lerp(deepC, smoothstep(SEA_Y - 8, SEA_Y - 26, y)); } // Meeresboden: flach hell, tief dunkel
+  };
+  // Gelände in zwei grossen Stücken (20-m-Raster wie groundAt): Insel mit Küste und Meeresboden rundherum
+  const land = terrain({ size: 3400, segments: 170, center: [0, 200], height, detail: grassDetail, detailRepeat: 400, color: landColor });
   land.material.normalScale.set(0.35, 0.35);
   scene.add(land);
   // Süden: ein zweites Stück Gelände für die lange Autobahn und die Raststätte (gleiches Material, gleiches Raster)
-  const landS = terrain({ size: 2200, segments: 110, center: [0, 2200], height, detail: grassDetail, detailRepeat: 260,
-    color: (x, z, y, steep, c) => { c.lerpColors(gA, gB, NZ.fbm(x / 80, z / 80, 3)); c.lerp(gC, smoothstep(0.5, 0.8, NZ.fbm(x / 37 + 5, z / 37, 2)) * 0.55); c.lerp(rock, smoothstep(0.2, 0.4, steep)); c.lerp(snowC, smoothstep(1, 10, skiH(x, z)) * 0.95); } });
+  const landS = terrain({ size: 3400, segments: 170, center: [0, 3600], height, detail: grassDetail, detailRepeat: 400, color: landColor });
   landS.material.dispose(); landS.material = land.material;
   scene.add(landS);
+  // Meer bis zum Horizont (der Dunst verdeckt den Rand)
+  const sea = new THREE.Mesh(new THREE.PlaneGeometry(40000, 40000).rotateX(-Math.PI / 2),
+    mat({ color: 0x1f6fa8, metalness: 0.35, roughness: 0.12, transparent: true, opacity: 0.86, envMapIntensity: 1.2 }));
+  sea.position.set(ISLAND_C.x, SEA_Y, ISLAND_C.z); sea.renderOrder = -1; scene.add(sea); // nicht am Ursprung: wird nicht verbogen
+  const deep = new THREE.Mesh(new THREE.PlaneGeometry(40000, 40000).rotateX(-Math.PI / 2), mat({ color: 0x0f3552, roughness: 1 })); // gleich beleuchtet wie das Gelände
+  deep.position.set(ISLAND_C.x, -31.5, ISLAND_C.z); scene.add(deep); // tiefer Meeresgrund überall (unter dem Gelände-Netz)
 
   // Strassen, Kreuzungen, Mittellinien, Haltelinien, Zebrastreifen
   const roads = quads(1 / 8), lines = quads();
@@ -5103,19 +5133,28 @@ const mpx = (x, z) => mx(mp(x, z).x), mpz = (x, z) => mx(mp(x, z).z);
 // Eine Weltkarte für alles: Stadt (verbogen wie im Bild), Vororte, Autobahn, Hafen, Flughafen, Strand, Pass, Alp, Skigebiet,
 // Raumbahnhof. Das feste Bild (S.worldMap) wird nur neu gemalt, wenn sich Schlüssel ändern (gesperrte Gebiete grau).
 // Oben rechts: runder Ausschnitt um dich (vorne = oben); antippen = ganze Karte mit Namen (city.bigMap). Auf dem Mond eigene Karte.
-const WM = { x0: -1100, x1: 1100, z0: -980, z1: 2640, K: 0.7 }; // Rechteck in Metern, Bildpunkte pro Meter
+const WM = { x0: -1800, x1: 1800, z0: -1650, z1: 3300, K: 0.45 }; // ganze Insel mit Meer drumherum; Bildpunkte pro Meter
 const WMW = Math.round((WM.x1 - WM.x0) * WM.K), WMH = Math.round((WM.z1 - WM.z0) * WM.K);
+const DM = { x0: -720, x1: 800, z0: -330, z1: 420, K: 1.1 }; // Stadt und Vororte genauer (eigenes Bild darüber)
+const SEA_COL = '#2f74b5';
 const _wq = { x: 0, z: 0 };
 const wmPt = (x, z) => { warpXZ(x, z, _wq); return [(_wq.x - WM.x0) * WM.K, (_wq.z - WM.z0) * WM.K]; };
 const PLACE_ICONS = [['gas', '⛽'], ['wash', '🫧'], ['pizza', '🍕'], ['jail', '🔒'], ['repair', '🔧'], ['dealer', '🚗'], ['hospital', '🏥'], ['house', '🏡'], ['blue', '🅿️'], ['park', '🅿️'], ['order', '🍔'], ['kino', '🎬'], ['stadium', '⚽']];
-function drawWorldMap() {
-  const c = S.worldMap || (S.worldMap = document.createElement('canvas'));
-  c.width = WMW; c.height = WMH;
-  const g = c.getContext('2d'), K = WM.K, P = wmPt, keys = city.keys.size;
+// Insel und Meer Punkt für Punkt: tiefes Meer, helles Wasser an der Küste, Sand, Wiese
+function paintIsland(g, x0, z0, W, H, K) {
+  const img = g.createImageData(W, H), d = img.data, sea = [47, 116, 181], shallow = [92, 168, 214], sand = [233, 216, 166], grass = [63, 110, 58];
+  for (let py = 0; py < H; py++) for (let px = 0; px < W; px++) {
+    const x = x0 + (px + 0.5) / K, z = z0 + (py + 0.5) / K, t = islandDist(x, z), i = (py * W + px) * 4;
+    const c = t > 14 ? grass : t > 0 ? sand : t > -40 ? shallow : sea, f = t <= 0 && t > -40 ? -t / 40 : 0;
+    d[i] = f ? shallow[0] + (sea[0] - shallow[0]) * f : c[0]; d[i + 1] = f ? shallow[1] + (sea[1] - shallow[1]) * f : c[1]; d[i + 2] = f ? shallow[2] + (sea[2] - shallow[2]) * f : c[2]; d[i + 3] = 255;
+  }
+  g.putImageData(img, 0, 0);
+}
+// Alles auf der Insel malen; P(x, z) → Bildpunkt, K = Bildpunkte pro Meter
+function paintWorld(g, P, K) {
+  const keys = city.keys.size;
   const rect = (b, col) => { const [x0, y0] = P(b.x0, b.z0), [x1, y1] = P(b.x1, b.z1); g.fillStyle = col; g.fillRect(x0, y0, x1 - x0, y1 - y0); };
   const line = (pts, col, w) => { g.strokeStyle = col; g.lineWidth = w; g.lineJoin = g.lineCap = 'round'; g.beginPath(); pts.forEach(([x, z], k) => { const [a, b] = P(x, z); k ? g.lineTo(a, b) : g.moveTo(a, b); }); g.stroke(); };
-  g.fillStyle = '#3f6e3a'; g.fillRect(0, 0, WMW, WMH); // Wiesen und Wald
-  rect({ x0: -1100, x1: -702, z0: -700, z1: 700 }, '#2f74b5'); // Wasser
   rect({ x0: -702, x1: -646, z0: -660, z1: -170 }, '#ecd9a0'); line([[-646, -192], [-250, -192]], '#cbd5e1', 14 * K); // Strand und Strasse
   for (const A of Object.values(AREAS)) { rect(A.rect, keys >= A.need ? '#a3aab4' : '#4b5563'); rect(A.road, '#cbd5e1'); }
   rect({ x0: -270, x1: 310, z0: 605, z1: 655 }, '#e5e7eb'); // Piste
@@ -5145,7 +5184,29 @@ function drawWorldMap() {
   }
   for (const key of ROUND) { const [i, j] = key.split(',').map(Number), q = P(node(i), node(j)); g.fillStyle = '#4a9b3f'; g.beginPath(); g.arc(q[0], q[1], 3.5 * K, 0, 7); g.fill(); }
   { const q = P(32, 32); g.fillStyle = '#4aa3ff'; g.beginPath(); g.arc(q[0], q[1], 4 * K, 0, 7); g.fill(); } // Brunnen
-  S.worldMapKey = keys;
+}
+function drawWorldMap() {
+  const c = S.worldMap || (S.worldMap = document.createElement('canvas'));
+  c.width = WMW; c.height = WMH;
+  const g = c.getContext('2d');
+  if (!S.islandImg) { // Insel und Meer ändern sich nie: einmal rechnen
+    const ic = document.createElement('canvas'); ic.width = WMW; ic.height = WMH; paintIsland(ic.getContext('2d'), WM.x0, WM.z0, WMW, WMH, WM.K); S.islandImg = ic;
+    const dc = document.createElement('canvas'); dc.width = Math.round((DM.x1 - DM.x0) * DM.K); dc.height = Math.round((DM.z1 - DM.z0) * DM.K);
+    paintIsland(dc.getContext('2d'), DM.x0, DM.z0, dc.width, dc.height, DM.K); S.islandDet = dc;
+  }
+  g.drawImage(S.islandImg, 0, 0);
+  paintWorld(g, wmPt, WM.K);
+  // genaueres Bild für Stadt und Vororte (wird beim Zeichnen über die Weltkarte gelegt)
+  const d = S.worldDet || (S.worldDet = document.createElement('canvas'));
+  d.width = S.islandDet.width; d.height = S.islandDet.height;
+  const dg = d.getContext('2d'); dg.drawImage(S.islandDet, 0, 0);
+  paintWorld(dg, (x, z) => { warpXZ(x, z, _wq); return [(_wq.x - DM.x0) * DM.K, (_wq.z - DM.z0) * DM.K]; }, DM.K);
+  S.worldMapKey = city.keys.size;
+}
+// Weltkarte zeichnen (im aktuellen Koordinatensystem = Bildpunkte der Weltkarte); das genaue Stadtbild liegt darüber
+function blitWorld(g) {
+  g.drawImage(S.worldMap, 0, 0);
+  g.drawImage(S.worldDet, (DM.x0 - WM.x0) * WM.K, (DM.z0 - WM.z0) * WM.K, (DM.x1 - DM.x0) * WM.K, (DM.z1 - DM.z0) * WM.K);
 }
 const mapWho = () => { const w = city.walk, me = city.me; return w ? { x: w.x, z: w.z, h: w.h } : { x: me.pos.x, z: me.pos.z, h: me.heading }; };
 function mapArrow(g, x, y, h, k = 1) {
@@ -5182,15 +5243,16 @@ function drawMinimap() {
   if (city.bigMap) {
     scale = Math.min(W / WMW, H / WMH); const ox = (W - WMW * scale) / 2, oy = (H - WMH * scale) / 2;
     toS = (x, z) => { const [a, b] = wmPt(x, z); return [ox + a * scale, oy + b * scale]; };
-    g.fillStyle = '#1f2937'; g.fillRect(0, 0, W, H); g.drawImage(S.worldMap, ox, oy, WMW * scale, WMH * scale);
+    g.fillStyle = SEA_COL; g.fillRect(0, 0, W, H); // Meer bis zum Rand: kein Ende zu sehen
+    g.save(); g.translate(ox, oy); g.scale(scale, scale); blitWorld(g); g.restore();
   } else {
     const near = Math.max(Math.abs(P.x), Math.abs(P.z)) < LIMIT + 20 || inSuburb(P.x, P.z);
     city.mapS = (city.mapS || 0.9) + ((near ? 0.9 : 0.35) - (city.mapS || 0.9)) * 0.08; // Meter → Bildpunkte, sanft
     scale = city.mapS / K; const a = -hd - Math.PI / 2, ca = Math.cos(a), sa = Math.sin(a);
     toS = (x, z) => { const [u, v] = wmPt(x, z), dx = (u - pbx) * scale, dy = (v - pby) * scale; return [W / 2 + dx * ca - dy * sa, H / 2 + dx * sa + dy * ca]; };
     g.save(); g.beginPath(); g.arc(W / 2, H / 2, W / 2 - 3, 0, Math.PI * 2); g.clip();
-    g.fillStyle = '#3f6e3a'; g.fillRect(0, 0, W, H);
-    g.translate(W / 2, H / 2); g.rotate(a); g.scale(scale, scale); g.translate(-pbx, -pby); g.drawImage(S.worldMap, 0, 0);
+    g.fillStyle = SEA_COL; g.fillRect(0, 0, W, H);
+    g.translate(W / 2, H / 2); g.rotate(a); g.scale(scale, scale); g.translate(-pbx, -pby); blitWorld(g);
     g.restore();
     g.save(); g.beginPath(); g.arc(W / 2, H / 2, W / 2 - 3, 0, Math.PI * 2); g.clip();
   }

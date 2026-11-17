@@ -29,7 +29,7 @@ Browser-Spiel ohne Build: `index.html` + `game.js` (Spiellogik, Menüs und 2D-Ze
   Block-Arten (`layR`, lockerer bauen): four (4 Häuser, dicht in der Mitte), three (+ Plätzchen/Grün), pair (+ Parkplatz und
   Grün, `fillQuad`), court (Haus rundherum mit Innenhof, `buildCourt`); freie Plätze verbrauchen gleich viel `r()` wie ein Haus.
   Drehung: `warpDir` dreht genau in die eigene Blickrichtung (sonst stehen Autos schief zur gebogenen Strasse).
-  Karte: eine Weltkarte für alles (`drawWorldMap` → `S.worldMap`, Rechteck `WM`, Stadt verbogen über `wmPt`; neu gemalt, wenn
+  Karte: eine Weltkarte für alles (`drawWorldMap` → `S.worldMap` + genaueres Stadtbild `S.worldDet` (`DM`), Rechteck `WM`, Meer bis zum Rand, Stadt verbogen über `wmPt`; neu gemalt, wenn
   sich die Schlüssel ändern). Oben rechts runder Ausschnitt um den Spieler, vorne = oben, in Stadt und Vororten näher
   (`drawMinimap`); antippen = ganze Welt hochkant mit Namen (`city.bigMap`, `mapLabels`). Auf dem Mond `drawMoonMap`.
   Testen: `startCityMode()`, dann `window.__city()` (`me`, `cars`, `input`). 🚪/X: aussteigen und zu Fuss gehen (`city.walk`),
@@ -106,6 +106,11 @@ Browser-Spiel ohne Build: `index.html` + `game.js` (Spiellogik, Menüs und 2D-Ze
   Autobahn): frei geschwungene Strassen (`SUBURBS[].roads`, kein Verkehr) mit Trottoir, Lampen, Wendeplatz; Einfamilienhäuser
   (Kreise in `round`), Schule mit Sportplatz, Quartierladen, Bäckerei, Spielplätze. `suburbDist` macht das Gelände flach
   (height in city.js) und hält den Wald fern, `suburbRoad` = Asphalt, `inSuburb` = Boden 0, Karte über `drawSuburbs`.
+- `island.js`: die Insel. `setIsland(Punkte)` (in buildWorld von city.js: Autobahn, Pass, Gebiete, Vororte, Skigebiet …)
+  legt die Küste je Richtung um alles herum, mit Abstand und Wellen (Buchten, Landzungen, nicht symmetrisch); im Westen die
+  Bucht mit Strand und Hafen (`BAY`). `islandDist` (> 0 Land, < 0 Meer) braucht: height() in city.js (Klippen/Strand,
+  Meeresgrund, tief draussen dunkel wie die Bodenplatte), `offroadWhy` ('water' = Auto nicht ins Meer), `inWater` (Boot
+  überall rund um die Insel), Karte (`paintIsland`). Meer: grosse Fläche bei `SEA_Y`, Gelände-Netz 2 × 3400 m.
 - `look.js`: schöne Grafik für Stadt, Rennen, Stuntpark: Nachbearbeitung mit den Bibliotheken `postprocessing` und `n8ao`
   (Import-Map in `index.html`): weiche Schatten in Ecken (N8AO, `transparencyAware` aus = schnell), Leuchten, SMAA, ACES.
   `skyEnvironment` = Spiegelungen vom Himmel. Knopf ✨ in der Stadt (Spielstand `autoRetterGfx`); zu langsam = schaltet ab;

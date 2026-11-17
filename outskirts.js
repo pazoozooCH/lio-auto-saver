@@ -8,6 +8,7 @@
 // rechts in Fahrtrichtung +s, also innen).
 import * as THREE from 'three';
 import { buildCar, animateCar } from './cars3d.js';
+import { islandDist } from './island.js';
 
 // Mittellinie = Rechteck (x ±half, z cz … cz + L) mit Abstand R rundherum: oben (Norden, bei der Stadt) nach Osten,
 // rechts nach Süden, unten nach Westen, links nach Norden; die Ecken sind Viertelkreise
@@ -957,9 +958,7 @@ export function buildAreas({ group, scene, asphaltMat, lineMat, sign }) {
   // Hafen: Kai, Wasser, Containerstapel, zwei Kräne, Lagerhallen, ein Schiff
   const H = AREAS.harbor.rect;
   flat(group, asphaltMat, H);
-  const water = new THREE.Mesh(new THREE.PlaneGeometry(WATER.x1 - WATER.x0, WATER.z1 - WATER.z0).rotateX(-Math.PI / 2),
-    M(0x1e5a8a, { metalness: 0.4, roughness: 0.12, transparent: true, opacity: 0.88 }));
-  water.position.set((WATER.x0 + WATER.x1) / 2, -1.2, 0); scene.add(water);
+  // Wasser: das Meer rund um die Insel (city.js)
   boxAt(group, solids, 2, 1.4, H.z1 - H.z0, M(0x4b5563), H.x0 + 1, 0.7, (H.z0 + H.z1) / 2, false); // Kaimauer
   for (let z = H.z0 + 6; z < H.z1; z += 12) boxAt(group, solids, 0.6, 0.7, 0.6, M(0x111827), H.x0 + 3, 0.35, z); // Poller
   const boxCols = [0xdc2626, 0x2563eb, 0x16a34a, 0xf59e0b, 0x9ca3af, 0x7c3aed, 0xea580c];
@@ -1195,8 +1194,8 @@ export function slideInside(x, z, r, keys) {
 // Wasser, über die Autobahn-Leitplanken (dort nur über Zufahrt und Raststätte), in Gebieten mit Schranke, solange die
 // Schlüssel fehlen, und am Berg vor dem 20. Schlüssel. Gibt '' zurück, wenn es geht.
 export function offroadWhy(x, z, r, keys) {
-  if (x < -1094 || x > 1094 || z < -1094 || z > 3294) return 'world';
-  if (inBox(x, z, WATER, -r)) return 'water';
+  if (Math.abs(x) > 8000 || z < -8000 || z > 9000) return 'world';
+  if (inBox(x, z, WATER, -r) || islandDist(x, z) < r + 2) return 'water'; // Bucht und Meer rund um die Insel
   if (Math.abs(hwProject(x, z).lat) < WIDE + r || boxDist(x, z, REST_BOX) < r || boxDist(x, z, RAMP) < r + 1.5) return 'highway';
   for (const A of Object.values(AREAS)) if (keys < A.need && (boxDist(x, z, A.rect) < r + 2 || boxDist(x, z, A.road) < r + 2)) return 'locked:' + A.name + ':' + A.need;
   if (inRegion(x, z) && keys < PASS_AREA.need) return 'locked:' + PASS_AREA.name + ':' + PASS_AREA.need;
