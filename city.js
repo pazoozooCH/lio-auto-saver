@@ -3515,6 +3515,7 @@ function stepGrass() {
   for (let i = i0; i <= i1 && n < GRASS.n; i++) for (let j = j0; j <= j1 && n < GRASS.n; j++) {
     const x = (i + gHash(i, j, 0)) * C, z = (j + gHash(i, j, 9)) * C;
     if ((x - P.x) ** 2 + (z - P.z) ** 2 > GRASS.r * GRASS.r || surfaceAt(x, z) !== 'grass' || islandDist(x, z) < 12) continue;
+    if ((inPassRegion(x, z) && passNearest(x, z).d < 9) || [[1.5, 0], [-1.5, 0], [0, 1.5], [0, -1.5]].some(([a, b]) => surfaceAt(x + a, z + b) !== 'grass')) continue; // nicht auf Strassen und ihren Rändern
     const s = 0.8 + gHash(i, j, 4) * 0.8;
     warpXZ(x, z, w); // wie alles andere: in der Stadt verbogen
     im.setMatrixAt(n++, m.compose(p.set(w.x, groundAt(x, z), w.z), q.setFromAxisAngle(UP, gHash(i, j, 7) * 6.28), sc.set(s, s * (0.8 + gHash(i, j, 2) * 0.5), s)));
