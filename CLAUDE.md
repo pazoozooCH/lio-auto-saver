@@ -63,6 +63,7 @@ Browser-Spiel ohne Build: `index.html` + `game.js` (Spiellogik, Menüs und 2D-Ze
   curtain, panel (glänzendes Glas mit Lichtstreifen, Rauheit/Metall- und Reliefbild); Glasbalkone, Solarzellen/Dachgärten
   (`roofSpots`). Pflanzen mit Farbverlauf (`shadeGeo`): Laubbäume, Tannen im Wald (`pines`), Büsche, Grasbüschel (4 einseitige
   Bilder, sonst dunkle Rückseite), Blumen – alles Instanzen, eigener Zufall `vr` (der Haupt-Zufall `r` darf sich nicht verschieben).
+  Dichtes Gras um den Spieler (`stepGrass`, `GRASS`): wandert mit, nur wo `surfaceAt` = 'grass', fester Zufall je Feld (`gHash`).
   Figuren aus wenigen Stücken mit Vertex-Farben (`figMesh`, `faceParts`); `makePerson` würfelt Kleid, Frisur, Mütze, Tasche.
   Spielfigur zu Fuss: `makePlayer` (Gelenke für Knie/Ellbogen, `spin` für Saltos), `animatePlayer`; Tricks in `stepAir`
   (E/▲ springen, Q/▼ Backflip, rennend Doppel-Backflip, in der Luft ⬅️➡️ Pirouette; auch auf Ski).

@@ -541,7 +541,8 @@ function buildWorld() {
   const paveMat = mat({ map: pave.map, normalMap: pave.normalMap });
   pave.map.repeat.set(12.5, 12.5); pave.normalMap.repeat.set(12.5, 12.5);
   const lineMat = mat({ color: 0xf2f2f2, roughness: 0.6, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 });
-  const grassMat = mat({ color: 0x5f9a45, map: grassDetail.map, roughness: 1 });
+  grassDetail.normalMap.repeat.set(8, 8); // Halme als Relief, gleich fein wie das Bild
+  const grassMat = mat({ color: 0x5f9a45, map: grassDetail.map, normalMap: grassDetail.normalMap, normalScale: new THREE.Vector2(1.5, 1.5), roughness: 1 });
   grassDetail.map.repeat.set(8, 8);
 
   // Gelände rundherum: in der Stadt flach, draussen Hügel
@@ -582,7 +583,7 @@ function buildWorld() {
   };
   // Gelände in zwei grossen Stücken (20-m-Raster wie groundAt): Insel mit Küste und Meeresboden rundherum
   const land = terrain({ size: 3400, segments: 170, center: [0, 200], height, detail: grassDetail, detailRepeat: 400, color: landColor });
-  land.material.normalScale.set(0.35, 0.35);
+  land.material.normalScale.set(0.9, 0.9); // Wiesen mit sichtbaren Halmen (plastischer)
   scene.add(land);
   // Süden: ein zweites Stück Gelände für die lange Autobahn und die Raststätte (gleiches Material, gleiches Raster)
   const landS = terrain({ size: 3400, segments: 170, center: [0, 3600], height, detail: grassDetail, detailRepeat: 400, color: landColor });
@@ -1106,7 +1107,7 @@ function buildWorld() {
     }
     if (kind === 'green') { // Wiese mit Bäumen, Hecke und Bank
       greenQ.add(x - 10, z - 10, x + 10, z + 10, 0.17);
-      scatter(tufts, x - 10, z - 10, x + 10, z + 10, 55); scatter(bushes, x - 9, z - 9, x + 9, z + 9, 3); bed(x + sx * 5, z + sz * 2, 10, 1.4);
+      scatter(tufts, x - 10, z - 10, x + 10, z + 10, 95); scatter(bushes, x - 9, z - 9, x + 9, z + 9, 3); bed(x + sx * 5, z + sz * 2, 10, 1.4);
       for (let k = 0; k < 3; k++) trees.push([x + (layR() - 0.5) * 14, 0.17, z + (layR() - 0.5) * 14, 0.7 + layR() * 0.4]);
       box(18, 0.9, 0.8, mat({ color: 0x3f6f35, roughness: 1 }), x, 0.6, z - sz * 9.6); // Hecke zum Haus hin
       street.push([x, z + sz * 6, sz > 0 ? Math.PI : 0]);
@@ -1132,7 +1133,7 @@ function buildWorld() {
     }
     shops.push([cx, cz - O - 0.05, 2 * O - 4, 0], [cx, cz + O + 0.05, 2 * O - 4, 0], [cx - O - 0.05, cz, 2 * O - 4, Math.PI / 2], [cx + O + 0.05, cz, 2 * O - 4, Math.PI / 2]);
     greenQ.add(cx - O + D, cz - O + D, cx + O - D, cz + O - D, 0.17); // Innenhof
-    scatter(tufts, cx - 9, cz - 9, cx + 9, cz + 9, 60); scatter(bushes, cx - 9, cz - 9, cx + 9, cz + 9, 4); bed(cx - 6, cz - 6, 10, 1.3); bed(cx + 6, cz + 7, 8, 1);
+    scatter(tufts, cx - 9, cz - 9, cx + 9, cz + 9, 95); scatter(bushes, cx - 9, cz - 9, cx + 9, cz + 9, 4); bed(cx - 6, cz - 6, 10, 1.3); bed(cx + 6, cz + 7, 8, 1);
     trees.push([cx - 4, 0.17, cz - 3, 0.8], [cx + 5, 0.17, cz + 4, 0.7]);
     const slide = new THREE.Mesh(new THREE.BoxGeometry(3, 1.2, 1), mat({ color: 0xef4444 })); slide.position.set(cx + 4, 0.77, cz - 5); decor.add(slide); // Spielplatz
     const sand = new THREE.Mesh(new THREE.BoxGeometry(4, 0.1, 4), mat({ color: 0xe8d39a, roughness: 1 })); sand.position.set(cx - 5, 0.2, cz + 5); decor.add(sand);
@@ -1156,7 +1157,7 @@ function buildWorld() {
       g.add(cx - h, cz + p, cx - p, cz + h, 0.17); g.add(cx + p, cz + p, cx + h, cz + h, 0.17);
       decor.add(g.mesh(grassMat));
       const off = (x, z) => Math.abs(x - cx) > 2.4 && Math.abs(z - cz) > 2.4; // nicht auf dem Weg
-      scatter(tufts, cx - h, cz - h, cx + h, cz + h, 170, 0.17, 0.8, 1.5, off); scatter(bushes, cx - h + 2, cz - h + 2, cx + h - 2, cz + h - 2, 7, 0.17, 0.8, 1.4, off);
+      scatter(tufts, cx - h, cz - h, cx + h, cz + h, 280, 0.17, 0.8, 1.6, off); scatter(bushes, cx - h + 2, cz - h + 2, cx + h - 2, cz + h - 2, 7, 0.17, 0.8, 1.4, off);
       for (const [dx, dz] of [[4.5, 4.5], [-4.5, 4.5], [4.5, -4.5], [-4.5, -4.5]]) bed(cx + dx, cz + dz, 12, 1.5); // Blumenbeete beim Wegkreuz
       for (let k = 0; k < 14; k++) {
         const tx = cx + (r() - 0.5) * (inner - 6), tz = cz + (r() - 0.5) * (inner - 6);
@@ -1189,7 +1190,7 @@ function buildWorld() {
       }
       for (let k = 0; k < 3; k++) trees.push([cx + (r() - 0.5) * 6, 0.17, cz + (r() - 0.5) * 6, 0.6 + r() * 0.4]);
       const away = (x, z) => !solid.some(b => x > b.x0 - 1 && x < b.x1 + 1 && z > b.z0 - 1 && z < b.z1 + 1);
-      scatter(tufts, cx - 21, cz - 21, cx + 21, cz + 21, 110, 0.17, 0.8, 1.5, away); scatter(bushes, cx - 20, cz - 20, cx + 20, cz + 20, 10, 0.17, 0.7, 1.3, away);
+      scatter(tufts, cx - 21, cz - 21, cx + 21, cz + 21, 180, 0.17, 0.8, 1.6, away); scatter(bushes, cx - 20, cz - 20, cx + 20, cz + 20, 10, 0.17, 0.7, 1.3, away);
       for (let k = 0; k < 4; k++) { const x = cx + (vr() - 0.5) * 36, z = cz + (vr() - 0.5) * 36; if (away(x, z)) bed(x, z, 8, 1); }
       continue;
     }
@@ -1346,6 +1347,13 @@ function buildWorld() {
     for (let q = 0; q < 6; q++) tufts.push([tx + (vr() - 0.5) * 7, ty, tz + (vr() - 0.5) * 7, 1 + vr() * 0.6]);
     k++;
   }
+  // Wiesen rund um die Stadt: viele Grasbüschel (nicht auf Strassen, Plätzen, Vororten und dem Pass)
+  for (let k = 0, n = 0; k < 20000 && n < 6500; k++) {
+    const a = vr() * Math.PI * 2, rr = HALF + 22 + vr() * 260, tx = Math.cos(a) * rr * 1.15, tz = Math.sin(a) * rr * 1.15;
+    if (Math.max(Math.abs(tx), Math.abs(tz)) < HALF + ROAD / 2 + 8 || groundShape(tx, tz).d < 12 || suburbDist(tx, tz) < 6 || countryDist(tx, tz) < 10
+      || inPassRegion(tx, tz) || islandDist(tx, tz) < 30) continue; // am Pass liegt ein eigenes Gelände
+    tufts.push([tx, height(tx, tz), tz, 0.9 + vr() * 0.8]); n++;
+  }
   // Ladenfronten (Schaufenster + Markise), Balkone, Bänke: je ein Zeichen-Befehl für alle
   {
     const dummy = new THREE.Object3D(), acol = new THREE.Color(), awnCols = [0xdc2626, 0x16a34a, 0x2563eb, 0xf59e0b, 0x7c3aed, 0x0e7490, 0xdb2777, 0x1f2937];
@@ -1411,7 +1419,7 @@ function buildWorld() {
     im.castShadow = false; im.receiveShadow = true; decor.add(im); return im;
   };
   vegInst(bushGeo(), leafMat({ bumpScale: 1.6 }), bushes, c => c.setHSL(0.22 + vr() * 0.12, 0.6, 0.16 + vr() * 0.08));
-  vegInst(tuftGeo(), tuftMat(), tufts, c => c.setHSL(0.2 + vr() * 0.09, 0.6, 0.5 + vr() * 0.18), 0.25);
+  vegInst(tuftGeo(), tuftMat(), tufts, c => c.setHSL(0.21 + vr() * 0.08, 0.62, 0.32 + vr() * 0.14), 0.25);
   const flowerGeo = mergeGeometries([[0, 0.32, 0], [0.12, 0.26, 0.08], [-0.1, 0.28, -0.07]].map(([x, y, z]) => { const g = new THREE.OctahedronGeometry(0.1, 0); g.translate(x, y, z); return g; }), false);
   const FLOWER = [0xef4444, 0xf472b6, 0xfacc15, 0xa855f7, 0xffffff, 0xfb923c, 0x60a5fa];
   vegInst(flowerGeo, mat({ color: 0xffffff, roughness: 0.6, emissive: 0x222222 }), flowers, c => c.setHex(FLOWER[Math.floor(vr() * FLOWER.length)]));
@@ -3485,6 +3493,33 @@ function removeParked(P) {
   for (const o of P.cols) { const k = S.round.indexOf(o); if (k >= 0) S.round.splice(k, 1); }
   const k = city.parked.indexOf(P); if (k >= 0) city.parked.splice(k, 1);
   saveParked();
+}
+// ---------- Dichtes Gras um dich herum ----------
+// Auf Wiesen stehen rund um den Spieler (42 m) tausende Grasbüschel; sie wandern mit. Jede Stelle hat immer dasselbe
+// Büschel (fester Zufall je Feld), darum flackert nichts. Nur wo Wiese ist (surfaceAt), nicht auf Strassen und im Wasser.
+const GRASS = { n: 3800, r: 42, cell: 1.35 };
+const gHash = (i, j, k) => { const v = Math.sin(i * 127.1 + j * 311.7 + k * 74.7) * 43758.5453; return v - Math.floor(v); };
+function stepGrass() {
+  if (!S.grassPatch) {
+    const im = new THREE.InstancedMesh(tuftGeo(), tuftMat(), GRASS.n);
+    im.frustumCulled = false; im.castShadow = false; im.receiveShadow = true; im.count = 0; im.userData.noWarp = true;
+    for (let k = 0; k < GRASS.n; k++) { const v = gHash(k, 3, 1); im.setColorAt(k, new THREE.Color().setHSL(0.22 + v * 0.07, 0.62, 0.3 + gHash(k, 5, 2) * 0.12)); }
+    S.scene.add(im); S.grassPatch = im;
+  }
+  const P = mapWho(), im = S.grassPatch;
+  if (city.grassAt && Math.hypot(P.x - city.grassAt.x, P.z - city.grassAt.z) < 5) return;
+  city.grassAt = { x: P.x, z: P.z };
+  const m = new THREE.Matrix4(), q = new THREE.Quaternion(), sc = new THREE.Vector3(), p = new THREE.Vector3(), w = { x: 0, z: 0 }, C = GRASS.cell;
+  const i0 = Math.floor((P.x - GRASS.r) / C), i1 = Math.ceil((P.x + GRASS.r) / C), j0 = Math.floor((P.z - GRASS.r) / C), j1 = Math.ceil((P.z + GRASS.r) / C);
+  let n = 0;
+  for (let i = i0; i <= i1 && n < GRASS.n; i++) for (let j = j0; j <= j1 && n < GRASS.n; j++) {
+    const x = (i + gHash(i, j, 0)) * C, z = (j + gHash(i, j, 9)) * C;
+    if ((x - P.x) ** 2 + (z - P.z) ** 2 > GRASS.r * GRASS.r || surfaceAt(x, z) !== 'grass' || islandDist(x, z) < 12) continue;
+    const s = 0.8 + gHash(i, j, 4) * 0.8;
+    warpXZ(x, z, w); // wie alles andere: in der Stadt verbogen
+    im.setMatrixAt(n++, m.compose(p.set(w.x, groundAt(x, z), w.z), q.setFromAxisAngle(UP, gHash(i, j, 7) * 6.28), sc.set(s, s * (0.8 + gHash(i, j, 2) * 0.5), s)));
+  }
+  im.count = n; im.instanceMatrix.needsUpdate = true;
 }
 function stepParked(dt) {
   if ((city.parkT = (city.parkT || 0) - dt) > 0) return;
@@ -5597,6 +5632,7 @@ function step(now) {
   stepPlaces(dt);
   stepBases(dt);
   stepParked(dt);
+  if (!city.moonOn) stepGrass(); else if (S.grassPatch) { S.grassPatch.count = 0; city.grassAt = null; }
   stepMission(dt);
   stepTraffic(dt);
   stepBlue(dt);
