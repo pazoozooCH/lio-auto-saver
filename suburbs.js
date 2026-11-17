@@ -71,10 +71,17 @@ export function suburbRoad(x, z) {
   return ALL.some(R => roadDist(x, z, R) < W / 2 + 0.3);
 }
 
-// Karte (drawWideMap in city.js): Strassen als Linien
-export function drawSuburbs(g, wx, wz) {
-  g.save(); g.strokeStyle = '#d1d5db'; g.lineWidth = 2; g.lineJoin = 'round';
-  for (const R of ALL) { g.beginPath(); R.line.forEach(([x, z], k) => (k ? g.lineTo(wx(x), wz(z)) : g.moveTo(wx(x), wz(z)))); g.stroke(); }
+// Karte (Weltkarte in city.js): Strassen, Wendeplätze, Häuser; P(x, z) → [x, y] auf der Karte, k = Bildpunkte pro Meter
+export const SUB_HOUSES = [], SUB_PLACES = [];
+export function drawSuburbs(g, P, k) {
+  g.save(); g.lineJoin = g.lineCap = 'round';
+  g.fillStyle = '#e8dcc0';
+  for (const h of SUB_HOUSES) { const [x, y] = P(h.x, h.z); g.fillRect(x - 4.5 * k, y - 4.5 * k, 9 * k, 9 * k); }
+  g.strokeStyle = '#d4d8de'; g.lineWidth = Math.max(2, (W + 2 * SIDE) * k);
+  for (const R of ALL) {
+    g.beginPath(); R.line.forEach(([x, z], i) => { const [a, b] = P(x, z); i ? g.lineTo(a, b) : g.moveTo(a, b); }); g.stroke();
+    if (R.end) { const e = R.line[R.line.length - 1], [a, b] = P(e[0], e[1]); g.fillStyle = '#d4d8de'; g.beginPath(); g.arc(a, b, Math.max(2, 10 * k), 0, 7); g.fill(); }
+  }
   g.restore();
 }
 
@@ -116,7 +123,7 @@ export function buildSuburbs({ group, asphaltMat, lineMat, grassMat, paveMat, si
   const hedgeM = mat({ color: 0x3f6f35, roughness: 1 }), fenceM = mat({ color: 0xf5f5f4 }), glassM = mat({ color: 0x1e293b, metalness: 0.6, roughness: 0.1 });
   const whiteM = mat({ color: 0xf1f5f9 }), woodM = mat({ color: 0x8b5a2b });
   const houses = [], reserved = [];
-  LOTS = [];
+  LOTS = []; SUB_HOUSES.length = 0; SUB_PLACES.length = 0;
   const roadNear = (x, z, lim) => ALL.some(R => roadDist(x, z, R) < lim);
   let ry = 0;
   for (const S of SUBURBS) {
@@ -151,6 +158,7 @@ export function buildSuburbs({ group, asphaltMat, lineMat, grassMat, paveMat, si
       add(new THREE.BoxGeometry(40.6, 0.5, 14.6), roofMat, 500, 10.37, -152); add(new THREE.BoxGeometry(14.6, 0.5, 22.6), roofMat, 473, 10.37, -134);
       solid.push({ x0: 480, x1: 520, z0: -159, z1: -145, h: 11 }, { x0: 466, x1: 480, z0: -145, z1: -123, h: 11 });
       drive(496, 504, -210, -159); // Zufahrt zur Schule von der Ringstrasse
+      SUB_PLACES.push({ x: 500, z: -150, icon: '🏫' }, { x: 520, z: -118, icon: '⚽' }, { x: 441, z: 13, icon: '🛒' }, { x: 580, z: -135, icon: '🛝' });
       const ss = sign('🏫 SCHULE', '#2563eb', '#ffffff', 9, 1.6); ss.position.set(500, 8.6, -144.9); group.add(ss);
       // Sportplatz mit Linien und zwei Toren
       const field = new THREE.Mesh(new THREE.PlaneGeometry(44, 24).rotateX(-Math.PI / 2), mat({ color: 0x3f8f3a, roughness: 1 })); field.position.set(520, 0.05, -118); field.receiveShadow = true; group.add(field);
@@ -171,6 +179,7 @@ export function buildSuburbs({ group, asphaltMat, lineMat, grassMat, paveMat, si
       const pg = { x0: 560, x1: 600, z0: -150, z1: -120 }; reserved.push(pg); playground(580, -135);
     } else {
       const pg = { x0: -470, x1: -440, z0: 245, z1: 270 }; reserved.push(pg); playground(-455, 258);
+      SUB_PLACES.push({ x: -455, z: 258, icon: '🛝' }, { x: -540, z: 268, icon: '🥐' });
       const bk = wallBox(14, 4.5, 10, walls[0], 8); bk.position.set(-540, 2.35, 268); group.add(bk); // Bäckerei
       add(new THREE.BoxGeometry(14.6, 0.5, 10.6), roofMat, -540, 4.85, 268);
       solid.push({ x0: -547, x1: -533, z0: 263, z1: 273, h: 5.5 }); reserved.push({ x0: -550, x1: -530, z0: 258, z1: 278 });
@@ -189,7 +198,7 @@ export function buildSuburbs({ group, asphaltMat, lineMat, grassMat, paveMat, si
           const B = S.rect;
           if (hx < B.x0 + 8 || hx > B.x1 - 8 || hz < B.z0 + 8 || hz > B.z1 - 8 || Math.max(Math.abs(hx), Math.abs(hz)) < 300) continue;
           if (roadNear(hx, hz, 12.5) || houses.some(h => Math.hypot(h.x - hx, h.z - hz) < 17) || reserved.some(b => boxDist(hx, hz, b) < 8)) continue;
-          houses.push({ x: hx, z: hz });
+          houses.push({ x: hx, z: hz }); SUB_HOUSES.push({ x: hx, z: hz });
           house(hx, hz, tz * side, -tx * side, tx * side, tz * side); // (nx, nz) = zur Strasse, (ax, az) = lokale x-Achse
         }
       }

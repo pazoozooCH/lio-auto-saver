@@ -7,9 +7,9 @@ import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { makeNoise, rng, smoothstep, surface, terrain, cloudDome } from './world3d.js';
 import { createCarSound, crash, gearbox, horn, createSiren } from './sound.js';
 import { buildMoon, stepMoon, inMoon, moonGround, moonAllowed, MOON, MOON_G, MOON_ROCKET, MOON_BUGGY } from './moon.js';
-import { buildCountry, stepCountry, countryDist, countryDrivable, countrySurface, inCountry, inWater, nearPier, BOAT_Y, BOAT_HOME, RIDES_INFO, FARM, countryBlocked, SPACE, skiH, skiFade } from './country.js';
+import { buildCountry, stepCountry, countryDist, countryDrivable, countrySurface, inCountry, inWater, nearPier, BOAT_Y, BOAT_HOME, RIDES_INFO, FARM, countryBlocked, SPACE, SKI, skiH, skiFade } from './country.js';
 import { makeNetCars } from './netcars.js';
-import { buildSuburbs, suburbDist, inSuburb, suburbRoad, drawSuburbs } from './suburbs.js';
+import { buildSuburbs, suburbDist, inSuburb, suburbRoad, drawSuburbs, SUBURBS, SUB_PLACES } from './suburbs.js';
 import { loadLook, makeLook, skyEnvironment, lookWanted, setLookWanted } from './look.js';
 import { makeChat } from './chat.js';
 import { buildHighway, outskirtsDist, hwDrivable, onHighway, makeHighwayTraffic, stepHighway, hwProject, hwPoint, HW, HW_LEN, HW_LIMIT, REST, REST_ZONES, makePath, pathAt, turnTo,
@@ -4839,7 +4839,7 @@ const CSS = `
 #city .flash.on { animation: cityflash .45s ease-out; }
 @keyframes cityflash { from { opacity: .85; } to { opacity: 0; } }
 #city .minimap { position: absolute; top: 10px; right: 62px; width: 190px; height: 190px; border-radius: 50%; cursor: pointer; }
-#city .minimap.big { top: 50%; right: 50%; transform: translate(50%, -50%); width: min(460px, 82vmin); height: min(460px, 82vmin); border-radius: 14px; z-index: 8;
+#city .minimap.big { top: 50%; right: 50%; transform: translate(50%, -50%); height: 94%; width: auto; border-radius: 14px; z-index: 8;
   box-shadow: 0 6px 30px rgba(0,0,0,.6); }
 #city .tagbtn { position: absolute; top: 10px; left: 148px; width: 58px; height: 58px; border-radius: 50%; border: 3px solid #f87171;
   background: rgba(0,0,0,.4); font-size: 26px; }
@@ -5005,8 +5005,8 @@ function buildDom() {
   $('.minimap').addEventListener('pointerdown', e => { // ganze Karte ein/aus
     e.preventDefault(); if (!city) return;
     city.bigMap = !city.bigMap;
-    const cv = S.ui.minimap, n = city.bigMap ? 460 : MAP;
-    cv.width = cv.height = n; cv.classList.toggle('big', city.bigMap);
+    const cv = S.ui.minimap; // gross: hochkant wie die ganze Welt (WMW × WMH)
+    cv.width = city.bigMap ? 620 : MAP; cv.height = city.bigMap ? Math.round(620 * WMH / WMW) : MAP; cv.classList.toggle('big', city.bigMap);
     drawMinimap();
   });
   $('.gfx').addEventListener('pointerdown', e => { // Grafik umschalten (wird gemerkt)
@@ -5099,67 +5099,54 @@ const MAP = 190, mapScale = (MAP - 12) / (2 * (HALF + 12));
 const mx = x => MAP / 2 + x * mapScale;
 const _mp = { x: 0, z: 0 }, mp = (x, z) => warpXZ(x, z, _mp); // Karte zeigt die Stadt verbogen wie im Bild
 const mpx = (x, z) => mx(mp(x, z).x), mpz = (x, z) => mx(mp(x, z).z);
-function drawMinimapBase() {
-  const c = document.createElement('canvas');
-  c.width = c.height = MAP * MAP_RES;
-  const g = c.getContext('2d');
-  g.scale(MAP_RES, MAP_RES);
+// ---------- Karte ----------
+// Eine Weltkarte für alles: Stadt (verbogen wie im Bild), Vororte, Autobahn, Hafen, Flughafen, Strand, Pass, Alp, Skigebiet,
+// Raumbahnhof. Das feste Bild (S.worldMap) wird nur neu gemalt, wenn sich Schlüssel ändern (gesperrte Gebiete grau).
+// Oben rechts: runder Ausschnitt um dich (vorne = oben); antippen = ganze Karte mit Namen (city.bigMap). Auf dem Mond eigene Karte.
+const WM = { x0: -1100, x1: 1100, z0: -980, z1: 2640, K: 0.7 }; // Rechteck in Metern, Bildpunkte pro Meter
+const WMW = Math.round((WM.x1 - WM.x0) * WM.K), WMH = Math.round((WM.z1 - WM.z0) * WM.K);
+const _wq = { x: 0, z: 0 };
+const wmPt = (x, z) => { warpXZ(x, z, _wq); return [(_wq.x - WM.x0) * WM.K, (_wq.z - WM.z0) * WM.K]; };
+const PLACE_ICONS = [['gas', '⛽'], ['wash', '🫧'], ['pizza', '🍕'], ['jail', '🔒'], ['repair', '🔧'], ['dealer', '🚗'], ['hospital', '🏥'], ['house', '🏡'], ['blue', '🅿️'], ['park', '🅿️'], ['order', '🍔'], ['kino', '🎬'], ['stadium', '⚽']];
+function drawWorldMap() {
+  const c = S.worldMap || (S.worldMap = document.createElement('canvas'));
+  c.width = WMW; c.height = WMH;
+  const g = c.getContext('2d'), K = WM.K, P = wmPt, keys = city.keys.size;
+  const rect = (b, col) => { const [x0, y0] = P(b.x0, b.z0), [x1, y1] = P(b.x1, b.z1); g.fillStyle = col; g.fillRect(x0, y0, x1 - x0, y1 - y0); };
+  const line = (pts, col, w) => { g.strokeStyle = col; g.lineWidth = w; g.lineJoin = g.lineCap = 'round'; g.beginPath(); pts.forEach(([x, z], k) => { const [a, b] = P(x, z); k ? g.lineTo(a, b) : g.moveTo(a, b); }); g.stroke(); };
+  g.fillStyle = '#3f6e3a'; g.fillRect(0, 0, WMW, WMH); // Wiesen und Wald
+  rect({ x0: -1100, x1: -702, z0: -700, z1: 700 }, '#2f74b5'); // Wasser
+  rect({ x0: -702, x1: -646, z0: -660, z1: -170 }, '#ecd9a0'); line([[-646, -192], [-250, -192]], '#cbd5e1', 14 * K); // Strand und Strasse
+  for (const A of Object.values(AREAS)) { rect(A.rect, keys >= A.need ? '#a3aab4' : '#4b5563'); rect(A.road, '#cbd5e1'); }
+  rect({ x0: -270, x1: 310, z0: 605, z1: 655 }, '#e5e7eb'); // Piste
+  { const [x, y] = P(SKI.x, SKI.z); g.fillStyle = '#eef4fa'; g.beginPath(); g.arc(x, y, SKI.r * K, 0, 7); g.fill(); } // Skigebiet
+  rect(FARM, '#8fb04a'); // Alp
+  line(passPoints().filter((p, i) => i % 3 === 0).map(p => [p.x, p.z]), keys >= PASS_AREA.need ? '#d4d8de' : '#6b7280', 10 * K);
+  line([[263, 192], [SPACE.x, SPACE.z]], '#cbd5e1', 14 * K); { const [x, y] = P(SPACE.x, SPACE.z); g.fillStyle = '#cbd5e1'; g.beginPath(); g.arc(x, y, SPACE.r * K, 0, 7); g.fill(); }
+  const hw = []; for (let s = 0; s <= HW_LEN; s += 30) { const p = hwPoint(s); hw.push([p.x, p.z]); }
+  line(hw, '#e2e5ea', Math.max(3, 30 * K)); line(hw, '#facc15', 1); // Autobahn mit Mittellinie
+  line([[0, HALF], [0, HW.cz - HW.R]], '#d4d8de', 14 * K);
+  rect({ x0: REST.x - 150, x1: REST.x + 150, z0: REST.z + 20, z1: REST.z + 130 }, '#f59e0b'); // Raststätte
+  drawSuburbs(g, P, K); // Vororte
+  // Stadt: Fläche (verbogen), Parks, Strassen, Fussgängerzonen, Kreisel
+  g.fillStyle = '#7b8490'; g.beginPath();
+  for (let k = 0; k < 64; k++) { const t = (k % 16) / 16 * 2 - 1, side = k >> 4, q = P(...[[t * HALF, -HALF], [HALF, t * HALF], [-t * HALF, HALF], [-HALF, -t * HALF]][side]); k ? g.lineTo(q[0], q[1]) : g.moveTo(q[0], q[1]); }
+  g.closePath(); g.fill();
   for (const key of S.parks) {
-    const [bi, bj] = key.split(',').map(Number);
-    g.fillStyle = '#3f7d34';
-    const x0 = node(bi) + 7, z0 = node(bj) + 7, L = BLOCK - 14, pts = [];
+    const [bi, bj] = key.split(',').map(Number), x0 = node(bi) + 7, z0 = node(bj) + 7, L = BLOCK - 14, pts = [];
     for (let k = 0; k < 4; k++) pts.push([x0 + L * k / 4, z0]); for (let k = 0; k < 4; k++) pts.push([x0 + L, z0 + L * k / 4]);
     for (let k = 0; k < 4; k++) pts.push([x0 + L - L * k / 4, z0 + L]); for (let k = 0; k < 4; k++) pts.push([x0, z0 + L - L * k / 4]);
-    g.beginPath(); pts.forEach(([x, z], k) => { const q = mp(x, z); k ? g.lineTo(mx(q.x), mx(q.z)) : g.moveTo(mx(q.x), mx(q.z)); }); g.fill();
+    g.fillStyle = '#4a8f3c'; g.beginPath(); pts.forEach(([x, z], k) => { const q = P(x, z); k ? g.lineTo(q[0], q[1]) : g.moveTo(q[0], q[1]); }); g.fill();
   }
-  g.fillStyle = '#4aa3ff';
-  g.beginPath(); g.arc(mpx(0, 0), mpz(0, 0), 3, 0, Math.PI * 2); g.fill();
-  g.font = '13px system-ui, sans-serif'; g.textAlign = 'center'; g.textBaseline = 'middle';
-  for (const [k, icon] of [['gas', '⛽'], ['wash', '🫧'], ['pizza', '🍕'], ['jail', '🔒'], ['repair', '🔧'], ['dealer', '🚗'], ['hospital', '🏥'], ['house', '🏡'], ['blue', '🅿️'], ['park', '🅿️'], ['order', '🍔'], ['kino', '🎬'], ['stadium', '⚽']]) { const p = S.places[k] && { x: S.places[k].x ?? S.places[k].cx, z: S.places[k].z ?? S.places[k].cz }; if (p) g.fillText(icon, mpx(p.x, p.z), mpz(p.x, p.z)); }
-  g.strokeStyle = 'rgba(220,225,235,0.85)'; g.lineWidth = Math.max(2, ROAD * mapScale);
-  for (let i = 0; i <= N; i++) for (const ax of [0, 1]) for (let k = 0; k < N; k++) { // Strasse i, Stück k (Fussgängerzonen hell und dünn)
-    const ped = ax ? isPed(k, i, 0) : isPed(i, k, 1);
-    g.save(); if (ped) { g.strokeStyle = 'rgba(232,214,170,0.9)'; g.lineWidth = 2; }
-    g.beginPath();
-    for (let t = node(k); t <= node(k + 1) + 0.1; t += 8) { const q = ax ? mp(t, node(i)) : mp(node(i), t); t > node(k) ? g.lineTo(mx(q.x), mx(q.z)) : g.moveTo(mx(q.x), mx(q.z)); }
-    g.stroke(); g.restore();
+  for (let i = 0; i <= N; i++) for (const ax of [0, 1]) for (let k = 0; k < N; k++) {
+    const ped = ax ? isPed(k, i, 0) : isPed(i, k, 1), pts = [];
+    for (let t = node(k); t <= node(k + 1) + 0.1; t += 8) pts.push(ax ? [t, node(i)] : [node(i), t]);
+    line(pts, ped ? '#e8d6aa' : '#dfe3ea', ped ? 6 * K : ROAD * K);
   }
-  for (const key of ROUND) { // Kreisel: grüne Insel
-    const [i, j] = key.split(',').map(Number), q = mp(node(i), node(j));
-    g.fillStyle = '#4a9b3f'; g.beginPath(); g.arc(mx(q.x), mx(q.z), 1.6, 0, Math.PI * 2); g.fill();
-  }
-  return c;
+  for (const key of ROUND) { const [i, j] = key.split(',').map(Number), q = P(node(i), node(j)); g.fillStyle = '#4a9b3f'; g.beginPath(); g.arc(q[0], q[1], 3.5 * K, 0, 7); g.fill(); }
+  { const q = P(32, 32); g.fillStyle = '#4aa3ff'; g.beginPath(); g.arc(q[0], q[1], 4 * K, 0, 7); g.fill(); } // Brunnen
+  S.worldMapKey = keys;
 }
-// Draussen: Übersicht mit Stadt, Zufahrt und Autobahn
-function drawWideMap(g) {
-  const sc = (MAP - 12) / 3700, wx = x => MAP / 2 + x * sc, wz = z => MAP / 2 + (z - 820) * sc, me = city.me;
-  g.fillStyle = 'rgba(32,62,38,0.92)'; g.fillRect(0, 0, MAP, MAP);
-  const rect = (b, col) => { g.fillStyle = col; g.fillRect(wx(b.x0), wz(b.z0), (b.x1 - b.x0) * sc, (b.z1 - b.z0) * sc); };
-  rect({ x0: -1100, x1: -702, z0: -700, z1: 700 }, '#1e5a8a'); // Wasser
-  for (const A of Object.values(AREAS)) { rect(A.rect, city.keys.size >= A.need ? '#9ca3af' : '#4b5563'); rect(A.road, '#9ca3af'); }
-  rect({ x0: -270, x1: 310, z0: 605, z1: 655 }, '#e5e7eb'); // Piste
-  g.strokeStyle = city.keys.size >= PASS_AREA.need ? '#e5e7eb' : '#6b7280'; g.lineWidth = 2; g.beginPath(); // Passstrasse
-  passPoints().forEach((p, i) => (i % 6 ? 0 : i ? g.lineTo(wx(p.x), wz(p.z)) : g.moveTo(wx(p.x), wz(p.z))));
-  g.stroke();
-  rect(FARM, '#8a9a3a'); // Bauernhof (Alp am Pass)
-  rect({ x0: -702, x1: -646, z0: -660, z1: -170 }, '#e8d39a'); rect({ x0: -646, x1: -250, z0: -200, z1: -184 }, '#9ca3af'); // Strand
-  g.fillStyle = '#7b8490'; g.beginPath(); // Stadt: Umriss so verbogen wie im Bild (rund, gewellt)
-  for (let k = 0; k < 64; k++) { const t = (k % 16) / 16 * 2 - 1, side = k >> 4, P = mp(...[[t * HALF, -HALF], [HALF, t * HALF], [-t * HALF, HALF], [-HALF, -t * HALF]][side]); k ? g.lineTo(wx(P.x), wz(P.z)) : g.moveTo(wx(P.x), wz(P.z)); }
-  g.closePath(); g.fill();
-  g.strokeStyle = '#e5e7eb'; g.lineWidth = 3; g.beginPath();
-  for (let s = 0; s <= HW_LEN; s += 40) { const p = hwPoint(s); if (s) g.lineTo(wx(p.x), wz(p.z)); else g.moveTo(wx(p.x), wz(p.z)); }
-  g.stroke();
-  g.beginPath(); g.moveTo(wx(0), wz(HALF)); g.lineTo(wx(0), wz(HW.cz - HW.R)); g.stroke();
-  drawSuburbs(g, wx, wz); // Vororte
-  g.fillStyle = '#fde047';
-  for (const c of city.hw) if (c.dir) g.fillRect(wx(c.x) - 1, wz(c.z) - 1, 2, 2);
-  g.fillStyle = '#f59e0b'; g.fillRect(wx(REST.x - 150), wz(REST.z + 20), 300 * sc, 110 * sc); // Raststätte
-  const P = mapWho();
-  return { x: wx(P.x), y: wz(P.z), h: P.h, zoom: 5, bg: 'rgba(32,62,38,1)' };
-}
-// Karte: alles wird auf eine grosse Karte gezeichnet (dreifache Auflösung, Masse in MAP-Einheiten); oben rechts zeigt ein
-// runder Ausschnitt die Gegend um dich (vorne = oben), antippen = ganze Karte gross (city.bigMap)
-const MAP_RES = 3;
 const mapWho = () => { const w = city.walk, me = city.me; return w ? { x: w.x, z: w.z, h: w.h } : { x: me.pos.x, z: me.pos.z, h: me.heading }; };
 function mapArrow(g, x, y, h, k = 1) {
   g.fillStyle = '#ffe066'; g.strokeStyle = '#000'; g.lineWidth = 1.5;
@@ -5169,65 +5156,75 @@ function mapArrow(g, x, y, h, k = 1) {
   g.lineTo(x + Math.cos(h - 2.5) * 6 * k, y + Math.sin(h - 2.5) * 6 * k);
   g.closePath(); g.fill(); g.stroke();
 }
+// Namen auf der grossen Karte (gesperrte Gebiete mit Schloss und Anzahl Schlüssel)
+function mapLabels() {
+  const keys = city.keys.size, lock = (name, need) => (keys >= need ? name : '🔒 ' + name + ' (' + need + ' 🔑)');
+  const L = [['🏙️ Stadt', 0, -HALF - 40], ['⛷️ Skigebiet', SKI.x, SKI.z], ['🐄 Alp', (FARM.x0 + FARM.x1) / 2, FARM.z0 - 30], ['🚀 Raumbahnhof', SPACE.x, SPACE.z + 50],
+    ['🛣️ Raststätte', REST.x, REST.z + 170], ['🏖️ Strand', -674, -700], [lock('⛰️ Pass', PASS_AREA.need), SUMMIT.x, SUMMIT.z + 60], ['🛣️ Autobahn', -HW.half - 40, HW.cz + 400]];
+  for (const S2 of SUBURBS) L.push([S2.name, (S2.rect.x0 + S2.rect.x1) / 2, S2.rect.z0 - 25]);
+  for (const A of Object.values(AREAS)) L.push([lock(A.name, A.need), (A.rect.x0 + A.rect.x1) / 2, (A.rect.z0 + A.rect.z1) / 2]);
+  return L;
+}
 function drawMinimap() {
-  if (!S.mapFull) { S.mapFull = document.createElement('canvas'); S.mapFull.width = S.mapFull.height = MAP * MAP_RES; }
-  const F = S.mapFull, fg = F.getContext('2d');
-  fg.setTransform(MAP_RES, 0, 0, MAP_RES, 0, 0); fg.clearRect(0, 0, MAP, MAP);
-  const p = drawMapContent(fg);
-  const cv = S.ui.minimap, g = cv.getContext('2d'), W = cv.width;
-  g.setTransform(1, 0, 0, 1, 0, 0); g.clearRect(0, 0, W, W);
-  if (city.bigMap) { // ganze Karte
-    g.fillStyle = 'rgba(20,24,32,0.9)'; g.fillRect(0, 0, W, W);
-    g.drawImage(F, 0, 0, W, W);
-    mapArrow(g, p.x * W / MAP, p.y * W / MAP, p.h, 1.3);
+  const cv = S.ui.minimap, g = cv.getContext('2d'), W = cv.width, H = cv.height;
+  g.setTransform(1, 0, 0, 1, 0, 0); g.clearRect(0, 0, W, H);
+  if (city.moonOn) { // Mond: eigene kleine Karte
+    if (!S.mapFull) { S.mapFull = document.createElement('canvas'); S.mapFull.width = S.mapFull.height = MAP * 3; }
+    const fg = S.mapFull.getContext('2d'); fg.setTransform(3, 0, 0, 3, 0, 0); fg.clearRect(0, 0, MAP, MAP);
+    const p = drawMoonMap(fg), sq = Math.min(W, H);
+    g.drawImage(S.mapFull, (W - sq) / 2, (H - sq) / 2, sq, sq); mapArrow(g, (W - sq) / 2 + p.x * sq / MAP, (H - sq) / 2 + p.y * sq / MAP, p.h, 1.2);
     return;
   }
-  g.save();
-  g.beginPath(); g.arc(W / 2, W / 2, W / 2 - 3, 0, Math.PI * 2); g.clip();
-  g.fillStyle = p.bg || '#2c4a2e'; g.fillRect(0, 0, W, W);
-  g.translate(W / 2, W / 2); g.rotate(-p.h - Math.PI / 2); g.scale(p.zoom * W / MAP, p.zoom * W / MAP); g.translate(-p.x, -p.y);
-  g.drawImage(F, 0, 0, MAP, MAP);
-  g.restore();
-  g.strokeStyle = 'rgba(255,255,255,0.85)'; g.lineWidth = 3; g.beginPath(); g.arc(W / 2, W / 2, W / 2 - 3, 0, Math.PI * 2); g.stroke();
-  // Norden am Rand
-  const na = -p.h - Math.PI, nr = W / 2 - 12;
-  g.font = 'bold 13px system-ui, sans-serif'; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillStyle = '#fff';
-  g.fillText('N', W / 2 + Math.cos(na) * nr, W / 2 + Math.sin(na) * nr);
-  mapArrow(g, W / 2, W / 2, -Math.PI / 2, 1.1);
-}
-function drawMapContent(g) {
-  if (city.moonOn) return drawMoonMap(g);
-  if (Math.max(Math.abs(city.me.pos.x), Math.abs(city.me.pos.z)) > LIMIT) return drawWideMap(g);
-  g.drawImage(S.mapBase, 0, 0, MAP, MAP);
-  if (city.works) { const W = city.works; g.strokeStyle = '#f97316'; g.lineWidth = 4; g.beginPath(); g.moveTo(mpx(node(W.a[0]), node(W.a[1])), mpz(node(W.a[0]), node(W.a[1]))); g.lineTo(mpx(node(W.b[0]), node(W.b[1])), mpz(node(W.b[0]), node(W.b[1]))); g.stroke(); }
-  g.fillStyle = '#ffffff';
-  for (const c of city.cars) g.fillRect(mpx(c.x, c.z) - 1.5, mpz(c.x, c.z) - 1.5, 3, 3);
-  S.places.bases.forEach((B, s) => { // eigene Base und die der Mitspieler
-    if (s === city.baseSlot) { g.font = '13px system-ui, sans-serif'; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText('🏠', mpx(B.x, B.z), mpz(B.x, B.z)); }
-    else if (baseOwner(s)) { g.fillStyle = BASE_COLORS[s]; g.fillRect(mpx(B.x, B.z) - 3, mpz(B.x, B.z) - 3, 6, 6); }
-  });
-  g.fillStyle = '#ffffff';
-  if (city.police) {
-    g.fillStyle = Math.floor(city.t * 6) % 2 ? '#3b82f6' : '#ef4444';
-    g.beginPath(); g.arc(mpx(city.police.pos.x, city.police.pos.z), mpz(city.police.pos.x, city.police.pos.z), 4.5, 0, Math.PI * 2); g.fill();
+  if (!S.worldMap || S.worldMapKey !== city.keys.size) drawWorldMap();
+  const P = mapWho(), K = WM.K, [pbx, pby] = wmPt(P.x, P.z), [hx, hy] = wmPt(P.x + Math.cos(P.h), P.z + Math.sin(P.h)), hd = Math.atan2(hy - pby, hx - pbx);
+  // Abbildung Welt → Bildschirm: gross = ganze Karte eingepasst; klein = um dich herum, gedreht, gezoomt (in der Stadt näher)
+  let toS, scale;
+  if (city.bigMap) {
+    scale = Math.min(W / WMW, H / WMH); const ox = (W - WMW * scale) / 2, oy = (H - WMH * scale) / 2;
+    toS = (x, z) => { const [a, b] = wmPt(x, z); return [ox + a * scale, oy + b * scale]; };
+    g.fillStyle = '#1f2937'; g.fillRect(0, 0, W, H); g.drawImage(S.worldMap, ox, oy, WMW * scale, WMH * scale);
+  } else {
+    const near = Math.max(Math.abs(P.x), Math.abs(P.z)) < LIMIT + 20 || inSuburb(P.x, P.z);
+    city.mapS = (city.mapS || 0.9) + ((near ? 0.9 : 0.35) - (city.mapS || 0.9)) * 0.08; // Meter → Bildpunkte, sanft
+    scale = city.mapS / K; const a = -hd - Math.PI / 2, ca = Math.cos(a), sa = Math.sin(a);
+    toS = (x, z) => { const [u, v] = wmPt(x, z), dx = (u - pbx) * scale, dy = (v - pby) * scale; return [W / 2 + dx * ca - dy * sa, H / 2 + dx * sa + dy * ca]; };
+    g.save(); g.beginPath(); g.arc(W / 2, H / 2, W / 2 - 3, 0, Math.PI * 2); g.clip();
+    g.fillStyle = '#3f6e3a'; g.fillRect(0, 0, W, H);
+    g.translate(W / 2, H / 2); g.rotate(a); g.scale(scale, scale); g.translate(-pbx, -pby); g.drawImage(S.worldMap, 0, 0);
+    g.restore();
+    g.save(); g.beginPath(); g.arc(W / 2, H / 2, W / 2 - 3, 0, Math.PI * 2); g.clip();
   }
+  const big = city.bigMap, dot = (x, z, col, r) => { const [a, b] = toS(x, z); g.fillStyle = col; g.beginPath(); g.arc(a, b, r, 0, 7); g.fill(); };
+  const icon = (t, x, z, size = 13) => { const [a, b] = toS(x, z); g.font = size + 'px system-ui, sans-serif'; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText(t, a, b); };
+  for (const [k, ic] of PLACE_ICONS) { const p = S.places[k]; if (p) icon(ic, p.x ?? p.cx, p.z ?? p.cz, big ? 11 : 13); }
+  for (const q of SUB_PLACES) icon(q.icon, q.x, q.z, big ? 10 : 13);
+  if (city.works) { const W2 = city.works, [a, b] = toS(node(W2.a[0]), node(W2.a[1])), [c2, d2] = toS(node(W2.b[0]), node(W2.b[1])); g.strokeStyle = '#f97316'; g.lineWidth = 4; g.beginPath(); g.moveTo(a, b); g.lineTo(c2, d2); g.stroke(); }
+  for (const c of city.cars) if (!c.off) dot(c.x, c.z, '#ffffff', big ? 1.3 : 1.8);
+  for (const c of city.hw || []) if (c.dir) dot(c.x, c.z, '#fde047', big ? 1 : 1.6);
+  S.places.bases.forEach((B, s) => { if (s === city.baseSlot) icon('🏠', B.x, B.z, big ? 12 : 14); else if (baseOwner(s)) dot(B.x, B.z, BASE_COLORS[s], 3.5); });
+  if (city.police) dot(city.police.pos.x, city.police.pos.z, Math.floor(city.t * 6) % 2 ? '#3b82f6' : '#ef4444', 4.5);
   const it = city.net ? tagState() : null;
-  if (city.netCars) for (const o of city.netCars.list()) { // Mitspieler als farbige Punkte, wer bei Fangis dran ist, mit rotem Ring
-    g.fillStyle = o.color; g.strokeStyle = '#000'; g.lineWidth = 1.5;
-    g.beginPath(); g.arc(mpx(o.x, o.z), mpz(o.x, o.z), 5, 0, Math.PI * 2); g.fill(); g.stroke();
-    if (it && it.it === o.slot) { g.strokeStyle = Math.floor(city.t * 4) % 2 ? '#ff2020' : '#fff'; g.lineWidth = 2.5; g.beginPath(); g.arc(mpx(o.x, o.z), mpz(o.x, o.z), 9, 0, Math.PI * 2); g.stroke(); }
+  if (city.netCars) for (const o of city.netCars.list()) { // Mitspieler, wer bei Fangis dran ist, mit rotem Ring
+    const [a, b] = toS(o.x, o.z); g.fillStyle = o.color; g.strokeStyle = '#000'; g.lineWidth = 1.5; g.beginPath(); g.arc(a, b, 5, 0, 7); g.fill(); g.stroke();
+    if (it && it.it === o.slot) { g.strokeStyle = Math.floor(city.t * 4) % 2 ? '#ff2020' : '#fff'; g.lineWidth = 2.5; g.beginPath(); g.arc(a, b, 9, 0, 7); g.stroke(); }
   }
-  g.font = '11px system-ui, sans-serif'; g.textAlign = 'center'; g.textBaseline = 'middle';
-  for (const c of city.cars) if (c.wreck > 0) g.fillText('⚠️', mpx(c.x, c.z), mpz(c.x, c.z)); // Unfälle
-  if (city.truck) g.fillText('🚚', mpx(city.truck.x, city.truck.z), mpz(city.truck.x, city.truck.z));
+  for (const c of city.cars) if (c.wreck > 0) icon('⚠️', c.x, c.z, 11); // Unfälle
+  if (city.truck) icon('🚚', city.truck.x, city.truck.z, 11);
   const M = city.mission;
-  if (M && M.target) { // Ziel des Auftrags blinkt
-    g.fillStyle = Math.floor(city.t * 4) % 2 ? M.color : '#ffffff'; g.strokeStyle = '#000'; g.lineWidth = 1.5;
-    g.beginPath(); g.arc(mpx(M.target.x, M.target.z), mpz(M.target.x, M.target.z), 5.5, 0, Math.PI * 2); g.fill(); g.stroke();
+  if (M && M.target) { const [a, b] = toS(M.target.x, M.target.z); g.fillStyle = Math.floor(city.t * 4) % 2 ? M.color : '#ffffff'; g.strokeStyle = '#000'; g.lineWidth = 1.5; g.beginPath(); g.arc(a, b, 5.5, 0, 7); g.fill(); g.stroke(); }
+  if (big) {
+    g.font = 'bold 13px system-ui, sans-serif'; g.textAlign = 'center'; g.textBaseline = 'middle'; g.lineWidth = 3; g.strokeStyle = 'rgba(0,0,0,0.75)'; g.fillStyle = '#fff';
+    for (const [t, x, z] of mapLabels()) { const [a, b] = toS(x, z); g.strokeText(t, a, b); g.fillText(t, a, b); }
+    const [a, b] = toS(P.x, P.z); mapArrow(g, a, b, hd, 1.4);
+    g.font = 'bold 14px system-ui, sans-serif'; g.textAlign = 'right'; g.fillStyle = '#fff'; g.fillText('antippen = schliessen', W - 10, H - 12);
+    return;
   }
-  const P = mapWho(), x = mpx(P.x, P.z), y = mpz(P.x, P.z);
-  const h = Math.atan2(mpz(P.x + Math.cos(P.h), P.z + Math.sin(P.h)) - y, mpx(P.x + Math.cos(P.h), P.z + Math.sin(P.h)) - x);
-  return { x, y, h, zoom: 2.6, bg: '#5d6672' };
+  g.restore();
+  g.strokeStyle = 'rgba(255,255,255,0.85)'; g.lineWidth = 3; g.beginPath(); g.arc(W / 2, H / 2, W / 2 - 3, 0, Math.PI * 2); g.stroke();
+  const na = -hd - Math.PI, nr = W / 2 - 12; // Norden am Rand
+  g.font = 'bold 13px system-ui, sans-serif'; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillStyle = '#fff';
+  g.fillText('N', W / 2 + Math.cos(na) * nr, H / 2 + Math.sin(na) * nr);
+  mapArrow(g, W / 2, H / 2, -Math.PI / 2, 1.1);
 }
 
 // ---------- Start, Schleife, Ende ----------
@@ -5246,7 +5243,6 @@ export function startCity({ player, kinds, topSpeed, onExit, pay = () => 0, earn
     S = buildWorld();
     S.ui = buildDom();
     S.ui.root.prepend(S.renderer.domElement);
-    S.mapBase = drawMinimapBase();
     const fx0 = makeEffects(S.scene), wp = { x: 0, z: 0 }; // Rauch und Bremsspuren liegen in der verbogenen Stadt
     loadLook().then(ok => { // schöne Grafik (Bibliotheken aus dem Netz), kommt dazu, sobald geladen
       if (!ok || !S || S.look) return;
