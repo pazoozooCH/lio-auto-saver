@@ -31,7 +31,8 @@ Browser-Spiel ohne Build: `index.html` + `game.js` (Spiellogik, Menüs und 2D-Ze
   Drehung: `warpDir` dreht genau in die eigene Blickrichtung (sonst stehen Autos schief zur gebogenen Strasse).
   Karte: eine Weltkarte für alles (`drawWorldMap` → `S.worldMap` + genaueres Stadtbild `S.worldDet` (`DM`), Rechteck `WM`, Meer bis zum Rand, Stadt verbogen über `wmPt`; neu gemalt, wenn
   sich die Schlüssel ändern). Oben rechts runder Ausschnitt um den Spieler, vorne = oben, in Stadt und Vororten näher
-  (`drawMinimap`); antippen = ganze Welt hochkant mit Namen (`city.bigMap`, `mapLabels`). Auf dem Mond `drawMoonMap`.
+  (`drawMinimap`); antippen = ganze Welt hochkant mit Namen (`city.bigMap`, `mapLabels`); dort zoomen (＋ − Mausrad, zwei
+  Finger, bis 10×) und ziehen (`mapView`, `zoomMap`, `panMap`, `mapPoint` beachtet das gedrehte Handy), kurz antippen = zu. Auf dem Mond `drawMoonMap`.
   Testen: `startCityMode()`, dann `window.__city()` (`me`, `cars`, `input`). 🚪/X: aussteigen und zu Fuss gehen (`city.walk`),
   einsteigen ins eigene Auto oder in eines der eigenen Base.
   Polizei nur nach einem Blitzer: Rotlicht-Kamera an jeder zehnten Ampel (`S.redCams`) oder Radarkasten (`S.speedCams`,

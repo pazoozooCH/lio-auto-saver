@@ -4934,7 +4934,10 @@ const CSS = `
 #city .flash.on { animation: cityflash .45s ease-out; }
 @keyframes cityflash { from { opacity: .85; } to { opacity: 0; } }
 #city .minimap { position: absolute; top: 10px; right: 62px; width: 190px; height: 190px; border-radius: 50%; cursor: pointer; }
-#city .minimap.big { top: 50%; right: 50%; transform: translate(50%, -50%); height: 94%; width: auto; border-radius: 14px; z-index: 8;
+#city .mapzoom { position: absolute; top: 4%; left: 50%; transform: translateX(-50%); z-index: 9; display: flex; gap: 10px; }
+#city .mapzoom[hidden] { display: none; }
+#city .mapzoom button { width: 48px; height: 48px; border-radius: 50%; border: 2px solid #fff; background: rgba(15,23,42,.8); color: #fff; font-size: 24px; font-weight: 900; }
+#city .minimap.big { touch-action: none; top: 50%; right: 50%; transform: translate(50%, -50%); height: 94%; width: auto; border-radius: 14px; z-index: 8;
   box-shadow: 0 6px 30px rgba(0,0,0,.6); }
 #city .tagbtn { position: absolute; top: 10px; left: 148px; width: 58px; height: 58px; border-radius: 50%; border: 3px solid #f87171;
   background: rgba(0,0,0,.4); font-size: 26px; }
@@ -5022,6 +5025,7 @@ function buildDom() {
   root.hidden = true;
   root.innerHTML = `
     <canvas class="minimap" width="190" height="190"></canvas>
+    <div class="mapzoom" hidden><button data-z="in" title="Hineinzoomen">＋</button><button data-z="out" title="Hinauszoomen">－</button><button data-z="close" title="Karte schliessen">✕</button></div>
     <div class="clock"></div>
     <button class="quit" title="Stadt verlassen">✕</button>
     <button class="cam" title="Kamera wechseln (V)">📷</button>
@@ -5071,7 +5075,7 @@ function buildDom() {
     ${FLY_HTML}`;
   document.body.appendChild(root);
   const $ = s => root.querySelector(s);
-  const ui = { root, gfx: $('.gfx'), kmh: $('.kmh'), ps: $('.ps'), msg: $('.msg'), hint: $('.hint'), minimap: $('.minimap'), ctls: [...root.querySelectorAll('.ctl')],
+  const ui = { root, gfx: $('.gfx'), mapzoom: $('.mapzoom'), kmh: $('.kmh'), ps: $('.ps'), msg: $('.msg'), hint: $('.hint'), minimap: $('.minimap'), ctls: [...root.querySelectorAll('.ctl')],
     speed: $('.speed'), cruise: $('.cruise'), cruiseVal: $('.cruise b'), cruiseOn: $('.cruise .cron'), limit: $('.limit'), fuel: $('.fuel'), fuelIcon: $('.fuel b'), fuelBar: $('.fuel i'), dmg: $('.dmg'), dmgBar: $('.dmg i'), jail: $('.jailbar'), jailtime: $('.jailbar .jt'), bail: $('.bail'), flash: $('.flash'), flybtn: $('.flybtn'), flyctl: $('.flyctl'), basebtn: $('.basebtn'), walkbtn: $('.walkbtn'), basepanel: $('.basepanel'), dealpanel: $('.dealpanel'), talkpanel: $('.talkpanel'), talkbtn: $('.talkbtn'), shopbtn: $('.shopbtn'),
     chase: $('.chase'), ticket: $('.ticket'), drift: $('.drift'), clock: $('.clock'),
     tagbtn: $('.tagbtn'), tagbar: $('.tagbar'),
@@ -5097,12 +5101,39 @@ function buildDom() {
   if (touch) ui.hint.style.display = 'none';
   $('.quit').addEventListener('pointerdown', e => { e.preventDefault(); if (city) endCity(); });
   $('.cam').addEventListener('pointerdown', e => { e.preventDefault(); nextCam(); });
-  $('.minimap').addEventListener('pointerdown', e => { // ganze Karte ein/aus
+  // Karte: antippen = gross; gross: ziehen = verschieben, Mausrad oder zwei Finger = zoomen, kurz antippen oder ✕ = schliessen
+  const mcv = $('.minimap'), touches = new Map();
+  let mdrag = null;
+  mcv.addEventListener('pointerdown', e => {
     e.preventDefault(); if (!city) return;
-    city.bigMap = !city.bigMap;
-    const cv = S.ui.minimap; // gross: hochkant wie die ganze Welt (WMW × WMH)
-    cv.width = city.bigMap ? 620 : MAP; cv.height = city.bigMap ? Math.round(620 * WMH / WMW) : MAP; cv.classList.toggle('big', city.bigMap);
-    drawMinimap();
+    if (!city.bigMap) { setBigMap(true); return; }
+    mcv.setPointerCapture(e.pointerId);
+    touches.set(e.pointerId, mapPoint(e));
+    mdrag = { moved: 0, t: performance.now() };
+  });
+  mcv.addEventListener('pointermove', e => {
+    if (!city || !city.bigMap || !touches.has(e.pointerId)) return;
+    const p = mapPoint(e), old = touches.get(e.pointerId);
+    if (touches.size >= 2) { // zwei Finger: zoomen um die Mitte zwischen den Fingern
+      const [a, b] = [...touches.entries()].map(([id, q]) => (id === e.pointerId ? p : q)), [a0, b0] = [...touches.values()];
+      const d0 = Math.hypot(a0[0] - b0[0], a0[1] - b0[1]), d1 = Math.hypot(a[0] - b[0], a[1] - b[1]);
+      if (d0 > 5) zoomMap(d1 / d0, (a[0] + b[0]) / 2, (a[1] + b[1]) / 2);
+    } else panMap(p[0] - old[0], p[1] - old[1]);
+    if (mdrag) mdrag.moved += Math.hypot(p[0] - old[0], p[1] - old[1]);
+    touches.set(e.pointerId, p);
+  });
+  const up = e => {
+    if (!touches.has(e.pointerId)) return;
+    touches.delete(e.pointerId);
+    if (mdrag && !touches.size) { if (mdrag.moved < 8 && performance.now() - mdrag.t < 400) setBigMap(false); mdrag = null; } // kurz angetippt
+    if (touches.size) mdrag = null; // zweiter Finger: nicht schliessen
+  };
+  mcv.addEventListener('pointerup', up); mcv.addEventListener('pointercancel', up);
+  mcv.addEventListener('wheel', e => { if (!city || !city.bigMap) return; e.preventDefault(); const p = mapPoint(e); zoomMap(e.deltaY < 0 ? 1.25 : 0.8, p[0], p[1]); }, { passive: false });
+  $('.mapzoom').addEventListener('pointerdown', e => {
+    const b = e.target.closest('button'); if (!b || !city) return; e.preventDefault(); e.stopPropagation();
+    const cv = S.ui.minimap;
+    if (b.dataset.z === 'close') setBigMap(false); else zoomMap(b.dataset.z === 'in' ? 1.5 : 1 / 1.5, cv.width / 2, cv.height / 2);
   });
   $('.gfx').addEventListener('pointerdown', e => { // Grafik umschalten (wird gemerkt)
     e.preventDefault(); if (!S.look) return;
@@ -5282,6 +5313,40 @@ function mapArrow(g, x, y, h, k = 1) {
   g.lineTo(x + Math.cos(h - 2.5) * 6 * k, y + Math.sin(h - 2.5) * 6 * k);
   g.closePath(); g.fill(); g.stroke();
 }
+// Grosse Karte: Zoom (1 = ganze Insel) und Mitte (in Bildpunkten der Weltkarte); Verschieben bleibt innerhalb der Karte
+function mapView(W, H) {
+  const z = city.mapZoom || 1, scale = Math.min(W / WMW, H / WMH) * z, hw = W / 2 / scale, hh = H / 2 / scale;
+  const cx = WMW > 2 * hw ? Math.max(hw, Math.min(WMW - hw, city.mapCX ?? WMW / 2)) : WMW / 2;
+  const cy = WMH > 2 * hh ? Math.max(hh, Math.min(WMH - hh, city.mapCY ?? WMH / 2)) : WMH / 2;
+  city.mapCX = cx; city.mapCY = cy;
+  return { scale, ox: W / 2 - cx * scale, oy: H / 2 - cy * scale };
+}
+function setBigMap(on) {
+  city.bigMap = on;
+  const cv = S.ui.minimap; // gross: hochkant wie die ganze Welt (WMW × WMH)
+  cv.width = on ? 620 : MAP; cv.height = on ? Math.round(620 * WMH / WMW) : MAP; cv.classList.toggle('big', on);
+  S.ui.mapzoom.hidden = !on;
+  if (on) { city.mapZoom = 1; city.mapCX = city.mapCY = null; }
+  drawMinimap();
+}
+function zoomMap(f, px, py) { // um den Punkt (px, py) auf der Karte zoomen: er bleibt unter dem Finger
+  const cv = S.ui.minimap, W = cv.width, H = cv.height, v = mapView(W, H), mx = (px - v.ox) / v.scale, my = (py - v.oy) / v.scale;
+  city.mapZoom = Math.max(1, Math.min(10, (city.mapZoom || 1) * f));
+  const s2 = Math.min(W / WMW, H / WMH) * city.mapZoom;
+  city.mapCX = mx - (px - W / 2) / s2; city.mapCY = my - (py - H / 2) / s2;
+  drawMinimap();
+}
+function panMap(dx, dy) {
+  const cv = S.ui.minimap, v = mapView(cv.width, cv.height);
+  city.mapCX -= dx / v.scale; city.mapCY -= dy / v.scale;
+  drawMinimap();
+}
+// Bildschirm → Bildpunkt auf der Karte (auch wenn das Spiel auf dem Handy hochkant um 90° gedreht ist)
+function mapPoint(e) {
+  const cv = S.ui.minimap, r = cv.getBoundingClientRect(), rot = (S.ui.root.style.transform || '').includes('rotate');
+  return rot ? [(e.clientY - r.top) * cv.width / r.height, (r.right - e.clientX) * cv.height / r.width]
+    : [(e.clientX - r.left) * cv.width / r.width, (e.clientY - r.top) * cv.height / r.height];
+}
 // Spielfigur von oben (zu Fuss): Schultern im Pulli, Kopf mit Kappe, gelber Pfeil zeigt, wohin sie schaut
 function mapPerson(g, x, y, h, k = 1) {
   g.save(); g.translate(x, y); g.rotate(h); g.lineWidth = 1.5; g.strokeStyle = '#000';
@@ -5323,7 +5388,7 @@ function drawMinimap() {
   // Abbildung Welt → Bildschirm: gross = ganze Karte eingepasst; klein = um dich herum, gedreht, gezoomt (in der Stadt näher)
   let toS, scale;
   if (city.bigMap) {
-    scale = Math.min(W / WMW, H / WMH); const ox = (W - WMW * scale) / 2, oy = (H - WMH * scale) / 2;
+    const v = mapView(W, H); scale = v.scale; const ox = v.ox, oy = v.oy;
     toS = (x, z) => { const [a, b] = wmPt(x, z); return [ox + a * scale, oy + b * scale]; };
     g.fillStyle = SEA_COL; g.fillRect(0, 0, W, H); // Meer bis zum Rand: kein Ende zu sehen
     g.save(); g.translate(ox, oy); g.scale(scale, scale); blitWorld(g); g.restore();
@@ -5363,7 +5428,8 @@ function drawMinimap() {
     g.font = 'bold 13px system-ui, sans-serif'; g.textAlign = 'center'; g.textBaseline = 'middle'; g.lineWidth = 3; g.strokeStyle = 'rgba(0,0,0,0.75)'; g.fillStyle = '#fff';
     for (const [t, x, z] of mapLabels()) { const [a, b] = toS(x, z); g.strokeText(t, a, b); g.fillText(t, a, b); }
     const [a, b] = toS(P.x, P.z); if (city.walk) mapPerson(g, a, b, hd, 1.2); else mapArrow(g, a, b, hd, 1.4);
-    g.font = 'bold 14px system-ui, sans-serif'; g.textAlign = 'right'; g.fillStyle = '#fff'; g.fillText('antippen = schliessen', W - 10, H - 12);
+    g.font = 'bold 14px system-ui, sans-serif'; g.textAlign = 'right'; g.fillStyle = '#fff'; g.lineWidth = 3; g.strokeStyle = 'rgba(0,0,0,0.7)';
+    const help = city.mapZoom > 1.01 ? 'ziehen = verschieben · ' + city.mapZoom.toFixed(1) + '×' : 'zoomen: ＋ − · Mausrad · zwei Finger'; g.strokeText(help, W - 10, H - 12); g.fillText(help, W - 10, H - 12);
     return;
   }
   g.restore();
@@ -5410,7 +5476,7 @@ export function startCity({ player, kinds, topSpeed, onExit, pay = () => 0, earn
     gears: gearbox(player.kind), onExit, last: performance.now(), kinds, pay, gripBoost: (kinds[player.kind] && kinds[player.kind].grip) || 1, canFly: !!(kinds[player.kind] && kinds[player.kind].fly), fines: 0, police: null, pulled: 0, ticket: false,
     earn, net, topSpeed, garage, baseSlot: net ? net.mySlot : 0, baseT: 0, atBase: -1, baseEdit: false, netCars: net ? makeNetCars({ scene: S.scene, kinds, net }) : null, drift: 0, driftT: 0, driftBest: (() => { try { return +localStorage.getItem('autoRetterDriftBest') || 0; } catch (e) { return 0; } })() };
   S.fx.clear();
-  S.ui.minimap.width = S.ui.minimap.height = MAP; S.ui.minimap.classList.remove('big'); // Karte wieder klein
+  S.ui.minimap.width = S.ui.minimap.height = MAP; S.ui.minimap.classList.remove('big'); S.ui.mapzoom.hidden = true; // Karte wieder klein
   S.scene.add(mesh);
   mesh.traverse(o => { const m = o.material; if (m && m.emissive && m.emissiveIntensity === 1.2 && m.color.getHex() === 0xffffff) city.headMat = m; }); // Scheinwerfer (gemeinsam für alle Autos)
   for (const c of city.cars) S.scene.add(c.mesh);
