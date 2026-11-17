@@ -16,7 +16,8 @@ Browser-Spiel ohne Build: `index.html` + `game.js` (Spiellogik, Menüs und 2D-Ze
 - `city.js`: 3D-Stadt zum freien Herumfahren (Strassengitter, Häuser, Parks, Ampeln, Verkehr mit Abbiegen und Halten).
   Geschwungene Strassen: gerechnet wird im geraden Gitter, nur das Bild wird verbogen (`warpXZ`/`warpRot`): jede Strasse eigene Welle
   (`SW`, fester Zufall), Blöcke verschieden gross (`SW.ox`/`SW.oz`), Stadt rund statt viereckig (`WARP_ROUND`),
-  läuft draussen bis `WARP_OUT` (HALF + 70) sanft aus.
+  läuft draussen bis `WARP_OUT` (HALF + 160) sanft aus (auch das Gelände-Netz wird verbogen).
+  Bewegung (Auto, zu Fuss, Verkehr) wird durch `warpStretch` geteilt: im Bild immer so schnell wie der Tacho.
   Kreisel an den Kreuzungen in `ROUND` (keine Ampel, `planTurn` fährt im Kreis, Vortritt vor der Einfahrt in `stepTraffic`);
   Abbiegen als Punkte-Weg (`c.turn.pts`, `turnAt`). Fussgängerzonen `PED` (`isPed`, gelten in `isClosed` als gesperrt):
   dort keine Strasse, Ampel, Haltestelle oder Spawn.

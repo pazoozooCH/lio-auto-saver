@@ -48,7 +48,7 @@ const node = i => (i - N / 2) * BLOCK;
 // - jede Strasse hat ihre eigene Welle (SW.v[i] für die Strasse x = node(i), SW.h[j] für z = node(j)), dazwischen gemischt
 // - die Stadt ist rund statt viereckig: die Ecken werden nach innen gezogen (WARP_ROUND, Quadrat → Kreis)
 // - ausserhalb des Rings läuft alles bis WARP_OUT sanft aus; dort und weiter draussen ist die Verbiegung null
-const WARP_OUT = HALF + 70, WARP_ROUND = 0.55;
+const WARP_OUT = HALF + 160, WARP_ROUND = 0.32; // breiter Übergang, sanfter gerundet: sonst wirkt das Auto am Stadtrand wie hinausgeschleudert
 const SW = (() => {
   const r = rng(1312), mk = () => { const calm = r() < 0.25; // ein paar Strassen fast gerade
     return { a: calm ? 1 + r() * 2 : 3 + r() * 6, l: 40 + r() * 40, p: r() * 6.28, b: calm ? 0 : r() * 3, m: 20 + r() * 12, q: r() * 6.28 }; };
@@ -89,6 +89,16 @@ function warpDir(x, z, ry) {
   return -Math.atan2(_wa.z - _wb.z, _wa.x - _wb.x);
 }
 const inWarp = (x, z) => Math.abs(x) < WARP_OUT && Math.abs(z) < WARP_OUT;
+// Wie stark ist das Bild an dieser Stelle in Fahrrichtung (dx, dz) gestreckt? Teilt man die Bewegung im Gitter dadurch,
+// fährt man im Bild immer genau so schnell, wie der Tacho zeigt (sonst wirkt es mal schneller, mal langsamer)
+const _ws1 = { x: 0, z: 0 }, _ws2 = { x: 0, z: 0 };
+function warpStretch(x, z, dx, dz) {
+  if (!inWarp(x, z)) return 1;
+  const l = Math.hypot(dx, dz); if (l < 1e-6) return 1;
+  const ux = dx / l, uz = dz / l;
+  warpXZ(x + ux, z + uz, _ws1); warpXZ(x - ux, z - uz, _ws2);
+  return Math.max(0.5, Math.min(2, Math.hypot(_ws1.x - _ws2.x, _ws1.z - _ws2.z) / 2));
+}
 const isIdent = o => o.position.x === 0 && o.position.z === 0 && o.rotation.x === 0 && o.rotation.y === 0 && o.rotation.z === 0;
 // Lange Dreiecke in der Stadt teilen (sonst wird eine 50 m lange Strasse nur an den Ecken verbogen)
 function splitGeo(g0, maxLen = 16) {
@@ -1558,7 +1568,7 @@ function buildWorld() {
   scene.add(clouds);
   for (const o of [clouds, sun, sun.target]) o.userData.noWarp = true; // folgen der Kamera bzw. dem eigenen Auto (render)
   const t0 = performance.now();
-  for (const o of [...scene.children]) warpStatic(o, new Set([sky, stars, clouds, land, landS]));
+  for (const o of [...scene.children]) warpStatic(o, new Set([sky, stars, clouds]));
   console.log('Stadt verbogen in', Math.round(performance.now() - t0), 'ms');
   warmUp(renderer, scene, camera);
   const flash = new THREE.Mesh(new THREE.SphereGeometry(0.6, 12, 8), new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0, depthWrite: false }));
@@ -1760,14 +1770,15 @@ function stepTraffic(dt) {
     }
     c.speed = c.speed < limit ? Math.min(limit, c.speed + 3 * dt) : Math.max(limit, c.speed - 7 * dt);
     c.speed = Math.max(0, c.speed);
+    const wk = 1 / warpStretch(c.x, c.z, Math.cos(c.h), Math.sin(c.h)); // im Bild gleichmässig schnell
     if (!c.turn) {
-      c.s += c.speed * dt;
+      c.s += c.speed * dt * wk;
       if (c.s >= BLOCK - 7) planTurn(c);
       else placeOnSegment(c);
     }
     if (c.turn) {
       const T = c.turn;
-      T.t = Math.min(1, T.t + c.speed * dt / T.len);
+      T.t = Math.min(1, T.t + c.speed * dt * wk / T.len);
       const p = turnAt(T, T.t), p2 = turnAt(T, Math.min(1, T.t + 0.6 / T.len));
       if (p2[0] !== p[0] || p2[1] !== p[1]) c.h = Math.atan2(p2[1] - p[1], p2[0] - p[0]);
       c.x = p[0]; c.z = p[1];
@@ -2989,8 +3000,8 @@ function stepMe(dt) {
   const grip = (hand ? 0.8 : sliding ? (gas ? 1.3 : 2.4) : SURF_GRIP[me.surface] || 9) * city.wGrip; // Regen und Schnee: rutschiger
   me.vl *= Math.exp(-grip * dt);
   const fx = Math.cos(me.heading), fz = Math.sin(me.heading);
-  me.pos.x += (fx * me.speed - fz * me.vl) * dt;
-  me.pos.z += (fz * me.speed + fx * me.vl) * dt;
+  { const vx = fx * me.speed - fz * me.vl, vz = fz * me.speed + fx * me.vl, k = 1 / warpStretch(me.pos.x, me.pos.z, vx, vz); // im Bild gleich schnell
+    me.pos.x += vx * dt * k; me.pos.z += vz * dt * k; }
   me.drifting = Math.abs(me.vl) > 2.5 && Math.abs(me.speed) > 5;
   const latA = Math.abs(me.steer) * yawMax * Math.abs(me.speed);
   me.slip = 0.7 * Math.min(1, Math.max(0, (latA - 10.8 * gb) / 1.2)) * Math.min(1, Math.max(0, (Math.abs(me.speed) - 16) / 8));
@@ -3155,7 +3166,7 @@ const allowedAt = (x, z, r) => {
   if (city.boat && !city.walk) return inWater(x, z, r);
   if (onDeck(x, z)) return true; // auf der Fähre
   const keys = city.keys ? city.keys.size : 0;
-  if ((Math.abs(x) <= LIMIT && Math.abs(z) <= LIMIT) || hwDrivable(x, z, r) || countryDrivable(x, z, r) || areaDrivable(x, z, r, keys) || passDrivable(x, z, r, keys)) return true;
+  if ((Math.abs(x) <= LIMIT && Math.abs(z) <= LIMIT) || (inMonaco(x, z) && monRoad(x, z)) || hwDrivable(x, z, r) || countryDrivable(x, z, r) || areaDrivable(x, z, r, keys) || passDrivable(x, z, r, keys)) return true;
   return !offroadWhy(x, z, r, keys) && !countryBlocked(x, z, r);
 };
 // Bodenhöhe unter einem Punkt: in der Stadt 0, auf der Passstrasse ihre Höhe, am Berg das feine Gelände, sonst genau
@@ -3512,7 +3523,11 @@ function removeParked(P) {
 function onDeck(x, z) {
   const F = city && city.ferry; if (!F) return false;
   const [lx, lz] = ferryLocal(F.pose, x, z);
-  return Math.abs(lx) < FERRY.halfL - 1 && Math.abs(lz) < FERRY.halfW + (F.moving ? 0 : 3); // angelegt: bis an den Kai
+  if (Math.abs(lx) >= FERRY.halfL - 1) return false;
+  if (F.moving) return Math.abs(lz) < FERRY.halfW;
+  // angelegt: auf der Kaiseite 7 m weiter (Rampe bis sicher aufs Land)
+  const q = F.at === 'A' ? [FERRY.A.x + 10, FERRY.A.z] : [FERRY.B.x - 10, FERRY.B.z], side = Math.sign(ferryLocal(F.pose, q[0], q[1])[1]) || 1, t = lz * side;
+  return t > -FERRY.halfW && t < FERRY.halfW + 7;
 }
 function placeRider() {
   const F = city.ferry, R = F.rider; if (!R) return;
@@ -3886,7 +3901,7 @@ function stepWalk(dt) {
   const want = w.fallT > 0 ? 0 : input.gas ? (input.drift || w.gasT > 1.2 ? 8 : 3.8) : input.brake ? -2 : 0;
   w.speed += (want - w.speed) * Math.min(1, dt * (w.air ? 1 : want ? 6 : 10));
   const fx = Math.cos(w.h), fz = Math.sin(w.h);
-  w.x += fx * w.speed * dt; w.z += fz * w.speed * dt;
+  { const k = 1 / warpStretch(w.x, w.z, fx * w.speed, fz * w.speed); w.x += fx * w.speed * dt * k; w.z += fz * w.speed * dt * k; }
   const R = 0.35, push = (ox, oz, min) => {
     const dx = w.x - ox, dz = w.z - oz, dd = Math.hypot(dx, dz);
     if (dd < min && dd > 0.001) { w.x += dx / dd * (min - dd); w.z += dz / dd * (min - dd); }
@@ -5672,6 +5687,7 @@ export function startCity({ player, kinds, topSpeed, onExit, pay = () => 0, earn
   window.__city = () => city; // für Tests im Browser
   window.__cityS = () => S;
   window.__cityTick = n => { for (let k = 0; k < n && city; k++) step(city.last + 1000 / 60); }; // Tests: Bilder rechnen, auch im Hintergrund
+  window.__cityWarp = (x, z) => warpXZ(x, z, { x: 0, z: 0 }); // Tests: wo liegt ein Punkt im Bild
   window.__cityMission = type => startMission(type); // Aufträge und Überraschungen direkt starten
   requestAnimationFrame(loop);
 }
