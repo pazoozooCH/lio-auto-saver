@@ -3149,8 +3149,9 @@ function groundAt(x, z) {
   if (pkIn(x, z)) return parkY(x, z);
   const pg = passGround(x, z);
   if (pg) return pg;
+  if (Math.abs(x) <= HALF + 20 && Math.abs(z) <= HALF + 20) return 0;
+  if (inPassRegion(x, z)) return Math.max(0, S.country.ground(x, z)); // auch knapp am Stadtrand: dort liegt schon das Pass-Gelände
   if (Math.abs(x) <= LIMIT && Math.abs(z) <= LIMIT) return 0;
-  if (inPassRegion(x, z)) return Math.max(0, S.country.ground(x, z));
   if (onHighway(x, z) || inArea(x, z) || inCountry(x, z) || inSuburb(x, z)) return 0;
   const gx = (x + 1100) / 20, gz = (z + 1100) / 20, i = Math.floor(gx), j = Math.floor(gz), fx = gx - i, fz = gz - j;
   const a = landAt(i, j), b = landAt(i, j + 1), c = landAt(i + 1, j + 1), d = landAt(i + 1, j);
@@ -3383,8 +3384,11 @@ function stepBases(dt) {
         b.key = key;
       }
       if (!b.mesh || !v) return;
-      const gone = !!driven && v.kind === driven.kind && v.color === driven.color && (v.special || null) === (driven.special || null);
-      if (gone) driven = null;
+      // eigene Base: jedes Auto kann man beliebig oft nehmen – es fehlt nur, solange dein Auto (oder ein geparktes) auf dem Platz steht
+      const onBay = (x, z) => Math.hypot(x - b.x, z - b.z) < 3;
+      const gone = s === city.baseSlot ? onBay(me.pos.x, me.pos.z) || city.parked.some(P => onBay(P.x, P.z))
+        : !!driven && v.kind === driven.kind && v.color === driven.color && (v.special || null) === (driven.special || null);
+      if (gone && s !== city.baseSlot) driven = null;
       b.mesh.visible = !gone;
       const hl = b.mesh.userData.length / 2;
       Object.assign(b.solid, gone ? { x0: 1e9, x1: 1e9, z0: 1e9, z1: 1e9 } : { x0: b.x - hl, x1: b.x + hl, z0: b.z - 1.4, z1: b.z + 1.4 });
@@ -3416,7 +3420,7 @@ function drawBase() {
     grid.append(b);
   }
   const row = document.createElement('div'); row.className = 'row';
-  for (const [act, text] of edit ? [['done', '✅ Fertig']] : [['edit', '✏️ Autos wählen'], ['close', '✕ Schliessen']]) {
+  for (const [act, text] of edit ? [['done', '✅ Fertig']] : [['edit', '✏️ Autos wählen'], ...(city.parked.length ? [['home', '🧹 ' + city.parked.length + ' geparkte Autos zurückholen']] : []), ['close', '✕ Schliessen']]) {
     const b = document.createElement('button'); b.dataset.act = act; b.textContent = text; row.append(b);
   }
   p.append(h, grid, row);
@@ -3427,6 +3431,7 @@ function onBaseClick(e) {
   if (!b || !city || baseDragged) return;
   const act = b.dataset.act;
   if (act === 'close') { S.ui.basepanel.hidden = true; return; }
+  if (act === 'home') { const n = city.parked.length; while (city.parked.length) removeParked(city.parked[0]); showMsg('🧹 ' + n + ' Autos sind wieder in der Base', 2); drawBase(); return; }
   if (act === 'edit' || act === 'done') { city.baseEdit = act === 'edit'; drawBase(); return; }
   const v = city.garage.all().find(f => f.id === b.dataset.id);
   if (!v) return;
@@ -3443,10 +3448,62 @@ function onBaseClick(e) {
   S.ui.basepanel.hidden = true;
   switchCar(v);
 }
+// ---------- Geparkte Autos ----------
+// Nimmt man ein anderes Auto (aus der Base oder ein geparktes), bleibt das bisherige stehen, wo man ausgestiegen ist –
+// so kann man beliebig viele Autos irgendwo hinstellen (auch hundert auf dem Berg). Aus der Base kann man jedes Auto
+// beliebig oft nehmen. Gespeichert in autoRetterParked; Autos weit weg werden erst gebaut, wenn man in die Nähe kommt.
+const PARK_KEY = 'autoRetterParked', PARK_MAX = 200, PARK_SEE = 260;
+function loadParked() {
+  try { return (JSON.parse(localStorage.getItem(PARK_KEY)) || []).filter(p => p && p.v && p.v.kind && isFinite(p.x) && isFinite(p.z)).map(p => ({ ...p, mesh: null, cols: [] })); }
+  catch (err) { return []; }
+}
+function saveParked() { try { localStorage.setItem(PARK_KEY, JSON.stringify(city.parked.map(({ v, x, z, h }) => ({ v, x, z, h })))); } catch (err) { /* ohne Speicher */ } }
+function parkCols(P) { // zwei Kreise entlang des Autos (es steht schräg): man stösst an
+  const L = P.mesh ? P.mesh.userData.length || 4.5 : 4.5, fx = Math.cos(P.h), fz = Math.sin(P.h);
+  for (const o of P.cols) { const k = S.round.indexOf(o); if (k >= 0) S.round.splice(k, 1); }
+  P.cols = [-1, 1].map(s => ({ x: P.x + fx * s * L * 0.25, z: P.z + fz * s * L * 0.25, r: 1.15, h: 2 }));
+  S.round.push(...P.cols);
+}
+function setParkMesh(P, mesh) {
+  P.mesh = mesh;
+  mesh.position.set(P.x, groundAt(P.x, P.z), P.z); mesh.rotation.set(0, -P.h, 0);
+  if (mesh.userData.driver) mesh.userData.driver.visible = false; // niemand sitzt drin
+  mesh.traverse(o => { o.castShadow = false; });
+  if (!mesh.parent) S.scene.add(mesh);
+}
+function parkHere(mesh, v, x, z, h) {
+  const P = { v: { ...v }, x, z, h, mesh: null, cols: [] };
+  if (mesh) setParkMesh(P, mesh);
+  parkCols(P);
+  city.parked.push(P);
+  while (city.parked.length > PARK_MAX) removeParked(city.parked[0]);
+  saveParked();
+  return P;
+}
+function removeParked(P) {
+  if (P.mesh) S.scene.remove(P.mesh);
+  for (const o of P.cols) { const k = S.round.indexOf(o); if (k >= 0) S.round.splice(k, 1); }
+  const k = city.parked.indexOf(P); if (k >= 0) city.parked.splice(k, 1);
+  saveParked();
+}
+function stepParked(dt) {
+  if ((city.parkT = (city.parkT || 0) - dt) > 0) return;
+  city.parkT = 0.25;
+  const cam = S.camera.position, me = city.me;
+  let built = false; // höchstens ein Auto pro Durchgang bauen, sonst ruckelt es
+  for (const P of city.parked) {
+    const near = Math.hypot(P.x - me.pos.x, P.z - me.pos.z) < PARK_SEE || Math.hypot(P.x - cam.x, P.z - cam.z) < PARK_SEE;
+    if (!P.mesh && near && !built) {
+      const v = city.kinds[P.v.kind] ? P.v : { ...P.v, kind: 'car' };
+      setParkMesh(P, buildCar(v, city.kinds)); parkCols(P); built = true;
+    }
+    if (P.mesh) P.mesh.visible = near;
+  }
+}
 // Anderes Auto nehmen: gleiche Stelle, neue Werte, online sehen es alle
-function switchCar(v) {
+function switchCar(v, force = false) {
   const me = city.me;
-  if (v.id === me.v.id) return;
+  if (v.id === me.v.id && !force) return; // force: gleiches Auto aus der Base nochmals (eine weitere Kopie)
   const mesh = buildCar(v, city.kinds), M = city.mission;
   mesh.rotation.order = 'YZX';
   if (M && M.pizzaBox) { me.mesh.remove(M.pizzaBox); mesh.add(M.pizzaBox); }
@@ -3693,10 +3750,13 @@ function getIn() {
     R.mesh.position.set(old.x, groundAt(old.x, old.z), old.z); R.mesh.rotation.y = -old.h; S.scene.add(R.mesh);
     if (R.mesh.userData.driver) R.mesh.userData.driver.visible = false;
     Object.assign(R, old);
-  } else if (t.v) { // Auto aus der Base: das alte Auto fährt zurück in die Base
-    switchCar(t.v);
-    Object.assign(city.me.pos, { x: t.x, z: t.z });
-    city.me.heading = t.h;
+  } else if (t.parked || t.v) { // geparktes Auto oder Auto aus der Base: das bisherige Auto bleibt stehen, wo es ist
+    const me = city.me, oldMesh = me.mesh, old = { v: me.v, x: me.pos.x, z: me.pos.z, h: me.heading };
+    const P = t.parked, v = P ? P.v : t.v, at = P || t;
+    if (P) removeParked(P);
+    switchCar(v, true);
+    Object.assign(me.pos, { x: at.x, z: at.z }); me.heading = at.h;
+    parkHere(oldMesh, old.v, old.x, old.z, old.h);
   }
   if (city.me.mesh.userData.driver) city.me.mesh.userData.driver.visible = true;
   S.ui.walkbtn.textContent = '🚪';
@@ -3745,6 +3805,11 @@ function stepWalk(dt) {
     const d = Math.hypot(b.x - w.x, b.z - w.z) - b.mesh.userData.length * 0.35;
     if (d < 1.6 && d < bd) { bd = d; best = { v, x: b.x, z: b.z, h: -b.ry }; }
   });
+  for (const P of city.parked) { // geparkte eigene Autos
+    if (!P.mesh) continue;
+    const d = Math.hypot(P.x - w.x, P.z - w.z) - (P.mesh.userData.length || 4.5) * 0.35;
+    if (d < 1.6 && d < bd) { bd = d; best = { parked: P }; }
+  }
   for (const R of city.rides || []) { // Traktor (oder dein dafür abgestelltes Auto)
     const d = Math.hypot(R.x - w.x, R.z - w.z) - R.mesh.userData.length * 0.35;
     if (d < 1.6 && d < bd) { bd = d; best = { v: R.v, x: R.x, z: R.z, h: R.h, ride: R }; }
@@ -5217,6 +5282,23 @@ function mapArrow(g, x, y, h, k = 1) {
   g.lineTo(x + Math.cos(h - 2.5) * 6 * k, y + Math.sin(h - 2.5) * 6 * k);
   g.closePath(); g.fill(); g.stroke();
 }
+// Spielfigur von oben (zu Fuss): Schultern im Pulli, Kopf mit Kappe, gelber Pfeil zeigt, wohin sie schaut
+function mapPerson(g, x, y, h, k = 1) {
+  g.save(); g.translate(x, y); g.rotate(h); g.lineWidth = 1.5; g.strokeStyle = '#000';
+  g.fillStyle = '#ffe066'; g.beginPath(); g.moveTo(12 * k, 0); g.lineTo(7 * k, -3.5 * k); g.lineTo(7 * k, 3.5 * k); g.closePath(); g.fill(); g.stroke();
+  g.fillStyle = '#dc2626'; g.beginPath(); g.ellipse(-0.5 * k, 0, 3.6 * k, 6.5 * k, 0, 0, 7); g.fill(); g.stroke(); // Schultern
+  g.fillStyle = '#facc15'; g.fillRect(-4.6 * k, -2.6 * k, 2.4 * k, 5.2 * k); // Rucksack
+  g.fillStyle = '#1d4ed8'; g.beginPath(); g.arc(0.6 * k, 0, 3.4 * k, 0, 7); g.fill(); g.stroke(); // Kopf mit Kappe
+  g.fillStyle = '#1d4ed8'; g.fillRect(3 * k, -2 * k, 2.4 * k, 4 * k); // Schirm
+  g.restore();
+}
+// Auto von oben (geparkte Autos und dein Auto, wenn du zu Fuss bist)
+function mapCar(g, x, y, h, col, k = 1) {
+  g.save(); g.translate(x, y); g.rotate(h); g.fillStyle = col || '#888'; g.strokeStyle = '#fff'; g.lineWidth = 1.2;
+  g.beginPath(); g.roundRect(-4.5 * k, -2.4 * k, 9 * k, 4.8 * k, 1.6 * k); g.fill(); g.stroke();
+  g.fillStyle = 'rgba(15,23,42,0.75)'; g.fillRect(0.6 * k, -1.7 * k, 1.8 * k, 3.4 * k); // Frontscheibe
+  g.restore();
+}
 // Namen auf der grossen Karte (gesperrte Gebiete mit Schloss und Anzahl Schlüssel)
 function mapLabels() {
   const keys = city.keys.size, lock = (name, need) => (keys >= need ? name : '🔒 ' + name + ' (' + need + ' 🔑)');
@@ -5270,6 +5352,9 @@ function drawMinimap() {
     const [a, b] = toS(o.x, o.z); g.fillStyle = o.color; g.strokeStyle = '#000'; g.lineWidth = 1.5; g.beginPath(); g.arc(a, b, 5, 0, 7); g.fill(); g.stroke();
     if (it && it.it === o.slot) { g.strokeStyle = Math.floor(city.t * 4) % 2 ? '#ff2020' : '#fff'; g.lineWidth = 2.5; g.beginPath(); g.arc(a, b, 9, 0, 7); g.stroke(); }
   }
+  const dirS = (x, z, h) => { const [a, b] = toS(x, z), [c2, d2] = toS(x + Math.cos(h) * 3, z + Math.sin(h) * 3); return [a, b, Math.atan2(d2 - b, c2 - a)]; };
+  for (const P of city.parked) { const [a, b, hh] = dirS(P.x, P.z, P.h); mapCar(g, a, b, hh, P.v.color, big ? 0.8 : 1); } // geparkte Autos
+  if (city.walk && !city.boat) { const me = city.me, [a, b, hh] = dirS(me.pos.x, me.pos.z, me.heading); mapCar(g, a, b, hh, me.v.color, big ? 1 : 1.25); } // dein Auto
   for (const c of city.cars) if (c.wreck > 0) icon('⚠️', c.x, c.z, 11); // Unfälle
   if (city.truck) icon('🚚', city.truck.x, city.truck.z, 11);
   const M = city.mission;
@@ -5277,7 +5362,7 @@ function drawMinimap() {
   if (big) {
     g.font = 'bold 13px system-ui, sans-serif'; g.textAlign = 'center'; g.textBaseline = 'middle'; g.lineWidth = 3; g.strokeStyle = 'rgba(0,0,0,0.75)'; g.fillStyle = '#fff';
     for (const [t, x, z] of mapLabels()) { const [a, b] = toS(x, z); g.strokeText(t, a, b); g.fillText(t, a, b); }
-    const [a, b] = toS(P.x, P.z); mapArrow(g, a, b, hd, 1.4);
+    const [a, b] = toS(P.x, P.z); if (city.walk) mapPerson(g, a, b, hd, 1.2); else mapArrow(g, a, b, hd, 1.4);
     g.font = 'bold 14px system-ui, sans-serif'; g.textAlign = 'right'; g.fillStyle = '#fff'; g.fillText('antippen = schliessen', W - 10, H - 12);
     return;
   }
@@ -5286,7 +5371,7 @@ function drawMinimap() {
   const na = -hd - Math.PI, nr = W / 2 - 12; // Norden am Rand
   g.font = 'bold 13px system-ui, sans-serif'; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillStyle = '#fff';
   g.fillText('N', W / 2 + Math.cos(na) * nr, H / 2 + Math.sin(na) * nr);
-  mapArrow(g, W / 2, H / 2, -Math.PI / 2, 1.1);
+  if (city.walk) mapPerson(g, W / 2, H / 2, -Math.PI / 2, 1.1); else mapArrow(g, W / 2, H / 2, -Math.PI / 2, 1.1); // zu Fuss: Spielfigur
 }
 
 // ---------- Start, Schleife, Ende ----------
@@ -5362,6 +5447,7 @@ export function startCity({ player, kinds, topSpeed, onExit, pay = () => 0, earn
   city.works = null; city.worksT = 30 + Math.random() * 40;
   city.house = loadHouse(); city.houseOpen = false; showHouse();
   city.rides = []; city.boat = null; city.bales = 0; city.moonOn = false; city.launch = null;
+  city.parked = []; for (const P of loadParked()) { parkCols(P); city.parked.push(P); } // geparkte Autos vom letzten Mal
   S.scene.background = null; S.clouds.visible = true; S.moon.group.visible = false;
   for (const r of S.moon.rocks) { r.got = false; r.mesh.visible = true; } // Mondsteine liegen wieder da
   if (kinds[MOON_BUGGY.v.kind]) { // Mond-Buggy bei der Basis
@@ -5444,6 +5530,7 @@ function step(now) {
   stepPolice(dt);
   stepPlaces(dt);
   stepBases(dt);
+  stepParked(dt);
   stepMission(dt);
   stepTraffic(dt);
   stepBlue(dt);
@@ -5685,6 +5772,7 @@ function endCity() {
     city.me.mesh = city.boat.car; city.boat = null;
   }
   for (const R of city.rides || []) S.scene.remove(R.mesh);
+  for (const P of city.parked || []) { if (P.mesh) S.scene.remove(P.mesh); for (const o of P.cols) { const k = S.round.indexOf(o); if (k >= 0) S.round.splice(k, 1); } } // bleiben gespeichert
   if (city.hwSiren) city.hwSiren.stop();
   endMission(false);
   S.ui.jobpanel.hidden = true;
