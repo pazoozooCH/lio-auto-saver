@@ -51,11 +51,13 @@ const node = i => (i - N / 2) * BLOCK;
 // - ausserhalb des Rings läuft alles bis WARP_OUT sanft aus; dort und weiter draussen ist die Verbiegung null
 const WARP_OUT = HALF + 160, WARP_ROUND = 0.32; // breiter Übergang, sanfter gerundet: sonst wirkt das Auto am Stadtrand wie hinausgeschleudert
 const SW = (() => {
-  const r = rng(1312), mk = () => { const calm = r() < 0.25; // ein paar Strassen fast gerade
-    return { a: calm ? 1 + r() * 2 : 3 + r() * 6, l: 40 + r() * 40, p: r() * 6.28, b: calm ? 0 : r() * 3, m: 20 + r() * 12, q: r() * 6.28 }; };
-  // Verschiebung jeder Strasse quer zu sich selbst: so sind die Blöcke verschieden gross (Ring bleibt, höchstens 12 m Unterschied)
-  const off = () => { const o = [0]; for (let k = 1; k < N; k++) o.push(Math.max(o[k - 1] - 12, Math.min(o[k - 1] + 12, (r() - 0.5) * 18))); o.push(0); return o; };
-  return { v: Array.from({ length: N + 1 }, mk), h: Array.from({ length: N + 1 }, mk), ox: off(), oz: off() };
+  const r = rng(1312), mk = () => { const calm = r() < 0.2; // ein paar Strassen fast gerade
+    return { a: calm ? 1 + r() * 2 : 3.5 + r() * 5.5, l: 45 + r() * 45, p: r() * 6.28, b: calm ? 0 : r() * 3, m: 22 + r() * 12, q: r() * 6.28 }; };
+  // Verschiebung jeder Strasse quer zu sich selbst: so sind die Blöcke verschieden gross (schmal und breit gemischt, Ring bleibt)
+  const off = () => { const o = [0]; for (let k = 1; k < N; k++) o.push(Math.max(o[k - 1] - 14, Math.min(o[k - 1] + 14, (r() - 0.5) * 38))); o.push(0); return o; };
+  // Neigung jeder Strasse: sie läuft schräg statt genau quer – Blöcke werden schiefe Vierecke und Trapeze (nicht falten: kleine Schritte)
+  const tilt = () => { const t = [(r() - 0.5) * 0.14]; for (let k = 1; k <= N; k++) t.push(Math.max(-0.12, Math.min(0.12, t[k - 1] + (r() - 0.5) * 0.06))); return t; };
+  return { v: Array.from({ length: N + 1 }, mk), h: Array.from({ length: N + 1 }, mk), ox: off(), oz: off(), kx: tilt(), kz: tilt() };
 })();
 const sstep = t => t * t * (3 - 2 * t); // an den Strassen flach: die Strasse behält ihre Breite
 const wave = (w, t) => w.a * Math.sin(t / w.l + w.p) + w.b * Math.sin(t / w.m + w.q);
@@ -67,8 +69,9 @@ function warpXZ(x, z, out) {
   let dx = (u * Math.sqrt(1 - v * v / 2) - u) * HALF * WARP_ROUND, dz = (v * Math.sqrt(1 - u * u / 2) - v) * HALF * WARP_ROUND;
   const fi = Math.max(0, Math.min(N - 1e-9, (x + HALF) / BLOCK)), i = Math.floor(fi), ti = fi - i;
   const fj = Math.max(0, Math.min(N - 1e-9, (z + HALF) / BLOCK)), j = Math.floor(fj), tj = fj - j;
-  dx += wave(SW.v[i], z) * (1 - ti) + wave(SW.v[i + 1], z) * ti + SW.ox[i] + (SW.ox[i + 1] - SW.ox[i]) * sstep(ti);
-  dz += wave(SW.h[j], x) * (1 - tj) + wave(SW.h[j + 1], x) * tj + SW.oz[j] + (SW.oz[j + 1] - SW.oz[j]) * sstep(tj);
+  const si = sstep(ti), sj = sstep(tj);
+  dx += wave(SW.v[i], z) * (1 - ti) + wave(SW.v[i + 1], z) * ti + SW.ox[i] + (SW.ox[i + 1] - SW.ox[i]) * si + (SW.kx[i] + (SW.kx[i + 1] - SW.kx[i]) * si) * z;
+  dz += wave(SW.h[j], x) * (1 - tj) + wave(SW.h[j + 1], x) * tj + SW.oz[j] + (SW.oz[j + 1] - SW.oz[j]) * sj + (SW.kz[j] + (SW.kz[j + 1] - SW.kz[j]) * sj) * x;
   out.x = x + dx * F; out.z = z + dz * F;
   return out;
 }
@@ -226,7 +229,7 @@ const ROUND = new Set(['3,4', '7,3', '4,7', '7,7', '6,8']), ROUND_R = 5.4; // Kr
 const PED = (() => { // Schlüssel "i,j,d" für beide Richtungen jedes Fussgängerstücks
   const r = rng(808), out = new Set(), used = new Set(), list = [];
   const bad = (bi, bj) => SPECIAL[bi + ',' + bj] || (bi === N >> 1 && bj === N >> 1) || baseOf(bi + ',' + bj) >= 0 || !blockOn(bi, bj);
-  for (let t = 0; list.length < 4 && t < 500; t++) {
+  for (let t = 0; list.length < 8 && t < 800; t++) {
     const ax = r() < 0.5, i = 1 + Math.floor(r() * (N - 2)), j = 1 + Math.floor(r() * (N - 2)), i2 = ax ? i + 1 : i, j2 = ax ? j : j + 1;
     if (i2 >= N || j2 >= N) continue; // nicht am Ring
     if (ax ? bad(i, j - 1) || bad(i, j) : bad(i - 1, j) || bad(i, j)) continue; // nicht vor Tankstelle, Basen, Platz usw.
@@ -664,8 +667,8 @@ function buildWorld() {
     ['#f1f5f9', '#334155', 'panel'], ['#fef3c7', '#57534e', 'panel']].forEach(([wall, frame, st], k) => walls.push(facadeMat(facade(wall, frame, rng(900 + k), st), 1.2)));
   const roofMat = mat({ color: 0x4b4f57, roughness: 0.9 }), metal = mat({ color: 0x9aa0aa, metalness: 0.6, roughness: 0.4 });
   const plaza = (N >> 1) + ',' + (N >> 1);
-  const parks = new Set(); // neun Parks, über die Stadt verteilt
-  while (parks.size < 9) { const k = Math.floor(r() * N) + ',' + Math.floor(r() * N); if (k !== plaza && !SPECIAL[k] && baseOf(k) < 0 && !MASK.has(k)) parks.add(k); }
+  const parks = new Set(); // zwölf Parks, über die Stadt verteilt (Luft zwischen den Häusern)
+  while (parks.size < 12) { const k = Math.floor(r() * N) + ',' + Math.floor(r() * N); if (k !== plaza && !SPECIAL[k] && baseOf(k) < 0 && !MASK.has(k)) parks.add(k); }
   const places = { bases: [] }; // Tankstelle, Waschanlage, Pizzeria: Mitte des Blocks; Basen
   // Schild mit Schrift (beidseitig lesbar)
   const sign = (text, bg, fg, w = 8, h = 1.6) => {
