@@ -29,7 +29,7 @@ const LIMIT = HALF + 70;        // so weit darf man fahren
 const FLY_MAX = 100, FLY_SPEED = 1.25; // Fliegen: höchste Höhe (über dem höchsten Haus), schneller als am Boden
 const STOP = BLOCK - 12;        // Haltelinie (Abstand von der vorigen Kreuzung); die Wagenmitte hält eine halbe Länge davor
 const CYCLE = 22;               // Ampelzyklus in Sekunden
-const TRAFFIC = 46;             // so viele Autos fahren herum
+const TRAFFIC = 64;             // so viele Autos fahren herum
 const SEE = 140;                // weiter weg werden Autos nicht gezeichnet
 const DIRS = [[1, 0], [0, 1], [-1, 0], [0, -1]]; // +x, +z, −x, −z
 const SPECIAL = { '2,5': 'gas', '5,2': 'wash', '5,5': 'pizza', '2,2': 'jail', '6,3': 'workshop', '1,3': 'dealer', '6,6': 'hospital', '3,6': 'blue', '7,5': 'house', '4,2': 'park', '2,6': 'drive', '6,4': 'kino', '5,6': 'stadium' }; // Blöcke mit Tankstelle, Waschanlage, Pizzeria, Gefängnis, Werkstatt, Autohändler, Spital, Blauer Zone
@@ -2650,23 +2650,108 @@ function onBale() {
 // Sie gehen auf den Trottoirs rund um die Blöcke (RING Meter von der Blockmitte) und überqueren an Ampel-Kreuzungen
 // auf dem Zebrastreifen, wenn die Autos dort Rot haben. Autos halten für sie an (followLimit); wer einen anfährt,
 // erschreckt ihn (er fällt um), auf dem Zebrastreifen gibt es dafür einen Strafzettel.
-const PEDS = 28, RING = 23.5;
+const PEDS = 64, RING = 23.5, PED_SEE = 110; // weiter weg werden Fussgänger nicht gezeichnet
 const SHIRTS = [0x2563eb, 0xdc2626, 0x16a34a, 0xf59e0b, 0x7c3aed, 0xec4899, 0x0e7490, 0xf4f4f5, 0x1f2937], HAIRS = [0x5a3a1e, 0x1b1b1b, 0xd4a017, 0x8b4513, 0x9ca3af];
 const SKINS = [0xf2c9a0, 0xe0ac69, 0x8d5524, 0xc68642, 0xffdbac];
 const pedBlockOk = (bi, bj) => bi >= 0 && bj >= 0 && bi < N && bj < N && baseOf(bi + ',' + bj) < 0;
 const corner = (bi, bj, k) => { const cx = (node(bi) + node(bi + 1)) / 2, cz = (node(bj) + node(bj + 1)) / 2; return [cx + (k === 1 || k === 2 ? RING : -RING), cz + (k >= 2 ? RING : -RING)]; };
+// Charaktere: jeder geht anders, trägt etwas Eigenes und sagt eigene Sprüche (wenn du nahe kommst, hupst oder gesucht wirst)
+const PED_TYPES = {
+  normal: { n: 5, speed: [1.1, 1.6], hi: ['👋 Hallo!', '🙂 Schöner Tag heute!', '😊 Grüezi!'], honk: ['😠 Hey!', '🙉 So laut!'] },
+  jogger: { n: 2, speed: [3.6, 4.4], hi: ['🏃 Bin am Trainieren!', '💪 Noch 5 Kilometer!', '😅 Puh, ist das heiss!'], honk: ['🏃 Ich bin schneller!', '😤 Hey!'] },
+  senior: { n: 2, speed: [0.5, 0.7], hi: ['👴 Grüss dich, junger Freund!', '🧓 Früher gab es nur Pferde!', '👵 Fahr vorsichtig, gell!'], honk: ['👴 Nicht so laut, Lausbub!', '🧓 Meine Ohren!'] },
+  kid: { n: 2, speed: [1.5, 2.0], hi: ['😄 Cooles Auto!', '🎈 Schau, mein Ballon!', '🍦 Ich will ein Glace!'], honk: ['😆 Nochmal hupen!', '🤩 Tuuut tuuut!'] },
+  dog: { n: 2, speed: [1.0, 1.3], hi: ['🐶 Er will nur spielen!', '🐕 Sitz, Bello!', '🦴 Wer ist ein braver Hund?'], honk: ['🐕 Wuff! Wuff!', '🐶 Jetzt bellt er!'] },
+  phone: { n: 2, speed: [0.8, 1.0], hi: ['📱 Moment, ich schreibe grad …', '🤳 Selfie!', '🎧 Hast du was gesagt?'], honk: ['📱 Oh! Hab nicht geschaut!', '😳 Sorry!'] },
+  business: { n: 2, speed: [1.7, 2.0], hi: ['💼 Ich bin spät dran!', '📞 Ja, Sitzung um drei!', '⌚ Zeit ist Geld!'], honk: ['💼 Ich hab keine Zeit!', '😤 Unverschämt!'] },
+  tourist: { n: 2, speed: [0.9, 1.2], hi: ['📸 Wie schön hier!', '🗺️ Wo ist der Bahnhof?', '😍 So eine schöne Stadt!'], honk: ['📸 Oh, ein Foto!', '😮 Ui!'] },
+};
+const PED_LIST = Object.entries(PED_TYPES).flatMap(([id, T]) => Array(T.n).fill(id));
+const accMat = {};
+const accM = (hex, o = {}) => accMat[hex] || (accMat[hex] = new THREE.MeshStandardMaterial({ color: hex, roughness: 0.6, ...o }));
+function addAcc(parent, geo, hex, x, y, z, o) { const m = new THREE.Mesh(geo, accM(hex, o)); m.position.set(x, y, z); parent.add(m); return m; }
+function makeCharacter(type) {
+  const r = a => a[Math.floor(Math.random() * a.length)], shirt = r(SHIRTS), hair = r(HAIRS), skin = r(SKINS);
+  let mesh;
+  if (type === 'jogger') {
+    mesh = makePerson(r([0xf97316, 0x22d3ee, 0xa3e635, 0xf43f5e]), hair, skin, { outfit: 'tee', hair: r(['short', 'cap']), pants: 0x111827, noBag: true });
+    addAcc(mesh, new THREE.TorusGeometry(0.15, 0.025, 6, 16), 0xffffff, 0, 1.85, 0).rotation.x = Math.PI / 2; // Stirnband
+  } else if (type === 'senior') {
+    mesh = makePerson(r([0x78716c, 0x6b7280, 0x7c2d12, 0x1e3a5f]), r([0xd1d5db, 0xf3f4f6, 0x9ca3af]), skin, { outfit: r(['jacket', 'dress']), hair: r(['short', 'hat', 'bun']), noBag: true });
+    const cane = addAcc(mesh.userData.arms[1], new THREE.CylinderGeometry(0.018, 0.018, 0.9, 6), 0x5b3a1e, 0.05, -0.95, 0); // Stock
+    addAcc(cane, new THREE.TorusGeometry(0.05, 0.016, 6, 10, Math.PI), 0x5b3a1e, 0.05, 0.45, 0);
+  } else if (type === 'kid') {
+    mesh = makePerson(r([0xfacc15, 0xf472b6, 0x38bdf8, 0x4ade80]), hair, skin, { outfit: r(['tee', 'dress']), hair: r(['short', 'cap', 'bun', 'long']), noBag: true });
+    mesh.scale.setScalar(0.62);
+    const col = r([0xef4444, 0x3b82f6, 0xfacc15, 0xa855f7]);
+    addAcc(mesh, new THREE.CylinderGeometry(0.006, 0.006, 1.2, 4), 0xf5f5f5, 0.15, 1.85, 0.3); // Ballon an der Schnur
+    const ball = addAcc(mesh, new THREE.SphereGeometry(0.26, 14, 12), col, 0.15, 2.6, 0.3, { roughness: 0.25 }); ball.scale.y = 1.15;
+    mesh.userData.balloon = ball;
+  } else if (type === 'business') {
+    mesh = makePerson(r([0x1f2937, 0x334155, 0x1e3a5f]), r([0x1b1b1b, 0x5a3a1e, 0x9ca3af]), skin, { outfit: 'jacket', hair: 'short', pants: 0x1f2937, noBag: true });
+    addAcc(mesh.userData.arms[1], new THREE.BoxGeometry(0.3, 0.22, 0.07), 0x3b2a1a, 0, -0.75, 0); // Aktenkoffer
+    addAcc(mesh, new THREE.BoxGeometry(0.02, 0.3, 0.05), r([0xdc2626, 0x1d4ed8, 0xfacc15]), 0.17, 1.3, 0); // Krawatte
+  } else if (type === 'tourist') {
+    mesh = makePerson(r([0xf472b6, 0x22d3ee, 0xfde047, 0xffffff]), hair, skin, { outfit: 'tee', hair: 'hat', pants: r([0xd6c29c, 0x65a30d]), noBag: true });
+    addAcc(mesh, new THREE.BoxGeometry(0.1, 0.09, 0.14), 0x111827, 0.2, 1.32, 0); // Kamera
+    addAcc(mesh, new THREE.CylinderGeometry(0.035, 0.035, 0.06, 10), 0x374151, 0.27, 1.32, 0).rotation.z = Math.PI / 2;
+    addAcc(mesh, new THREE.BoxGeometry(0.22, 0.3, 0.3), r([0x15803d, 0xb91c1c, 0x1d4ed8]), -0.22, 1.25, 0); // Rucksack
+  } else if (type === 'phone') {
+    mesh = makePerson(shirt, hair, skin, { noBag: true });
+    addAcc(mesh.userData.arms[1], new THREE.BoxGeometry(0.02, 0.15, 0.08), 0x0f172a, 0.04, -0.62, 0); // Handy
+    if (Math.random() < 0.5) for (const s of [-1, 1]) addAcc(mesh, new THREE.SphereGeometry(0.05, 8, 6), 0xffffff, 0, 1.76, s * 0.15); // Kopfhörer
+  } else if (type !== 'dog') mesh = makePerson(shirt, hair, skin);
+  if (type === 'dog') { // Hund an der Leine
+    mesh = makePerson(shirt, hair, skin, { noBag: true });
+    const fur = r([0x8b5a2b, 0xf5deb3, 0x1b1b1b, 0xffffff, 0xd97706]), dog = figMesh([
+      [G.cap(0.12, 0.35), fur, 0, 0.32, 0, 0, 0, Math.PI / 2], [G.sph(0.11), fur, 0.3, 0.45, 0], [G.sph(0.06), shade(fur, 0.8), 0.4, 0.42, 0],
+      [G.sph(0.025), 0x111111, 0.46, 0.43, 0], [G.sph(0.05), shade(fur, 0.7), 0.27, 0.52, 0.08, 0, 0, 0, 0.6, 1.2, 0.5], [G.sph(0.05), shade(fur, 0.7), 0.27, 0.52, -0.08, 0, 0, 0, 0.6, 1.2, 0.5],
+      [G.cap(0.03, 0.15), fur, -0.27, 0.45, 0, 0, 0, -0.7],
+      ...[[0.15, 0.08], [0.15, -0.08], [-0.15, 0.08], [-0.15, -0.08]].map(([x, z]) => [G.cap(0.035, 0.16), fur, x, 0.13, z]),
+    ]);
+    dog.position.set(0.6, 0, 0.55); mesh.add(dog);
+    const leash = addAcc(mesh, new THREE.CylinderGeometry(0.008, 0.008, 0.9, 4), 0xdc2626, 0.35, 0.75, 0.42); leash.rotation.set(0.6, 0, -1.0);
+    mesh.userData.dog = dog;
+  }
+  return mesh;
+}
 function makePeds() {
   const peds = [];
   for (let n = 0; n < PEDS; n++) {
     let bi, bj; do { bi = Math.floor(Math.random() * N); bj = Math.floor(Math.random() * N); } while (!pedBlockOk(bi, bj));
-    const k = Math.floor(Math.random() * 4), [x, z] = corner(bi, bj, k), pk = SHIRTS.length;
-    const mesh = makePerson(SHIRTS[Math.floor(Math.random() * pk)], HAIRS[Math.floor(Math.random() * HAIRS.length)], SKINS[Math.floor(Math.random() * SKINS.length)]);
+    const k = Math.floor(Math.random() * 4), [x, z] = corner(bi, bj, k), type = PED_LIST[Math.floor(Math.random() * PED_LIST.length)], T = PED_TYPES[type];
+    const mesh = makeCharacter(type);
     mesh.traverse(o => { o.castShadow = false; });
     S.scene.add(mesh);
-    peds.push({ mesh, bi, bj, k, rot: Math.random() < 0.5 ? 1 : -1, x, z, h: 0, speed: 0, want: 1.1 + Math.random() * 0.5, phase: Math.random() * 6,
-      tx: x, tz: z, cross: null, wait: 0, down: 0, gy: 0.16 });
+    peds.push({ mesh, type, bi, bj, k, rot: Math.random() < 0.5 ? 1 : -1, x, z, h: 0, speed: 0, want: T.speed[0] + Math.random() * (T.speed[1] - T.speed[0]), phase: Math.random() * 6,
+      tx: x, tz: z, cross: null, wait: 0, down: 0, gy: 0.16, pause: 0, pauseT: 6 + Math.random() * 20, talkT: Math.random() * 5, sayT: 0 });
   }
   return peds;
+}
+// Fussgänger sagt etwas (Sprechblase für ein paar Sekunden)
+function pedSay(p, list, t = 2.6) { say(p, list[Math.floor(Math.random() * list.length)]); p.sayT = t; p.talkT = 15 + Math.random() * 15; }
+// Charakter: Pausen (Handy lesen, Foto machen), Ballon wackelt, Hund läuft mit, Sprüche
+function stepCharacter(p, dt, seen) {
+  if (p.sayT > 0 && (p.sayT -= dt) <= 0) say(p, null);
+  p.talkT -= dt;
+  if ((p.type === 'phone' || p.type === 'tourist' || p.type === 'dog') && !p.cross && (p.pauseT -= dt) <= 0) { // kurz stehen bleiben
+    p.pause = p.type === 'tourist' ? 3 : 2 + Math.random() * 3; p.pauseT = 10 + Math.random() * 20;
+    if (p.type === 'tourist' && seen && p.talkT < 8) { say(p, '📸 Klick!'); p.sayT = 1.4; }
+  }
+  if (!seen) return;
+  const U = p.mesh.userData;
+  if (p.type === 'phone') U.arms[1].rotation.z = 1.25; // schaut aufs Handy
+  if (p.type === 'tourist' && p.pause > 0) U.arms.forEach(a => { a.rotation.z = 1.5; });
+  if (p.type === 'senior') U.arms[1].rotation.z = 0.15 + Math.sin(p.phase) * 0.1;
+  if (p.type === 'business') U.arms[1].rotation.z *= 0.4;
+  if (U.balloon) { U.balloon.position.y = 2.6 + Math.sin(city.t * 2 + p.phase) * 0.06; U.balloon.rotation.z = Math.sin(city.t * 1.3 + p.phase) * 0.15; }
+  if (U.dog) U.dog.position.y = Math.abs(Math.sin(p.phase * 1.6)) * 0.05;
+  // Sprüche: kommst du nah (zu Fuss oder langsam im Auto)?
+  const w = city.walk, x = w ? w.x : city.me.pos.x, z = w ? w.z : city.me.pos.z, d = Math.hypot(x - p.x, z - p.z);
+  if (p.talkT <= 0 && p.sayT <= 0) {
+    if (city.wanted && d < 14) pedSay(p, ['😱 Der Autodieb!', '🚨 Polizei! Da ist er!', '😨 Hilfe, ein Dieb!']);
+    else if (d < (w ? 3.5 : 7) && (w || Math.abs(city.me.speed) < 3)) pedSay(p, PED_TYPES[p.type].hi);
+  }
 }
 function nextCorner(p) { // weiter auf dem Trottoir, oder an der Ecke über die Strasse
   const [x, z] = corner(p.bi, p.bj, p.k), X = Math.round(x / BLOCK) * BLOCK, Z = Math.round(z / BLOCK) * BLOCK;
@@ -2707,8 +2792,10 @@ function stepPeds(dt) {
         let best = 0, bd = 1e9; for (let k = 0; k < 4; k++) { const [cx, cz] = corner(p.bi, p.bj, k), e = Math.hypot(cx - p.x, cz - p.z); if (e < bd) { bd = e; best = k; } }
         p.k = best; }
       nextCorner(p);
+    } else if (p.pause > 0 && !C) {
+      p.pause -= dt; p.speed = 0;
     } else if (d > 0.01 && !(C && !C.go)) {
-      p.speed = C && C.go ? 1.7 : p.want;
+      p.speed = C && C.go ? Math.max(1.7, p.want) : p.want;
       p.h = Math.atan2(dz, dx);
       const st = Math.min(d, p.speed * dt);
       p.x += dx / d * st; p.z += dz / d * st;
@@ -2724,9 +2811,10 @@ function stepPeds(dt) {
       me.speed *= 0.5;
       continue;
     }
-    const seen = Math.hypot(p.x - cam.x, p.z - cam.z) < city.see;
+    const seen = Math.hypot(p.x - cam.x, p.z - cam.z) < Math.min(city.see, PED_SEE);
     p.mesh.visible = seen;
     if (seen) { p.gy = p.onZebra ? 0.02 : 0.16; animatePerson(p, dt); }
+    stepCharacter(p, dt, seen);
   }
 }
 
@@ -3707,9 +3795,9 @@ function faceParts(skin, R, y, iris = 0x3b2a1a) {
 }
 const pick = a => a[Math.floor(Math.random() * a.length)];
 // Fussgänger und andere Leute: verschiedene Kleider (T-Shirt, Jacke, Kleid), Frisuren, Mützen, Taschen
-function makePerson(shirtColor = 0x2563eb, hairColor = 0x5a3a1e, skinColor = 0xf2c9a0) {
-  const g = new THREE.Group(), outfit = pick(['tee', 'tee', 'jacket', 'dress']), hairStyle = pick(['short', 'long', 'bun', 'cap', 'hat', 'short']);
-  const pants = pick([0x1e3a5f, 0x334155, 0x7c5a3a, 0x111827, 0x3f6212]), shoes = pick([0xf8fafc, 0x1b1b1b, 0x7c2d12, 0xdc2626]), accent = pick([0xfacc15, 0xffffff, 0xf472b6, 0x22d3ee]);
+function makePerson(shirtColor = 0x2563eb, hairColor = 0x5a3a1e, skinColor = 0xf2c9a0, o = {}) {
+  const g = new THREE.Group(), outfit = o.outfit || pick(['tee', 'tee', 'jacket', 'dress']), hairStyle = o.hair || pick(['short', 'long', 'bun', 'cap', 'hat', 'short']);
+  const pants = o.pants || pick([0x1e3a5f, 0x334155, 0x7c5a3a, 0x111827, 0x3f6212]), shoes = pick([0xf8fafc, 0x1b1b1b, 0x7c2d12, 0xdc2626]), accent = pick([0xfacc15, 0xffffff, 0xf472b6, 0x22d3ee]);
   const limb = (parts, x, y, z) => { const p = new THREE.Group(); p.position.set(x, y, z); p.add(figMesh(parts)); g.add(p); return p; };
   const legs = [-1, 1].map(s => limb([
     outfit === 'dress' ? [G.cap(0.06, 0.62), skinColor, 0, -0.42, 0] : [G.cap(0.085, 0.6), pants, 0, -0.4, 0],
@@ -3727,7 +3815,7 @@ function makePerson(shirtColor = 0x2563eb, hairColor = 0x5a3a1e, skinColor = 0xf
   if (outfit === 'jacket') body.push([G.box(0.012, 0.42, 0.02), 0xd1d5db, 0.155, 1.22, 0], [new THREE.TorusGeometry(0.11, 0.03, 6, 14), shade(shirtColor, 0.8), 0, 1.53, 0, Math.PI / 2, 0, 0, 1, 1, 1.2],
     [G.box(0.03, 0.08, 0.1), shade(shirtColor, 0.8), 0.15, 1.08, 0.1], [G.box(0.03, 0.08, 0.1), shade(shirtColor, 0.8), 0.15, 1.08, -0.1], [G.box(0.22, 0.1, 0.36), pants, 0, 0.93, 0]);
   if (outfit === 'dress') body.push([G.cyl(0.19, 0.33, 0.48, 18), shirtColor, 0, 0.88, 0], [G.cyl(0.335, 0.335, 0.04, 18), accent, 0, 0.66, 0]);
-  if (Math.random() < 0.35) body.push([G.box(0.24, 0.2, 0.08), pick([0x7c2d12, 0x111827, 0xbe185d]), 0, 1.0, 0.27], [G.box(0.02, 0.6, 0.02), 0x3b2a1a, 0.05, 1.3, 0.2, 0.5, 0, 0]); // Tasche
+  if (!o.noBag && Math.random() < 0.35) body.push([G.box(0.24, 0.2, 0.08), pick([0x7c2d12, 0x111827, 0xbe185d]), 0, 1.0, 0.27], [G.box(0.02, 0.6, 0.02), 0x3b2a1a, 0.05, 1.3, 0.2, 0.5, 0, 0]); // Tasche
   g.add(figMesh(body));
   const hy = 1.76, R = 0.145, head = faceParts(skinColor, R, hy, pick([0x3b2a1a, 0x1d4ed8, 0x166534]));
   const hair = [[G.half(R * 1.06), hairColor, -0.01, hy + 0.02, 0, 0, 0, 0.25]];
@@ -5572,6 +5660,10 @@ function honk() {
   for (const c of city.cars) { // Autos vor dir erschrecken und bremsen kurz
     const dx = c.x - city.me.pos.x, dz = c.z - city.me.pos.z;
     if (Math.hypot(dx, dz) < 20) c.blocked = Math.max(c.blocked, 0.6);
+  }
+  for (const p of city.peds || []) if (!(p.down > 0) && p.sayT <= 0 && Math.hypot(p.x - city.me.pos.x, p.z - city.me.pos.z) < 18) { // Fussgänger antworten
+    pedSay(p, PED_TYPES[p.type].honk);
+    if (p.type === 'dog' && window.beep) { window.beep(520, 0.07, 'square', 0.04); window.beep(480, 0.07, 'square', 0.04, 0.16); }
   }
 }
 
