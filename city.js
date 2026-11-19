@@ -15,7 +15,7 @@ import { buildMonaco, monGround, monRoad, inMonaco, nearMonPier, MON_BOAT, MON_P
 import { buildSuburbs, suburbDist, inSuburb, suburbRoad, drawSuburbs, SUBURBS, SUB_PLACES } from './suburbs.js';
 import { loadLook, makeLook, skyEnvironment, lookWanted, setLookWanted } from './look.js';
 import { makeChat } from './chat.js';
-import { buildHighway, outskirtsDist, hwDrivable, onHighway, hwGround, onRoads, ROADS, EXITS, makeHighwayTraffic, stepHighway, hwProject, hwPoint, HW, HW_LEN, HW_LIMIT, REST, REST_ZONES, makePath, pathAt, turnTo,
+import { buildHighway, outskirtsDist, hwDrivable, onHighway, hwGround, onRoads, ROADS, EXITS, SLIPS, makeHighwayTraffic, stepHighway, hwProject, hwPoint, HW, HW_LEN, HW_LIMIT, REST, REST_ZONES, makePath, pathAt, turnTo,
   AREAS, buildAreas, stepAreas, groundShape, areaDrivable, inArea, lockedGate, offroadWhy,
   PASS_AREA, buildPass, passGround, passDrivable, onPass, passTerrain, passNearest, inPassRegion, passPoints, SUMMIT, slideInside, waveFlag } from './outskirts.js';
 import { makeEffects, camView, cockpit, COCKPIT, CAM_NAMES, FLY_HTML, FLY_KEYS, flyCss, flyHelp, flyToggle, flyStep } from './fx.js';
@@ -3395,7 +3395,7 @@ function hurt(intensity, fromX, fromZ) {
   if (city.mission && city.mission.type === 'school') failSchool('💥 Unfall gebaut');
   if (city.mission && city.mission.type === 'park') endMission(false, '💥 Angefahren! Einparken nicht bestanden.');
   if (UNBREAKABLE.includes(city.me.v.kind) || city.boat) return;
-  city.damage = Math.min(1, city.damage + Math.min(0.3, intensity * 0.28));
+  city.damage = Math.min(1, city.damage + Math.min(0.075, intensity * 0.07)); // ein Viertel von früher: seltener in die Werkstatt
   const m = city.me.mesh;
   if (city.scratches.length >= 12 || fromX === undefined) return;
   if (!scratchMat) scratchMat = new THREE.MeshStandardMaterial({ map: scratchTexture(), transparent: true, depthWrite: false, roughness: 0.6,
@@ -5746,6 +5746,7 @@ function paintWorld(g, P, K) {
   const hw = []; for (let s = 0; s <= HW_LEN; s += 30) { const p = hwPoint(s); hw.push([p.x, p.z]); }
   line(hw, '#e2e5ea', Math.max(3, 30 * K)); line(hw, '#facc15', 1); // Autobahn mit Mittellinie
   for (const b of ROADS) rect(b, '#d4d8de'); // Zubringer (Flughafenstrasse, Raumbahnhof)
+  for (const sl of SLIPS) line(sl.map(p => [p.x, p.z]), '#d4d8de', Math.max(2, 9 * K)); // geschwungene Aus- und Einfahrten
   for (const e of EXITS) { const p = hwPoint(e.s), [x, y] = P(p.x - p.tz * 24, p.z + p.tx * 24); g.fillStyle = '#1d4ed8'; g.beginPath(); g.arc(x, y, Math.max(3, 12 * K), 0, 7); g.fill(); } // Ausfahrten
   rect({ x0: REST.x - 150, x1: REST.x + 150, z0: REST.z + 20, z1: REST.z + 130 }, '#f59e0b'); // Raststätte
   drawSuburbs(g, P, K); // Vororte

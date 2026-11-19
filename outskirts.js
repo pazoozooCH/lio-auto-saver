@@ -29,17 +29,20 @@ const WIDE = EDGE + 1.2; // so weit reicht die Autobahn seitlich
 // Südrand der Stadt (RAMP), im Westen um die Brückenrampe herum zur Ausfahrt, im Osten zum Raumbahnhof
 const RAMP = { x0: -7, x1: 7, z0: 250, z1: 462 }; // von der Strasse am Südrand der Stadt (z = 256) zur Flughafenstrasse
 export const ROADS = [RAMP,
-  { x0: -1107, x1: 1243, z0: 455, z1: 469 }, // Flughafenstrasse (Flughafen, Skigebiet, Ausfahrt Ost)
-  { x0: -1107, x1: -1093, z0: 455, z1: 667 }, { x0: -1243, x1: -1093, z0: 653, z1: 667 }, // nach Westen zur Ausfahrt hinter der Brücke
+  { x0: -1107, x1: 1114, z0: 455, z1: 469 }, // Flughafenstrasse (Flughafen, Skigebiet)
+  { x0: 1100, x1: 1114, z0: 455, z1: 607 }, { x0: 1100, x1: 1243, z0: 593, z1: 607 }, // im Osten zur Ausfahrt
+  { x0: -1107, x1: -1093, z0: 455, z1: 777 }, { x0: -1243, x1: -1093, z0: 763, z1: 777 }, // im Westen zur Ausfahrt vor der Brücke
   { x0: 600, x1: 1243, z0: 293, z1: 307 }, { x0: 600, x1: 614, z0: 199, z1: 307 }, // Raumbahnhof, Ostquartier und Stadt (Strasse z = 192)
   { x0: -607, x1: -593, z0: -1302, z1: -193 }, // Nordstrasse: durchs Tal zum Strand und zur Stadtstrasse z = −192
   { x0: -457, x1: -443, z0: 455, z1: 2452 }, // Südstrasse: westlich am Flughafen vorbei zur Flughafenstrasse
   { x0: 570, x1: 1243, z0: 1243, z1: 1257 }, // zum Skidorf (von Osten)
 ];
-// Ausfahrten: innen (rechts für Richtung +s), dort fehlen innere Leitplanke und Mittelleitplanke
+// Anschlüsse: innen. Für Richtung +s je eine geschwungene Ausfahrt (zweigt 140 m vorher rechts ab, Kurve in den Zubringer)
+// und Einfahrt (aus dem Zubringer in einer Kurve auf die rechte Spur, SLIPS); in der Mitte fehlen innere Leitplanke und
+// Mittelleitplanke (wer in Richtung −s fährt, biegt dort ab)
 export const EXITS = [
-  { s: sWest(660), name: '🏙️ Stadt · ⚓ Hafen · ✈️ Flughafen' },
-  { s: sEast(462), name: '✈️ Flughafen · ⛷️ Skigebiet · 🏙️ Stadt' },
+  { s: sWest(770), name: '🏙️ Stadt · ⚓ Hafen · ✈️ Flughafen' },
+  { s: sEast(600), name: '✈️ Flughafen · ⛷️ Skigebiet · 🏙️ Stadt' },
   { s: sEast(300), name: '🚀 Raumbahnhof · 🏡 Ostquartier' },
   { s: sEast(1250), name: '⛷️ Skidorf Schneeberg' },
   { s: sTop(-600), name: '🏖️ Strand · ⚓ Hafen · 🏙️ Stadt' },
@@ -89,8 +92,40 @@ const boxDist = (x, z, b) => {
   const dx = Math.max(b.x0 - x, 0, x - b.x1), dz = Math.max(b.z0 - z, 0, z - b.z1);
   return dx || dz ? Math.hypot(dx, dz) : -Math.min(x - b.x0, b.x1 - x, z - b.z0, b.z1 - z);
 };
-export function outskirtsDist(x, z) { let d = Math.min(Math.abs(hwProject(x, z).lat) - WIDE, boxDist(x, z, REST_BOX)); for (const b of ROADS) d = Math.min(d, boxDist(x, z, b)); return d; }
-export const onRoads = (x, z) => ROADS.some(b => x > b.x0 && x < b.x1 && z > b.z0 && z < b.z1);
+// Geschwungene Aus- und Einfahrten: Bézier-Kurven in (u = entlang, v = seitlich) um jeden Anschluss, als Punkte in der Welt
+const SLIP_L = 140, SLIP_V = 70, SLIP_W = 4.5; // so lang, so weit hinein (Zubringer), halbe Breite
+const bez = (P, t) => { const k = 1 - t; return [0, 1].map(i => k * k * k * P[0][i] + 3 * k * k * t * P[1][i] + 3 * k * t * t * P[2][i] + t * t * t * P[3][i]); };
+export const SLIPS = [];
+const slipGaps = [];
+for (const e of EXITS) {
+  for (const P of [[[-SLIP_L, LANES[0]], [-SLIP_L + 70, LANES[0]], [-3.5, SLIP_V - 38], [-3.5, SLIP_V]], // Ausfahrt (von −s her)
+    [[3.5, SLIP_V], [3.5, SLIP_V - 38], [SLIP_L - 70, LANES[0]], [SLIP_L, LANES[0]]]]) { // Einfahrt (nach +s)
+    const pts = [];
+    let u0 = Infinity, u1 = -Infinity;
+    for (let k = 0; k <= 48; k++) {
+      const [u, v] = bez(P, k / 48), q = at(e.s + u, v);
+      pts.push({ x: q.x, z: q.z });
+      if (v < WIDE + 2) { u0 = Math.min(u0, u); u1 = Math.max(u1, u); }
+    }
+    pts.x0 = Math.min(...pts.map(p => p.x)) - 10; pts.x1 = Math.max(...pts.map(p => p.x)) + 10;
+    pts.z0 = Math.min(...pts.map(p => p.z)) - 10; pts.z1 = Math.max(...pts.map(p => p.z)) + 10;
+    SLIPS.push(pts); slipGaps.push([e.s + u0 - 4, e.s + u1 + 4]);
+  }
+}
+const slipGap = s => slipGaps.some(([a, b]) => s > a && s < b); // dort fehlt die innere Leitplanke
+function slipDist(x, z, far = 120) { // Abstand zur Mittellinie der nächsten Aus-/Einfahrt
+  let best = far;
+  for (const pts of SLIPS) {
+    if (x < pts.x0 - far || x > pts.x1 + far || z < pts.z0 - far || z > pts.z1 + far) continue;
+    for (let k = 1; k < pts.length; k++) {
+      const a = pts[k - 1], b = pts[k], dx = b.x - a.x, dz = b.z - a.z, t = Math.max(0, Math.min(1, ((x - a.x) * dx + (z - a.z) * dz) / (dx * dx + dz * dz)));
+      best = Math.min(best, Math.hypot(x - a.x - dx * t, z - a.z - dz * t));
+    }
+  }
+  return best;
+}
+export function outskirtsDist(x, z) { let d = Math.min(Math.abs(hwProject(x, z).lat) - WIDE, boxDist(x, z, REST_BOX), slipDist(x, z) - SLIP_W); for (const b of ROADS) d = Math.min(d, boxDist(x, z, b)); return d; }
+export const onRoads = (x, z) => ROADS.some(b => x > b.x0 && x < b.x1 && z > b.z0 && z < b.z1) || slipDist(x, z, 10) < SLIP_W;
 // Bodenhöhe auf der Autobahn (auf der Brücke oben)
 export function hwGround(x, z) { const p = hwProject(x, z); return Math.abs(p.lat) < WIDE ? hwY(p.s) : 0; }
 
@@ -379,13 +414,26 @@ export function buildHighway({ group, asphaltMat, lineMat, sign, grassMat }) {
   const noGap = s => !exitGap(s);
   for (const l of [-MEDIAN, MEDIAN]) add(ribbon(l, l, 0, 0.85, concrete, noGap)); // Mittelleitplanke (Beton)
   add(ribbon(-MEDIAN, MEDIAN, 0.85, 0.85, concrete, noGap));
-  add(ribbon(EDGE, EDGE, 0.45, 0.8, rail, noGap)); add(ribbon(-EDGE, -EDGE, 0.45, 0.8, rail, s => !restGap(s))); // Leitplanken (innen fehlt sie an den Ausfahrten)
+  const inner = s => noGap(s) && !slipGap(s);
+  add(ribbon(EDGE, EDGE, 0.45, 0.8, rail, inner)); add(ribbon(-EDGE, -EDGE, 0.45, 0.8, rail, s => !restGap(s))); // Leitplanken (innen fehlt sie an den Anschlüssen)
   const posts = [];
-  for (let s = 0; s < HW_LEN; s += 4) for (const l of [EDGE + 0.1, -EDGE - 0.1]) if (l > 0 ? noGap(s) : !restGap(s)) posts.push(at(s, l));
+  for (let s = 0; s < HW_LEN; s += 4) for (const l of [EDGE + 0.1, -EDGE - 0.1]) if (l > 0 ? inner(s) : !restGap(s)) posts.push(at(s, l));
+  // Aus- und Einfahrten: Belag mit weissen Randlinien entlang der Kurven
+  const band = (pts, l0, l1, y, mat) => {
+    const rows = pts.map((p, k) => {
+      const a = pts[Math.max(0, k - 1)], b = pts[Math.min(pts.length - 1, k + 1)], d = Math.hypot(b.x - a.x, b.z - a.z) || 1, tx = (b.x - a.x) / d, tz = (b.z - a.z) / d;
+      return [[p.x - tz * l0, y, p.z + tx * l0, l0 / 8, k], [p.x - tz * l1, y, p.z + tx * l1, l1 / 8, k]];
+    });
+    group.add(strip(rows, mat));
+  };
+  for (const pts of SLIPS) {
+    band(pts, -SLIP_W, SLIP_W, 0.036, asphaltMat);
+    for (const l of [-SLIP_W + 0.4, SLIP_W - 0.4]) band(pts, l - 0.08, l + 0.08, 0.052, lineMat);
+  }
   // Ausfahrten: Belag bis zum Zubringer, Schilder davor (Richtung +s, innen) und ein Schild am Zubringer
   add(ribbon(EDGE - 1, WIDE + 6, 0.025, 0.025, asphaltMat, s => EXITS.some(e => Math.abs(s - e.s) < 22)));
   for (const e of EXITS) {
-    for (const [ds, txt] of [[-320, e.name + ' – Ausfahrt in 300 m'], [-110, '↘ Ausfahrt: ' + e.name]]) for (const side of [0, 1]) {
+    for (const [ds, txt] of [[-460, e.name + ' – Ausfahrt in 300 m'], [-200, '↘ Ausfahrt: ' + e.name]]) for (const side of [0, 1]) {
       const p = at(e.s + ds, EDGE + 1.6), sg = sign(txt, '#1d4ed8', '#ffffff', 10, 1.5);
       sg.position.set(p.x, 4.5 + p.y, p.z); sg.rotation.y = -Math.atan2(p.tz, p.tx) - Math.PI / 2 + side * Math.PI; group.add(sg);
     }
@@ -407,7 +455,7 @@ export function buildHighway({ group, asphaltMat, lineMat, sign, grassMat }) {
   group.add(postM);
   // Wegweiser an den Zubringern
   const guide = [[0, 300, 0, '🛣️ AUTOBAHN · ✈️ FLUGHAFEN · ⛷️ SKI'], [-1100, 560, 0, '🛣️ AUTOBAHN ⬆️ · 🏙️ STADT ⬇️'],
-    [1200, 476, Math.PI / 2, '🛣️ AUTOBAHN ➡️ · ✈️ FLUGHAFEN ⬅️'], [640, 315, Math.PI / 2, '🛣️ AUTOBAHN ➡️ · 🚀 RAUMBAHNHOF ⬆️'],
+    [1150, 614, Math.PI / 2, '🛣️ AUTOBAHN ➡️ · ✈️ FLUGHAFEN ⬅️'], [640, 315, Math.PI / 2, '🛣️ AUTOBAHN ➡️ · 🚀 RAUMBAHNHOF ⬆️'],
     [-600, -260, 0, '🛣️ AUTOBAHN ⬆️ (Nord)'], [-450, 530, 0, '🛣️ AUTOBAHN ⬇️ (Süd)'], [-450, 2380, 0, '✈️ FLUGHAFEN · 🏙️ STADT ⬆️'],
     [600, 1264, Math.PI / 2, '🛣️ AUTOBAHN ➡️'], [1180, 1236, Math.PI / 2, '⛷️ SKIDORF ⬅️']];
   for (const [x, z, rot, txt] of guide) for (const side of [0, 1]) {
@@ -422,7 +470,7 @@ export function buildHighway({ group, asphaltMat, lineMat, sign, grassMat }) {
   const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace;
   const limMat = new THREE.MeshStandardMaterial({ map: t, side: THREE.DoubleSide });
   for (const e of EXITS) {
-    const p = at(e.s + 60, EDGE + 1.2), end = new THREE.Mesh(new THREE.CircleGeometry(0.6, 24), limMat);
+    const p = at(e.s + SLIP_L + 30, EDGE + 1.2), end = new THREE.Mesh(new THREE.CircleGeometry(0.6, 24), limMat);
     end.position.set(p.x, 2.4, p.z); end.rotation.y = -Math.atan2(p.tz, p.tx) - Math.PI / 2; group.add(end);
     const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.05, 2.4, 6), rail); pole.position.set(p.x + p.tx * 0.05, 1.2, p.z + p.tz * 0.05); group.add(pole);
   }

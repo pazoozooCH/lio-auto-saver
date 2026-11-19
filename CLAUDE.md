@@ -49,7 +49,7 @@ Browser-Spiel ohne Build: `index.html` + `game.js` (Spiellogik, Menüs und 2D-Ze
   Aussteigen geht auch während der Jagd (`exitCar`), dann rennt ein Polizist nach (`P.cop`, `stepCop`, `makeCop`). Erwischt:
   Busse, `giveBack` gibt das Auto zurück und holt dein eigenes (`city.stolenFrom`, ein geparktes Auto); bei ⭐⭐⭐ Gefängnis.
   Weiter in der Stadt: Unfälle der Bots mit Stau (`stepAccidents`), Tank/Akku (`city.fuel`, Tankstelle mit Ladesäule),
-  Schaden mit Kratzern und Werkstatt (`hurt`, Block 6,3, davor Parkplatz für den Auftrag Einparken), Wetter (`stepWeather`),
+  Schaden mit Kratzern und Werkstatt (`hurt`, pro Unfall nur ein Viertel von früher, Block 6,3, davor Parkplatz für den Auftrag Einparken), Wetter (`stepWeather`),
   Fahrschule (Auftrag `school`, Führerschein in `autoRetterLicense`) und Autohändler (Block 1,3, `cityDealer` in `game.js`).
   Blaue Zone (Block 3,6, `stepBlue`/`stepLot`): Verkehrsautos parkieren dort, mal viel los, mal ruhig; selber parkieren gibt
   Münzen, nach 3 Minuten (Parkscheibe) ein Strafzettel.
@@ -90,7 +90,8 @@ Browser-Spiel ohne Build: `index.html` + `game.js` (Spiellogik, Menüs und 2D-Ze
   12,2 km, vier Spuren je Richtung) mit Tempolimit 140; im Westen Schrägseilbrücke über die Hafenbucht (`BRIDGE`, Fahrbahnhöhe `hwY(s)`,
   `hwGround`; Fähre fährt darunter durch, `FERRY_GAP` ohne Pfeiler). Ausfahrten innen (`EXITS`, `exitGap`) zu den Zubringern `ROADS`
   (Flughafenstrasse z = 462 mit Zufahrt `RAMP` vom Südrand der Stadt, Flughafen und Skistrasse; Strasse zum Raumbahnhof;
-  Nordstrasse durchs Tal zum Strand, Südstrasse am Flughafen vorbei, Strasse zum Skidorf; sechs Ausfahrten, Baustelle `RW` dazwischen), Raststätte an der Südgeraden (`REST`, Tanken über `REST_ZONES`; Autos fahren hinein, parkieren und wieder weg:
+  Nordstrasse durchs Tal zum Strand, Südstrasse am Flughafen vorbei, Strasse zum Skidorf; sechs Anschlüsse, Baustelle `RW` dazwischen); an jedem Anschluss geschwungene Aus- und Einfahrt
+  für Richtung +s (`SLIPS`, Bézier-Kurven, `slipDist`, innere Leitplanke offen über `slipGap`), Raststätte an der Südgeraden (`REST`, Tanken über `REST_ZONES`; Autos fahren hinein, parkieren und wieder weg:
   `stepRestCar`, Wege mit `makePath`/`pathAt`), lange Staus
   (`startJam`, Zusatzautos verschwinden wieder). Viele Autos: nur die nächsten bekommen ein echtes 3D-Auto aus einem Vorrat
   (`POOL`), die anderen sind Klötze (InstancedMesh); weit weg nur jedes dritte Bild gerechnet (Verkehr mit
