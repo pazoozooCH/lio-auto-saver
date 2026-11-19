@@ -89,6 +89,14 @@ function warpDir(x, z, ry) {
   return -Math.atan2(_wa.z - _wb.z, _wa.x - _wb.x);
 }
 const inWarp = (x, z) => Math.abs(x) < WARP_OUT && Math.abs(z) < WARP_OUT;
+// Massstab des Bildes an einer Stelle (1 = unverbogen): Dinge sind im Bild so gross, im Gitter also 1/warpScale
+function warpScale(x, z) { return inWarp(x, z) ? Math.sqrt(warpStretch(x, z, 1, 0) * warpStretch(x, z, 0, 1)) : 1; }
+// Auto als drei Kreise entlang der Fahrtrichtung: r = halbe Breite, vorne und hinten bis an die Stossstangen
+function carCircles(x, z, h, len, ks = 1) {
+  const r = (len > 6.5 ? 1.2 : 0.95) * ks, a = Math.max(0, (len / 2) * ks - r), fx = Math.cos(h), fz = Math.sin(h);
+  const p = [[x + fx * a, z + fz * a], [x, z], [x - fx * a, z - fz * a]];
+  return { r, p, move(dx, dz) { for (const q of p) { q[0] += dx; q[1] += dz; } } };
+}
 // Wie stark ist das Bild an dieser Stelle in Fahrrichtung (dx, dz) gestreckt? Teilt man die Bewegung im Gitter dadurch,
 // fährt man im Bild immer genau so schnell, wie der Tacho zeigt (sonst wirkt es mal schneller, mal langsamer)
 const _ws1 = { x: 0, z: 0 }, _ws2 = { x: 0, z: 0 };
@@ -3009,31 +3017,40 @@ function stepMe(dt) {
   if (me.drifting) me.slip = Math.max(me.slip, Math.min(1, Math.abs(me.vl) / 7));
   if (me.fly) me.slip = 0;
 
-  // Häuser, Bäume und der Brunnen sind fest (wer höher fliegt, kommt darüber hinweg)
-  const R = me.radius;
+  // Häuser, Bäume und der Brunnen sind fest (wer höher fliegt, kommt darüber hinweg). Das Auto ist so lang und breit
+  // wie es aussieht: drei Kreise entlang des Autos (vorne, Mitte, hinten) statt eines grossen Kreises, der seitlich
+  // weit übers Auto hinausragte. ks gleicht aus, dass die Stadt im Bild leicht verbogen ist.
+  const ks = 1 / warpScale(me.pos.x, me.pos.z), CC = carCircles(me.pos.x, me.pos.z, me.heading, me.len, ks), rc = CC.r;
   let hit = 0, floor = 0;
+  const push = (k, dx, dz, pen) => { const d = Math.hypot(dx, dz); if (d > 0.001) { me.pos.x += dx / d * pen; me.pos.z += dz / d * pen; CC.move(dx / d * pen, dz / d * pen); } };
   for (const b of S.solid) {
-    const qx = Math.max(b.x0, Math.min(me.pos.x, b.x1)), qz = Math.max(b.z0, Math.min(me.pos.z, b.z1));
-    const dx = me.pos.x - qx, dz = me.pos.z - qz, dd = Math.hypot(dx, dz);
-    if (dd < R) {
-      if (me.alt > b.h - 0.4) { floor = Math.max(floor, b.h + 0.5); continue; }
-      if (dd > 0.001) { me.pos.x += dx / dd * (R - dd); me.pos.z += dz / dd * (R - dd); }
-      else { me.pos.x -= Math.cos(me.heading) * R; me.pos.z -= Math.sin(me.heading) * R; }
+    if (b.x0 > me.pos.x + 12 || b.x1 < me.pos.x - 12 || b.z0 > me.pos.z + 12 || b.z1 < me.pos.z - 12) continue;
+    for (let k = 0; k < 3; k++) {
+      const [cx, cz] = CC.p[k], qx = Math.max(b.x0, Math.min(cx, b.x1)), qz = Math.max(b.z0, Math.min(cz, b.z1)), dx = cx - qx, dz = cz - qz, dd = Math.hypot(dx, dz);
+      if (dd >= rc) continue;
+      if (me.alt > b.h - 0.4) { floor = Math.max(floor, b.h + 0.5); break; }
+      if (dd > 0.001) push(k, dx, dz, rc - dd); else push(k, -Math.cos(me.heading), -Math.sin(me.heading), rc);
       hit = Math.max(hit, Math.abs(me.speed)); city.hitAt = [qx, qz];
       if (b.lot && Math.abs(me.speed) > 0.8) city.touchLot = true; // beim Einparken ein Auto angefahren
     }
   }
   for (const o of S.round) {
-    const dx = me.pos.x - o.x, dz = me.pos.z - o.z, dd = Math.hypot(dx, dz), min = R * 0.7 + o.r;
-    if (dd < min && me.alt > (o.h || 6) - 0.4) { floor = Math.max(floor, (o.h || 6) + 0.5); continue; }
-    if (dd < min && dd > 0.001) { me.pos.x += dx / dd * (min - dd); me.pos.z += dz / dd * (min - dd); hit = Math.max(hit, Math.abs(me.speed)); city.hitAt = [o.x, o.z]; }
+    if (Math.abs(o.x - me.pos.x) > 14 || Math.abs(o.z - me.pos.z) > 14) continue;
+    for (let k = 0; k < 3; k++) {
+      const [cx, cz] = CC.p[k], dx = cx - o.x, dz = cz - o.z, dd = Math.hypot(dx, dz), min = rc + o.r * ks;
+      if (dd >= min) continue;
+      if (me.alt > (o.h || 6) - 0.4) { floor = Math.max(floor, (o.h || 6) + 0.5); break; }
+      if (dd > 0.001) { push(k, dx, dz, min - dd); hit = Math.max(hit, Math.abs(me.speed)); city.hitAt = [o.x, o.z]; }
+    }
   }
-  // Mit Autos zusammenstossen: du wirst weggeschoben, das andere Auto bleibt kurz stehen
+  // Mit Autos zusammenstossen: du wirst weggeschoben, das andere Auto bleibt kurz stehen (beide Autos als drei Kreise)
   for (const c of city.cars) {
-    if (c.off) continue;
-    const dx = me.pos.x - c.x, dz = me.pos.z - c.z, dd = Math.hypot(dx, dz), min = (R + c.mesh.userData.radius) * 0.8;
-    if (dd < min && dd > 0.001 && me.alt < 2.5) {
-      me.pos.x += dx / dd * (min - dd); me.pos.z += dz / dd * (min - dd);
+    if (c.off || Math.abs(c.x - me.pos.x) > 14 || Math.abs(c.z - me.pos.z) > 14) continue;
+    const O = carCircles(c.x, c.z, c.h, c.len || 4.5, ks);
+    let best = null;
+    for (const a of CC.p) for (const b of O.p) { const dx = a[0] - b[0], dz = a[1] - b[1], dd = Math.hypot(dx, dz), min = rc + O.r; if (dd < min && dd > 0.001 && (!best || min - dd > best[2])) best = [dx, dz, min - dd]; }
+    if (best && me.alt < 2.5) {
+      push(0, best[0], best[1], best[2]);
       const rel = Math.abs(me.speed - c.speed);
       if (rel > 2 && city.crashT <= 0) { crash(0.15 + rel / 18, 'car'); hurt(rel / 18, c.x, c.z); city.crashT = 0.5; c.blocked = 2; c.honkT = 0.4; c.waitMe = 2; }
       me.speed *= 0.6; me.vl *= 0.5;

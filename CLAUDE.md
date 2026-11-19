@@ -18,6 +18,8 @@ Browser-Spiel ohne Build: `index.html` + `game.js` (Spiellogik, Menüs und 2D-Ze
   (`SW`, fester Zufall), Blöcke verschieden gross (`SW.ox`/`SW.oz`), Stadt rund statt viereckig (`WARP_ROUND`),
   läuft draussen bis `WARP_OUT` (HALF + 160) sanft aus (auch das Gelände-Netz wird verbogen).
   Bewegung (Auto, zu Fuss, Verkehr) wird durch `warpStretch` geteilt: im Bild immer so schnell wie der Tacho.
+  Zusammenstösse des eigenen Autos: drei Kreise entlang des Autos (`carCircles`, halbe Breite 0,95 m, vorne/hinten bis zur
+  Stossstange), Grössen durch `warpScale` geteilt (so passen sie zum verbogenen Bild).
   Kreisel an den Kreuzungen in `ROUND` (keine Ampel, `planTurn` fährt im Kreis, Vortritt vor der Einfahrt in `stepTraffic`);
   Abbiegen als Punkte-Weg (`c.turn.pts`, `turnAt`). Fussgängerzonen `PED` (`isPed`, gelten in `isClosed` als gesperrt):
   dort keine Strasse, Ampel, Haltestelle oder Spawn.
