@@ -2,7 +2,7 @@
 // Wird von game.js erst geladen, wenn man in die Stadt fährt.
 import * as THREE from 'three';
 import { Sky } from 'three/addons/objects/Sky.js';
-import { buildCar, animateCar, warmUp, makeQuality, mergeStatic } from './cars3d.js';
+import { buildCar, animateCar, warmUp, makeQuality, mergeStatic, setLod } from './cars3d.js';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { makeNoise, rng, smoothstep, surface, terrain, cloudDome } from './world3d.js';
 import { createCarSound, crash, gearbox, horn, createSiren } from './sound.js';
@@ -1570,7 +1570,7 @@ function buildWorld() {
   const monaco = buildMonaco({ scene, group: decor, asphaltMat, lineMat, paveMat, sign, rng, round, solid,
     terrainMesh: o => terrain({ ...o, detail: grassDetail, detailRepeat: 160 }) });
   scene.add(decor);
-  mergeStatic(decor);
+  mergeStatic(decor, { bySig: true, tile: window.__mergeTile ?? 400 }); // gleiche Farben zusammen, in grossen Kacheln (weniger Zeichen-Befehle)
   const clouds = cloudDome({ radius: 2600, coverage: 0.52, shade: '#aebccd', seed: 9 });
   clouds.layers.set(1);
   scene.add(clouds);
@@ -1837,13 +1837,17 @@ function stepTraffic(dt) {
     showCar(c, dt);
   }
 }
+const LOD_NEAR = 42; // weiter weg: einfache Fassung der Autos (setLod in cars3d.js)
 function showCar(c, dt) {
-  const m = c.mesh, seen = Math.hypot(c.x - S.camera.position.x, c.z - S.camera.position.z) < city.see;
+  const m = c.mesh, d = Math.hypot(c.x - S.camera.position.x, c.z - S.camera.position.z), seen = d < city.see;
   m.visible = seen;
   if (!seen) return;
   const B = S.places.blue, onLot = c.lot && B && Math.abs(c.x - B.cx) < 23 && Math.abs(c.z - B.cz) < 23;
   m.position.set(c.x, onLot ? 0.18 : 0, c.z);
   m.rotation.y = -c.h;
+  const far = d > LOD_NEAR && c !== city.amb && !c.school; // Ambulanz und Schulbus blinken auch von weitem
+  setLod(m, far);
+  if (far) return; // Räder und Blinker sieht man von weitem nicht
   for (const w of m.userData.wheels) w.rotation.z -= (c.lot && c.lot.state === 'back' ? -1 : 1) * c.speed * dt / 0.35;
   animateCar(m, city.t, null);
 }
@@ -3774,7 +3778,7 @@ function stepParked(dt) {
       const v = city.kinds[P.v.kind] ? P.v : { ...P.v, kind: 'car' };
       setParkMesh(P, buildCar(v, city.kinds)); parkCols(P); built = true;
     }
-    if (P.mesh) P.mesh.visible = near;
+    if (P.mesh) { P.mesh.visible = near; if (near) setLod(P.mesh, Math.hypot(P.x - cam.x, P.z - cam.z) > LOD_NEAR); }
   }
 }
 // Anderes Auto nehmen: gleiche Stelle, neue Werte, online sehen es alle

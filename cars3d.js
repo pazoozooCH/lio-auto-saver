@@ -1551,22 +1551,83 @@ export function buildCar(v, kinds, hDiv) {
     C.group.add(sh);
     // Augen für die Fahrersitz-Kamera; Fahrzeuge ohne Innenraum: knapp über dem Dach
     const eye = C.eye || [(C.roofX ?? 0) + 0.3, (C.roofY ?? C.H) + 0.3, 0];
+    const far = makeFar(C.group, C.paint); // einfache Fassung für weit weg (3 statt etwa 45 Zeichen-Befehle)
+    if (far) C.group.add(far);
     t = { group: C.group, paint: C.paint, radius: Math.max(1.2, Math.min(C.L, 4) / 2), length: C.L, eye };
     templates.set(key, t);
   }
   const g = t.group.clone();
   g.userData = { wheels: g.getObjectsByProperty('name', 'wheel'), paint: t.paint, body: g.getObjectByName('body'), shadow: g.getObjectByName('shadow'), radius: t.radius, length: t.length,
     eye: t.eye, driver: g.getObjectByName('driver'),
-    finish: tune.finish || null };
+    finish: tune.finish || null, far: g.getObjectByName('far'), isFar: false };
   return g;
+}
+// Weit weg: nur die einfache Fassung zeigen (setLod(mesh, true)), nah wieder alle Teile
+export function setLod(g, far) {
+  const U = g.userData;
+  if (!U.far || U.isFar === far) return;
+  U.isFar = far;
+  for (const o of g.children) if (o !== U.far && o.name !== 'shadow') o.visible = !far;
+  U.far.visible = far;
+}
+// Einfache Fassung: alle festen Teile (auch die Räder) zu drei Stücken: Lack, Rest mit Farben in den Ecken, Scheiben.
+// Innenverkleidung, Aufkleber und Versteckte (Blitzlicht) fallen weg.
+let farMat = null;
+const lum = c => 0.2126 * c.r + 0.7152 * c.g + 0.0722 * c.b;
+function makeFar(root, paint) {
+  root.updateMatrixWorld(true);
+  const inv = new THREE.Matrix4().copy(root.matrixWorld).invert(), bucket = { paint: [], rest: [], glass: [] }, col = new THREE.Color(), m4 = new THREE.Matrix4();
+  let glassMat = null;
+  root.traverse(o => {
+    if (!o.isMesh || o.isInstancedMesh || o.isSprite || Array.isArray(o.material) || o.name === 'shadow') return;
+    for (let q = o; q && q !== root; q = q.parent) if (!q.visible) return;
+    const mt = o.material;
+    if (mt.side === THREE.BackSide) return; // Innenverkleidung
+    let kind = mt === paint ? 'paint' : 'rest';
+    if (mt.transparent) {
+      if (mt.map || lum(mt.color) > 0.25) return; // Aufkleber, Schatten, Licht-Effekte
+      kind = 'glass'; glassMat = glassMat || mt;
+    }
+    const g = (o.geometry.index ? o.geometry.toNonIndexed() : o.geometry.clone());
+    if (!g.attributes.position || !g.attributes.normal) return;
+    for (const n of Object.keys(g.attributes)) if (n !== 'position' && n !== 'normal') g.deleteAttribute(n);
+    g.applyMatrix4(m4.multiplyMatrices(inv, o.matrixWorld));
+    if (kind === 'rest') {
+      if (mt.emissive && mt.emissiveIntensity > 0.4 && lum(mt.emissive) > 0.2) col.copy(mt.emissive); // Lichter
+      else if (mt.map) col.setHex(0x2a2b2f); // Reifen, Bilder: dunkel
+      else col.copy(mt.color);
+      const c = new Float32Array(g.attributes.position.count * 3);
+      for (let k = 0; k < c.length; k += 3) { c[k] = col.r; c[k + 1] = col.g; c[k + 2] = col.b; }
+      g.setAttribute('color', new THREE.BufferAttribute(c, 3));
+    }
+    bucket[kind].push(g);
+  });
+  if (!bucket.rest.length && !bucket.paint.length) return null;
+  if (!farMat) farMat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.55, metalness: 0.2 });
+  const far = new THREE.Group();
+  far.name = 'far'; far.visible = false;
+  for (const [kind, mat] of [['paint', paint], ['rest', farMat], ['glass', glassMat]]) {
+    if (!bucket[kind].length || !mat) continue;
+    const geo = mergeGeometries(bucket[kind], false);
+    if (!geo) continue;
+    const m = new THREE.Mesh(geo, mat);
+    far.add(m);
+  }
+  return far;
 }
 
 // Verschmilzt alle unbewegten Teile mit gleichem Material zu einem einzigen Stück: die Grafikkarte
 // zeichnet dann ein Stück statt dutzender Einzelteile (bewegte Teile mit userData bleiben einzeln)
-export function mergeStatic(root) {
+// opts.bySig: gleich aussehende einfache Materialien (nur Farbe, nicht leuchtend, nicht durchsichtig) gelten als eines –
+// so wird z. B. jedes graue Teil der Stadt zusammen gezeichnet; opts.tile: zusätzlich nach Kacheln (Meter) getrennt,
+// damit Verdecktes und Teile hinter der Kamera weiterhin weggelassen werden.
+const plainSig = m => (m.type === 'MeshStandardMaterial' && !m.transparent && !m.vertexColors && !m.emissiveMap && !m.alphaMap
+  && m.emissive.r + m.emissive.g + m.emissive.b === 0 && m.side === THREE.FrontSide && m.onBeforeCompile === THREE.Material.prototype.onBeforeCompile)
+  ? ['p', m.color.getHex(), m.roughness, m.metalness, m.map ? m.map.uuid : '', m.normalMap ? m.normalMap.uuid : '', m.flatShading, m.envMapIntensity].join('|') : null;
+export function mergeStatic(root, opts = {}) {
   root.updateMatrixWorld(true);
   const inv = new THREE.Matrix4().copy(root.matrixWorld).invert();
-  const byMat = new Map(), done = [];
+  const byMat = new Map(), done = [], sigMat = new Map(), wp = new THREE.Vector3();
   root.traverse(o => {
     if (!o.isMesh || o.isInstancedMesh || Array.isArray(o.material) || o.isSky) return;
     for (let q = o; q && q !== root; q = q.parent) if (Object.keys(q.userData).length) return;
@@ -1574,18 +1635,22 @@ export function mergeStatic(root) {
     if (!g.attributes.position || !g.attributes.normal || !g.attributes.uv) return;
     for (const name of Object.keys(g.attributes)) if (!['position', 'normal', 'uv'].includes(name)) g.deleteAttribute(name);
     g.applyMatrix4(new THREE.Matrix4().multiplyMatrices(inv, o.matrixWorld));
-    let e = byMat.get(o.material);
-    if (!e) byMat.set(o.material, e = { geos: [], cast: false, receive: false });
+    let material = o.material, key = material;
+    const sig = opts.bySig ? plainSig(material) : null;
+    if (sig) { if (!sigMat.has(sig)) sigMat.set(sig, material); material = sigMat.get(sig); key = sig; }
+    if (opts.tile) { o.getWorldPosition(wp); key = (typeof key === 'string' ? key : material.uuid) + '#' + Math.floor(wp.x / opts.tile) + ',' + Math.floor(wp.z / opts.tile); }
+    let e = byMat.get(key);
+    if (!e) byMat.set(key, e = { material, geos: [], cast: false, receive: false });
     e.geos.push(g);
     e.cast = e.cast || o.castShadow;
     e.receive = e.receive || o.receiveShadow;
     done.push(o);
   });
   for (const o of done) o.parent.remove(o);
-  for (const [material, e] of byMat) {
+  for (const e of byMat.values()) {
     const geo = mergeGeometries(e.geos, false);
     if (!geo) continue;
-    const m = new THREE.Mesh(geo, material);
+    const m = new THREE.Mesh(geo, e.material);
     m.castShadow = e.cast;
     m.receiveShadow = e.receive;
     root.add(m);
