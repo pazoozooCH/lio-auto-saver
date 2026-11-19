@@ -1208,6 +1208,7 @@ const PASS_CTRL = [[0, -326], [0, -350], [0, -400], [-120, -430], [-200, -450], 
 const PASS_TOP = 110, PASS_FLAT = 140, PASS_W = 4.6; // Gipfelhöhe, ebene Anfahrt, halbe Fahrbahnbreite
 export const SUMMIT = { x: 25, z: -925, r: 28 };
 const REGION = { x0: -420, x1: 420, z0: -1120, z1: -290 };
+const PASS_EDGE = -380; // erst hinter dem Stadtrand (HALF + 60) beginnt der Berg
 let PASS = null;
 function passPath() {
   if (PASS) return PASS;
@@ -1269,7 +1270,8 @@ export function passTerrain(x, z, natural, lower = 0) {
   base = Math.max(base, (Math.abs(x) - 250) * 0.6 + 40 * smooth01((-z - 380) / 400)); // seitlich steigt es an
   const shelf = ds < SUMMIT.r + 6 ? PASS_TOP - 0.3 : q.y - 0.35, t = Math.min(smooth01((q.d - 7) / 20), smooth01((ds - SUMMIT.r - 6) / 20));
   const h = shelf * (1 - t) + base * t;
-  const edge = Math.min(x - REGION.x0, REGION.x1 - x, z - REGION.z0, REGION.z1 - z), wr = smooth01(edge / 70);
+  const edge = Math.min(x - REGION.x0, REGION.x1 - x, z - REGION.z0, PASS_EDGE - z), wr = smooth01(edge / 70);
+  if (edge < 0) return natural - 0.3; // noch in der Stadt (oberste Häuserreihe, Basen): eben, knapp unter dem Stadtboden
   const out = natural * (1 - wr) + h * wr - lower * smooth01(edge / 30), wa = 1 - smooth01(boxDist(x, z, ALP) / 40);
   return out * (1 - wa) + ALP.y * wa; // auf der Alp eben
 }

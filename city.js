@@ -5641,7 +5641,9 @@ ${flyCss('city')}#city .basebtn { position: absolute; top: 76px; left: 12px; wid
   font-weight: 900; font-size: 18px; animation: cityblink 0.6s infinite alternate; }
 @keyframes cityblink { from { background: #b91c1c; } to { background: #1d4ed8; } }
 #city .ticket { position: absolute; inset: 0; background: rgba(0,0,0,.55); display: flex; align-items: center; justify-content: center; }
-#city .ticket[hidden], #city .chase[hidden], #city .wanted[hidden] { display: none; }
+#city .ticket[hidden], #city .chase[hidden], #city .wanted[hidden], #city .dest[hidden] { display: none; }
+#city .dest { position: absolute; top: 152px; left: 12px; background: rgba(17,24,39,.88); border: 2px solid #ff3df5; border-radius: 12px;
+  padding: 4px 10px; font-weight: 900; font-size: 15px; color: #fbcfe8; cursor: pointer; pointer-events: auto; }
 #city .wanted { position: absolute; top: 116px; left: 12px; background: rgba(17,24,39,.88); border: 2px solid #ef4444; border-radius: 12px;
   padding: 4px 10px; font-weight: 900; font-size: 15px; color: #fecaca; }
 #city .ticket .card { background: #fff8dc; color: #222; border-radius: 16px; padding: 18px 26px; width: min(420px, 80%);
@@ -5691,6 +5693,7 @@ function buildDom() {
     <div class="msg"></div>
     <div class="chase" hidden>🚨 Polizei!</div>
     <div class="wanted" hidden></div>
+    <div class="dest" hidden></div>
     <div class="drift" hidden></div>
     <div class="ticket" hidden><div class="card">
       <h2>🚔 STRAFZETTEL</h2>
@@ -5716,7 +5719,7 @@ function buildDom() {
   const $ = s => root.querySelector(s);
   const ui = { root, gfx: $('.gfx'), mapzoom: $('.mapzoom'), kmh: $('.kmh'), ps: $('.ps'), msg: $('.msg'), hint: $('.hint'), minimap: $('.minimap'), ctls: [...root.querySelectorAll('.ctl')],
     speed: $('.speed'), cruise: $('.cruise'), cruiseVal: $('.cruise b'), cruiseOn: $('.cruise .cron'), limit: $('.limit'), fuel: $('.fuel'), fuelIcon: $('.fuel b'), fuelBar: $('.fuel i'), dmg: $('.dmg'), dmgBar: $('.dmg i'), jail: $('.jailbar'), jailtime: $('.jailbar .jt'), bail: $('.bail'), flash: $('.flash'), flybtn: $('.flybtn'), flyctl: $('.flyctl'), basebtn: $('.basebtn'), walkbtn: $('.walkbtn'), basepanel: $('.basepanel'), dealpanel: $('.dealpanel'), talkpanel: $('.talkpanel'), talkbtn: $('.talkbtn'), shopbtn: $('.shopbtn'),
-    chase: $('.chase'), wanted: $('.wanted'), ticket: $('.ticket'), drift: $('.drift'), clock: $('.clock'),
+    chase: $('.chase'), wanted: $('.wanted'), dest: $('.dest'), ticket: $('.ticket'), drift: $('.drift'), clock: $('.clock'),
     tagbtn: $('.tagbtn'), tagbar: $('.tagbar'),
     jobs: $('.jobs'), jobpanel: $('.jobpanel'), goal: $('.goal'), arrow: $('.goal .arrow'), gtext: $('.goal .gtext') };
   $('.jobs').addEventListener('pointerdown', e => { e.preventDefault(); toggleJobs(); });
@@ -5748,7 +5751,7 @@ function buildDom() {
     if (!city.bigMap) { setBigMap(true); return; }
     try { mcv.setPointerCapture(e.pointerId); } catch (err) { /* ohne Zeiger */ }
     touches.set(e.pointerId, mapPoint(e));
-    mdrag = { moved: 0, t: performance.now() };
+    mdrag = { moved: 0, t: performance.now(), p: mapPoint(e) };
   });
   mcv.addEventListener('pointermove', e => {
     if (!city || !city.bigMap || !touches.has(e.pointerId)) return;
@@ -5764,7 +5767,7 @@ function buildDom() {
   const up = e => {
     if (!touches.has(e.pointerId)) return;
     touches.delete(e.pointerId);
-    if (mdrag && !touches.size) { if (mdrag.moved < 8 && performance.now() - mdrag.t < 400) setBigMap(false); mdrag = null; } // kurz angetippt
+    if (mdrag && !touches.size) { if (mdrag.moved < 8 && performance.now() - mdrag.t < 400) mapTap(mdrag.p); mdrag = null; } // kurz angetippt: Ziel setzen (oder zu)
     if (touches.size) mdrag = null; // zweiter Finger: nicht schliessen
   };
   mcv.addEventListener('pointerup', up); mcv.addEventListener('pointercancel', up);
@@ -5800,6 +5803,7 @@ function buildDom() {
     if (baseDragged) ui.basepanel.scrollTop = drag.top - d;
   });
   for (const ev of ['pointerup', 'pointercancel']) ui.basepanel.addEventListener(ev, () => { drag = null; });
+  ui.dest.addEventListener('pointerdown', e => { e.preventDefault(); if (city) { clearDest(); showMsg('📍 Ziel gelöscht', 1.2); } });
   root.addEventListener('contextmenu', e => e.preventDefault());
   return ui;
 }
@@ -6008,6 +6012,73 @@ function mapPoint(e) {
   return rot ? [(e.clientY - r.top) * cv.width / r.height, (r.right - e.clientX) * cv.height / r.width]
     : [(e.clientX - r.left) * cv.width / r.width, (e.clientY - r.top) * cv.height / r.height];
 }
+// ---------- Navi ----------
+// Auf der grossen Karte antippen = Ziel (📍) setzen; beim eigenen Pfeil antippen = Karte zu; aufs Ziel antippen = Ziel weg.
+// Der Weg führt durch die Strassen der Stadt (Breitensuche über die Kreuzungen, bfs), draussen in gerader Linie zum Ziel.
+// Zu sehen: Linie auf Karte und Minikarte, Lichtstrahl am Ziel, Abstand oben links (antippen = Ziel löschen).
+function unwarpXZ(x, z) { // Bild → Gitter (Umkehrung von warpXZ, ein paar Schritte genügen)
+  let gx = x, gz = z;
+  for (let k = 0; k < 8; k++) { warpXZ(gx, gz, _wq2); gx += x - _wq2.x; gz += z - _wq2.z; }
+  return { x: gx, z: gz };
+}
+const _wq2 = { x: 0, z: 0 };
+function mapTap(p) {
+  const cv = S.ui.minimap, v = mapView(cv.width, cv.height), K = WM.K;
+  const W = unwarpXZ((p[0] - v.ox) / v.scale / K + WM.x0, (p[1] - v.oy) / v.scale / K + WM.z0);
+  const toS = (x, z) => { const [a, b] = wmPt(x, z); return [v.ox + a * v.scale, v.oy + b * v.scale]; }, P = mapWho();
+  const [pa, pb] = toS(P.x, P.z);
+  if (Math.hypot(p[0] - pa, p[1] - pb) < 22) { setBigMap(false); return; } // beim eigenen Pfeil: einfach zu
+  if (city.dest) { const [da, db] = toS(city.dest.x, city.dest.z); if (Math.hypot(p[0] - da, p[1] - db) < 18) { clearDest(); setBigMap(false); return; } }
+  setDest(W.x, W.z);
+  setBigMap(false);
+}
+function setDest(x, z) {
+  city.dest = { x, z }; city.routeT = 0;
+  if (!S.destBeam) {
+    const g = new THREE.Group(), m = new THREE.MeshBasicMaterial({ color: 0xff3df5, transparent: true, opacity: 0.35, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide });
+    const beam = new THREE.Mesh(new THREE.CylinderGeometry(1.4, 1.4, 160, 16, 1, true), m); beam.position.y = 80; g.add(beam);
+    const ring = new THREE.Mesh(new THREE.RingGeometry(3, 4.2, 32).rotateX(-Math.PI / 2), m); ring.position.y = 0.3; g.add(ring);
+    S.destBeam = g; S.scene.add(g);
+  }
+  S.destBeam.visible = true;
+  showMsg('📍 Ziel gesetzt – folge der leuchtenden Linie auf der Karte', 2.4);
+}
+function clearDest() { city.dest = null; city.route = null; if (S.destBeam) S.destBeam.visible = false; S.ui.dest.hidden = true; }
+function nearNode(x, z) { // nächste Kreuzung mit Strassen
+  let best = null, bd = Infinity;
+  for (let i = 0; i <= N; i++) for (let j = 0; j <= N; j++) { if (!nodeSegs(i, j)) continue; const d = Math.hypot(node(i) - x, node(j) - z); if (d < bd) { bd = d; best = [i, j]; } }
+  return best;
+}
+function makeRoute(P, D) {
+  const inC = (x, z) => Math.max(Math.abs(x), Math.abs(z)) < HALF + 40, pts = [[P.x, P.z]];
+  if (inC(P.x, P.z) || inC(D.x, D.z)) { // durch die Stadt: von der Kreuzung bei dir zur Kreuzung beim Ziel (oder zum Stadtrand Richtung Ziel)
+    const a = nearNode(P.x, P.z), b = nearNode(D.x, D.z);
+    for (const [i, j] of bfs(a, b)) pts.push([node(i), node(j)]);
+  }
+  pts.push([D.x, D.z]);
+  return pts;
+}
+function stepRoute(dt) {
+  const D = city.dest;
+  if (!D) return;
+  const P = mapWho(), d = Math.hypot(P.x - D.x, P.z - D.z);
+  if (d < 14) { clearDest(); showMsg('🏁 Angekommen!', 2); window.beep && window.beep(1047, 0.2, 'triangle', 0.07); return; }
+  if ((city.routeT -= dt) <= 0) { city.routeT = 0.6; city.route = makeRoute(P, D); }
+  S.destBeam.position.set(D.x, groundAt(D.x, D.z), D.z);
+  S.destBeam.children[0].material.opacity = 0.28 + Math.sin(city.t * 4) * 0.08;
+  const ui = S.ui.dest; ui.hidden = false;
+  ui.textContent = '📍 ' + (d >= 1000 ? (d / 1000).toFixed(1).replace('.', ',') + ' km' : Math.round(d / 10) * 10 + ' m') + '  ✕';
+}
+function drawRoute(g, toS, big) {
+  const R = city.route, D = city.dest;
+  if (!R || !D) return;
+  g.lineJoin = g.lineCap = 'round';
+  for (const [w, col] of [[big ? 6 : 8, 'rgba(0,0,0,0.45)'], [big ? 3.5 : 5, '#ff3df5']]) {
+    g.strokeStyle = col; g.lineWidth = w; g.beginPath();
+    R.forEach(([x, z], k) => { const [a, b] = toS(x, z); k ? g.lineTo(a, b) : g.moveTo(a, b); }); g.stroke();
+  }
+  const [a, b] = toS(D.x, D.z); g.font = (big ? 20 : 22) + 'px system-ui, sans-serif'; g.textAlign = 'center'; g.textBaseline = 'bottom'; g.fillText('📍', a, b + 3);
+}
 // Spielfigur von oben (zu Fuss): Schultern im Pulli, Kopf mit Kappe, gelber Pfeil zeigt, wohin sie schaut
 function mapPerson(g, x, y, h, k = 1) {
   g.save(); g.translate(x, y); g.rotate(h); g.lineWidth = 1.5; g.strokeStyle = '#000';
@@ -6086,6 +6157,7 @@ function drawMinimap() {
   if (city.walk && !city.boat) { const me = city.me, [a, b, hh] = dirS(me.pos.x, me.pos.z, me.heading); mapCar(g, a, b, hh, me.v.color, big ? 1 : 1.25); } // dein Auto
   for (const c of city.cars) if (c.wreck > 0) icon('⚠️', c.x, c.z, 11); // Unfälle
   if (city.truck) icon('🚚', city.truck.x, city.truck.z, 11);
+  drawRoute(g, toS, big); // Navi
   const M = city.mission;
   if (M && M.target) { const [a, b] = toS(M.target.x, M.target.z); g.fillStyle = Math.floor(city.t * 4) % 2 ? M.color : '#ffffff'; g.strokeStyle = '#000'; g.lineWidth = 1.5; g.beginPath(); g.arc(a, b, 5.5, 0, 7); g.fill(); g.stroke(); }
   if (big) {
@@ -6093,7 +6165,7 @@ function drawMinimap() {
     for (const [t, x, z] of mapLabels()) { const [a, b] = toS(x, z); g.strokeText(t, a, b); g.fillText(t, a, b); }
     const [a, b] = toS(P.x, P.z); if (city.walk) mapPerson(g, a, b, hd, 1.2); else mapArrow(g, a, b, hd, 1.4);
     g.font = 'bold 14px system-ui, sans-serif'; g.textAlign = 'right'; g.fillStyle = '#fff'; g.lineWidth = 3; g.strokeStyle = 'rgba(0,0,0,0.7)';
-    const help = city.mapZoom > 1.01 ? 'ziehen = verschieben · ' + city.mapZoom.toFixed(1) + '×' : 'zoomen: ＋ − · Mausrad · zwei Finger'; g.strokeText(help, W - 10, H - 12); g.fillText(help, W - 10, H - 12);
+    const help = (city.mapZoom > 1.01 ? 'ziehen = verschieben · ' + city.mapZoom.toFixed(1) + '×' : 'zoomen: ＋ − · Mausrad · zwei Finger') + ' · antippen = 📍 Ziel'; g.strokeText(help, W - 10, H - 12); g.fillText(help, W - 10, H - 12);
     return;
   }
   g.restore();
@@ -6272,6 +6344,7 @@ function step(now) {
   stepDrift(dt);
   stepPolice(dt);
   stepWanted(dt);
+  stepRoute(dt);
   stepJunk(dt);
   stepChunks();
   stepPlaces(dt);
@@ -6534,6 +6607,7 @@ function endCity() {
   for (const v of city.victims || []) S.scene.remove(v.mesh);
   if (city.police && city.police.cop) { S.scene.remove(city.police.cop.mesh); city.police.cop = null; }
   S.ui.wanted.hidden = true;
+  clearDest();
   const c = city;
   city = null;
   if (S.snd) { S.snd.stop(); S.snd = null; }
