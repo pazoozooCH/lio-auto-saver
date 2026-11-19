@@ -21,6 +21,7 @@ export const HW_LEN = 4 * HW.half + 2 * HW.L + 4 * Q; // ≈ 12,2 km
 const S_SOUTH = 2 * HW.half + 2 * Q + HW.L; // Anfang der Südgeraden
 const S_EAST = 2 * HW.half + Q, S_WEST = 4 * HW.half + 3 * Q + HW.L; // Anfang der Ost- und der Westseite
 const sEast = z => S_EAST + (z - HW.cz), sWest = z => S_WEST + (HW.cz + HW.L - z); // s an der Stelle z
+const sTop = x => x + HW.half, sSouth = x => S_SOUTH + (HW.half - x); // s an der Stelle x (Nord- und Südgerade)
 const EDGE = 17.6, MEDIAN = 0.4; // Leitplanken: aussen und in der Mitte
 const LANES = [14.1, 10.4, 6.6, 2.9]; // Spurmitte: ganz rechts … ganz links (Überholspur)
 const WIDE = EDGE + 1.2; // so weit reicht die Autobahn seitlich
@@ -31,12 +32,18 @@ export const ROADS = [RAMP,
   { x0: -1107, x1: 1243, z0: 455, z1: 469 }, // Flughafenstrasse (Flughafen, Skigebiet, Ausfahrt Ost)
   { x0: -1107, x1: -1093, z0: 455, z1: 667 }, { x0: -1243, x1: -1093, z0: 653, z1: 667 }, // nach Westen zur Ausfahrt hinter der Brücke
   { x0: 600, x1: 1243, z0: 293, z1: 307 }, { x0: 600, x1: 614, z0: 199, z1: 307 }, // Raumbahnhof, Ostquartier und Stadt (Strasse z = 192)
+  { x0: -607, x1: -593, z0: -1302, z1: -193 }, // Nordstrasse: durchs Tal zum Strand und zur Stadtstrasse z = −192
+  { x0: -457, x1: -443, z0: 455, z1: 2452 }, // Südstrasse: westlich am Flughafen vorbei zur Flughafenstrasse
+  { x0: 570, x1: 1243, z0: 1243, z1: 1257 }, // zum Skidorf (von Osten)
 ];
 // Ausfahrten: innen (rechts für Richtung +s), dort fehlen innere Leitplanke und Mittelleitplanke
 export const EXITS = [
   { s: sWest(660), name: '🏙️ Stadt · ⚓ Hafen · ✈️ Flughafen' },
   { s: sEast(462), name: '✈️ Flughafen · ⛷️ Skigebiet · 🏙️ Stadt' },
   { s: sEast(300), name: '🚀 Raumbahnhof · 🏡 Ostquartier' },
+  { s: sEast(1250), name: '⛷️ Skidorf Schneeberg' },
+  { s: sTop(-600), name: '🏖️ Strand · ⚓ Hafen · 🏙️ Stadt' },
+  { s: sSouth(-450), name: '✈️ Flughafen · 🏙️ Stadt' },
 ];
 const exitGap = s => EXITS.some(e => Math.abs(((s - e.s) % HW_LEN + HW_LEN * 1.5) % HW_LEN - HW_LEN / 2) < 16);
 // Brücke über die Hafenbucht (Westseite, Wasser zwischen z = −700 und 380): Rampen hinauf, oben 13 m über dem Wasser
@@ -130,7 +137,7 @@ function ribbon(lat0, lat1, y0, y1, mat, keep = () => true, step = 4) { // folgt
 // Tunnel durch einen Hügel auf der unteren Geraden, eine Baustelle auf der oberen (Richtung +s: die zwei rechten Spuren
 // gesperrt, alle müssen nach links), knapp überholen gibt Bonus (hooks.nearMiss) und ab und zu jagt die Polizei einen Raser.
 const TUNNEL = { s0: S_SOUTH + 60, len: 420, h: 7 }; // auf der Südgeraden, nach der Raststätte (Richtung −s)
-const RW = { dir: 1, s0: 140, s1: 440, lat: 8.5, taper: 60 }; // Baustelle: ab lat 8.5 nach rechts gesperrt (davor schräg)
+const RW = { dir: 1, s0: 1260, s1: 1560, lat: 8.5, taper: 60 }; // Baustelle: ab lat 8.5 nach rechts gesperrt (davor schräg)
 const SHOULDER = 16.4; // Pannenstreifen (dort hält die Polizei einen Raser an)
 const inRW = (s, lat) => lat > 0 && s > RW.s0 - RW.taper && s < RW.s1;
 const coneLat = s => s >= RW.s0 ? RW.lat : EDGE - 1 - (EDGE - 1 - RW.lat) * (s - RW.s0 + RW.taper) / RW.taper; // Linie der Leitkegel
@@ -400,7 +407,9 @@ export function buildHighway({ group, asphaltMat, lineMat, sign, grassMat }) {
   group.add(postM);
   // Wegweiser an den Zubringern
   const guide = [[0, 300, 0, '🛣️ AUTOBAHN · ✈️ FLUGHAFEN · ⛷️ SKI'], [-1100, 560, 0, '🛣️ AUTOBAHN ⬆️ · 🏙️ STADT ⬇️'],
-    [1200, 476, Math.PI / 2, '🛣️ AUTOBAHN ➡️ · ✈️ FLUGHAFEN ⬅️'], [640, 315, Math.PI / 2, '🛣️ AUTOBAHN ➡️ · 🚀 RAUMBAHNHOF ⬆️']];
+    [1200, 476, Math.PI / 2, '🛣️ AUTOBAHN ➡️ · ✈️ FLUGHAFEN ⬅️'], [640, 315, Math.PI / 2, '🛣️ AUTOBAHN ➡️ · 🚀 RAUMBAHNHOF ⬆️'],
+    [-600, -260, 0, '🛣️ AUTOBAHN ⬆️ (Nord)'], [-450, 530, 0, '🛣️ AUTOBAHN ⬇️ (Süd)'], [-450, 2380, 0, '✈️ FLUGHAFEN · 🏙️ STADT ⬆️'],
+    [600, 1264, Math.PI / 2, '🛣️ AUTOBAHN ➡️'], [1180, 1236, Math.PI / 2, '⛷️ SKIDORF ⬅️']];
   for (const [x, z, rot, txt] of guide) for (const side of [0, 1]) {
     const sg = sign(txt, '#1d4ed8', '#ffffff', 10, 1.5); sg.position.set(x + (rot ? side * 0.05 : 9.5), 4, z + (rot ? 0 : side * 0.05)); sg.rotation.y = rot + side * Math.PI; group.add(sg);
   }

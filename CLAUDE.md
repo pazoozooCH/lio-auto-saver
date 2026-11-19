@@ -89,7 +89,8 @@ Browser-Spiel ohne Build: `index.html` + `game.js` (Spiellogik, Menüs und 2D-Ze
 - `outskirts.js`: Gebiete ausserhalb des Stadtgitters (für `city.js`): Autobahn als grosser Ring um die ganze Insel (`HW`, Rechteck mit runden Ecken,
   12,2 km, vier Spuren je Richtung) mit Tempolimit 140; im Westen Schrägseilbrücke über die Hafenbucht (`BRIDGE`, Fahrbahnhöhe `hwY(s)`,
   `hwGround`; Fähre fährt darunter durch, `FERRY_GAP` ohne Pfeiler). Ausfahrten innen (`EXITS`, `exitGap`) zu den Zubringern `ROADS`
-  (Flughafenstrasse z = 462 mit Zufahrt `RAMP` vom Südrand der Stadt, Flughafen und Skistrasse; Strasse zum Raumbahnhof), Raststätte an der Südgeraden (`REST`, Tanken über `REST_ZONES`; Autos fahren hinein, parkieren und wieder weg:
+  (Flughafenstrasse z = 462 mit Zufahrt `RAMP` vom Südrand der Stadt, Flughafen und Skistrasse; Strasse zum Raumbahnhof;
+  Nordstrasse durchs Tal zum Strand, Südstrasse am Flughafen vorbei, Strasse zum Skidorf; sechs Ausfahrten, Baustelle `RW` dazwischen), Raststätte an der Südgeraden (`REST`, Tanken über `REST_ZONES`; Autos fahren hinein, parkieren und wieder weg:
   `stepRestCar`, Wege mit `makePath`/`pathAt`), lange Staus
   (`startJam`, Zusatzautos verschwinden wieder). Viele Autos: nur die nächsten bekommen ein echtes 3D-Auto aus einem Vorrat
   (`POOL`), die anderen sind Klötze (InstancedMesh); weit weg nur jedes dritte Bild gerechnet (Verkehr mit
