@@ -150,6 +150,12 @@ Browser-Spiel ohne Build: `index.html` + `game.js` (Spiellogik, Menüs und 2D-Ze
   `skyEnvironment` = Spiegelungen vom Himmel. Knopf ✨ in der Stadt (Spielstand `autoRetterGfx`); zu langsam = schaltet ab;
   nicht auf dem Handy (LITE) im Rennen/Stuntpark. Ohne Netz fehlt nur die Nachbearbeitung. Im Rennen braucht der
   Rückspiegel bei schöner Grafik ein eigenes Bild ohne Tonwert (`rtLin`), sonst wechseln die Shader jedes Bild.
+- `junkyard.js`: Schrottplatz an der Flughafenstrasse (`JUNK`, Zufahrt in `ROADS`): Zaun, rostige Schrottautos (einfache Fassung),
+  Kran, Hütte. Teile (`PARTS`: Karosserie, Motor, Räder, Lenkrad, Sitze, Lichter) liegen an `SPOTS` (einsammeln, kommen nach
+  1–2 Min. wieder), am gelben Feld `BENCH` kaufen und zusammenbauen (`stepJunk`/`junkPanel`/`junkBuild` in city.js →
+  `cityDealer.junkBuild` in game.js). Spielstand `autoRetterJunk`. Eigenbau-Fahrzeuge in `KINDS` mit `junk: true`, `secret`
+  (nicht im Shop, nicht verkaufbar), Seltenheit `eigenbau`; zuerst ein Typ, den man noch nicht hat; jedes mit eigener Farbe →
+  eigenes Flickenmuster (`special: 'junk'`, `junkTexture` in cars3d.js; 3D: Grundform + `junkExtras`). Fertig steht es bei `BUILT`.
 - `world3d.js`: Baukasten für die Landschaften (Rauschen, Oberflächen mit Relief, Gelände, Wolken, Staub, Lichtstrahlen).
 Texte im Spiel sind Deutsch (Schweizer Schreibweise, kein ß).
 

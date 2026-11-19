@@ -11,6 +11,7 @@
 import * as THREE from 'three';
 import { buildCar, animateCar } from './cars3d.js';
 import { landDist } from './island.js';
+import { JUNK } from './junkyard.js';
 
 // Mittellinie = Rechteck (x ±half, z cz … cz + L) mit Abstand R rundherum: oben (Norden, hinter dem Pass) nach Osten,
 // rechts nach Süden, unten nach Westen (Raststätte, Tunnel), links nach Norden (Brücke); die Ecken sind Viertelkreise
@@ -36,6 +37,7 @@ export const ROADS = [RAMP,
   { x0: -607, x1: -593, z0: -1302, z1: -193 }, // Nordstrasse: durchs Tal zum Strand und zur Stadtstrasse z = −192
   { x0: -457, x1: -443, z0: 455, z1: 2452 }, // Südstrasse: westlich am Flughafen vorbei zur Flughafenstrasse
   { x0: 570, x1: 1243, z0: 1243, z1: 1257 }, // zum Skidorf (von Osten)
+  { x0: -937, x1: -923, z0: 462, z1: 501 }, // zum Schrottplatz (junkyard.js)
 ];
 // Anschlüsse: innen. Für Richtung +s je eine geschwungene Ausfahrt (zweigt 140 m vorher rechts ab, Kurve in den Zubringer)
 // und Einfahrt (aus dem Zubringer in einer Kurve auf die rechte Spur, SLIPS); in der Mitte fehlen innere Leitplanke und
@@ -124,7 +126,7 @@ function slipDist(x, z, far = 120) { // Abstand zur Mittellinie der nächsten Au
   }
   return best;
 }
-export function outskirtsDist(x, z) { let d = Math.min(Math.abs(hwProject(x, z).lat) - WIDE, boxDist(x, z, REST_BOX), slipDist(x, z) - SLIP_W); for (const b of ROADS) d = Math.min(d, boxDist(x, z, b)); return d; }
+export function outskirtsDist(x, z) { let d = Math.min(Math.abs(hwProject(x, z).lat) - WIDE, boxDist(x, z, REST_BOX), slipDist(x, z) - SLIP_W, boxDist(x, z, JUNK) - 6); for (const b of ROADS) d = Math.min(d, boxDist(x, z, b)); return d; }
 export const onRoads = (x, z) => ROADS.some(b => x > b.x0 && x < b.x1 && z > b.z0 && z < b.z1) || slipDist(x, z, 10) < SLIP_W;
 // Bodenhöhe auf der Autobahn (auf der Brücke oben)
 export function hwGround(x, z) { const p = hwProject(x, z); return Math.abs(p.lat) < WIDE ? hwY(p.s) : 0; }

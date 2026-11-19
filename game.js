@@ -383,6 +383,20 @@ const KINDS = {
                info: '💨 Hypercar: Antippen = TURBO! Fast so schnell wie ein Rennauto.' },
   sleigh:    { name: 'Samichlaus-Schlitten', tier: 'legendary', w: [140, 150], h: [58, 62], color: '#b91c1c', ability: 'rocket', coins: 5, points: 8, look: 'royal', badge: '🎅',
                info: '🎅 Samichlaus-Schlitten: Antippen = fliegt davon! 8 Punkte und 5 Münzen.' },
+  // --- Eigenbau vom Schrottplatz (city.js/junkyard.js): nur aus Teilen zusammengebaut, nicht im Shop, nicht verkaufbar;
+  //     jedes Exemplar hat eine eigene Flicken-Lackierung (special 'junk', Muster aus der Farbe) ---
+  junkrod:   { name: 'Rost-Rakete', tier: 'eigenbau', secret: true, junk: true, w: [108, 118], h: [38, 42], speed: 1.3, look: 'muscle', badge: '🚀',
+               info: '🚀 Rost-Rakete: aus Schrott gebaut – und trotzdem schnell!' },
+  junkbuggy: { name: 'Schrott-Buggy', tier: 'eigenbau', secret: true, junk: true, w: [86, 94], h: [46, 50], wheel: 13, speed: 1.2, look: 'buggy', badge: '🔩',
+               info: '🔩 Schrott-Buggy: zusammengeschraubt, fährt überall durch.' },
+  junktruck: { name: 'Frankenstein-Truck', tier: 'eigenbau', secret: true, junk: true, w: [110, 120], h: [70, 74], wheel: 20, armor: 2, look: 'monster', badge: '🧟',
+               info: '🧟 Frankenstein-Truck: aus vielen Autos gemacht – hält ZWEI Schläge aus!' },
+  junkbus:   { name: 'Bastel-Bus', tier: 'eigenbau', secret: true, junk: true, w: [130, 150], h: [54, 54], points: 3, look: 'van', badge: '🛠️',
+               info: '🛠️ Bastel-Bus: jedes Teil von einem anderen Auto – 3 Punkte!' },
+  junkcabrio:{ name: 'Flicken-Cabrio', tier: 'eigenbau', secret: true, junk: true, w: [92, 104], h: [36, 40], speed: 1.1, look: 'cabrio', badge: '🧩',
+               info: '🧩 Flicken-Cabrio: bunt wie ein Flickenteppich.' },
+  junkracer: { name: 'Blech-Blitz', tier: 'eigenbau', secret: true, junk: true, w: [104, 118], h: [32, 35], speed: 1.35, wheel: 10, look: 'sports', badge: '⚡',
+               info: '⚡ Blech-Blitz: der schnellste Eigenbau vom Schrottplatz!' },
   // --- Geheimes Sonderfahrzeug (secret: nicht im Shop, nicht bei Gegnern; grip: lenkt besser, hält immer) ---
   lionelx:   { name: 'LIONEL X', tier: 'admin', secret: true, w: [104, 112], h: [32, 36], wheel: 12, speed: 1.8, grip: 1.8, color: '#e10600',
                ability: 'turbo', armor: 2, points: 10, coins: 3, look: 'sports', badge: '⚡', fly: true,
@@ -401,7 +415,7 @@ let daily = { open: false, claimed: true, next: 1 }; // tägliche Belohnung (unt
 
 // Ein Fahrzeug im Fahrzeugpark: Typ, eigene Farbe und evtl. Gold-/Regenbogen-Lack
 // Start-PS eines Fahrzeugtyps: Seltenheit mal Tempo. In der Presse: retten +1 PS, zerquetscht −3 PS.
-const TIER_PS = { common: 40, uncommon: 55, rare: 70, epic: 85, legendary: 100, admin: 140 };
+const TIER_PS = { common: 40, uncommon: 55, rare: 70, epic: 85, legendary: 100, admin: 140, eigenbau: 75 };
 const PAINT_PS = { gold: 5, rainbow: 8, diamond: 12, obsidian: 20 };   // Spezial-Lack gibt Extra-PS
 function basePS(kind, special) { return Math.round(TIER_PS[KINDS[kind].tier] * (KINDS[kind].speed || 1)) + (PAINT_PS[special] || 0); }
 
@@ -2709,10 +2723,11 @@ const TIERS = {
   epic:     { label: 'Episch', color: '#c084fc' },
   legendary: { label: 'Legendär', color: '#ff9f1c' },
   admin:    { label: '⚡ ADMIN', color: '#ff3b2f' },
+  eigenbau: { label: '🔧 Eigenbau', color: '#d97706' },
 };
 
 // Verkaufswert: Seltenheit mal Lack (ein episches Regenbogen-Fahrzeug ist viel mehr wert als ein normales goldenes)
-const TIER_VALUE = { common: 5, uncommon: 12, rare: 25, epic: 50, legendary: 100, admin: 500 };
+const TIER_VALUE = { common: 5, uncommon: 12, rare: 25, epic: 50, legendary: 100, admin: 500, eigenbau: 60 };
 const PAINT_FACTOR = { gold: 2, rainbow: 3, diamond: 5, obsidian: 8 };
 function vehicleValue(v) { return TIER_VALUE[KINDS[v.kind].tier] * (PAINT_FACTOR[v.special] || 1); }
 
@@ -2835,7 +2850,7 @@ function drawQuit() {
 // auf dem Startbildschirm ein Update-Knopf; kommt man auf dem Startbildschirm in die App zurück, wird gleich aktualisiert.
 // APP_FILES: alle Dateien des Spiels (beim Hinzufügen einer Datei hier ergänzen).
 const APP_FILES = ['./', 'index.html', 'game.js', 'version.js', 'press3d.js', 'race.js', 'drag.js', 'cars3d.js', 'world3d.js',
-  'online.js', 'sound.js', 'city.js', 'tracks.js', 'stunt.js', 'netcars.js', 'chat.js', 'fx.js', 'viewer.js', 'photo.js', 'outskirts.js', 'country.js', 'moon.js', 'look.js', 'suburbs.js', 'island.js', 'monaco.js', 'manifest.webmanifest', 'icon-192.png', 'icon-512.png', 'apple-touch-icon.png', 'favicon.png'];
+  'online.js', 'sound.js', 'city.js', 'tracks.js', 'stunt.js', 'netcars.js', 'chat.js', 'fx.js', 'viewer.js', 'photo.js', 'outskirts.js', 'country.js', 'moon.js', 'look.js', 'suburbs.js', 'island.js', 'monaco.js', 'junkyard.js', 'manifest.webmanifest', 'icon-192.png', 'icon-512.png', 'apple-touch-icon.png', 'favicon.png'];
 const UPDATE_BTN = { x: W - 262, y: 14, w: 248, h: 46 };
 const appUpdate = { info: null, busy: false, last: 0 };
 
@@ -3862,7 +3877,7 @@ function updateReveal(dt) {
   }
   if (!reveal.burst && reveal.t >= REVEAL_AT) {
     reveal.burst = true;
-    const rank = KINDS[reveal.v.kind].tier === 'admin' ? 5 : TIER_ORDER.indexOf(KINDS[reveal.v.kind].tier);
+    const rank = KINDS[reveal.v.kind].tier === 'admin' ? 5 : KINDS[reveal.v.kind].tier === 'eigenbau' ? 3 : TIER_ORDER.indexOf(KINDS[reveal.v.kind].tier);
     const n = 30 + rank * 30 + (reveal.v.special ? 40 : 0);
     for (let i = 0; i < n; i++) {
       particles.push({
@@ -4163,6 +4178,17 @@ function raceMenuTap(px, py) {
 // Autohändler in der Stadt (city.js): drei Gebrauchtwagen (Preis = doppelter Wert, PS etwas verschieden) und das eigene Auto verkaufen
 const cityDealer = {
   coins: () => wallet,
+  // Schrottplatz: Eigenbau zusammensetzen – zuerst ein Typ, den man noch nicht hat; jedes Exemplar mit eigener Flicken-Lackierung
+  junkBuild() {
+    const all = Object.keys(KINDS).filter(k => KINDS[k].junk), owned = new Set(fleet.map(v => v.kind)), fresh = all.filter(k => !owned.has(k));
+    const kind = pick(fresh.length ? fresh : all), v = makeVehicle(kind, 'junk');
+    v.color = '#' + Math.floor(Math.random() * 0xffffff).toString(16).padStart(6, '0'); // eigene Farbe = eigenes Flickenmuster
+    v.ps = Math.max(30, basePS(kind) + Math.round(rand(-6, 14)));
+    v.junkNo = fleet.filter(f => KINDS[f.kind] && KINDS[f.kind].junk).length + 1;
+    fleet.push(v);
+    storeJSON('autoRetterFleet', fleet);
+    return { v, fresh: fresh.includes(kind), name: KINDS[kind].name };
+  },
   offers() {
     const pool = Object.keys(KINDS).filter(k => ['common', 'uncommon', 'rare', 'epic'].includes(KINDS[k].tier) && !KINDS[k].secret);
     return [0, 1, 2].map(() => { const v = makeVehicle(pick(pool)); v.ps = Math.max(10, v.ps + Math.round(rand(-8, 6))); return { v, price: vehicleValue(v) * 2 }; });
@@ -4377,7 +4403,7 @@ function dragVehicle() { return fleet.find(v => v.id === dragVehicleId) || fleet
 // Drei Gegner: leicht (schwächer, weniger wert), mittel, schwer (stärker, seltenes Auto)
 function makeDragOpponents() {
   const mine = dragVehicle();
-  const tierIdx = KINDS[mine.kind].tier === 'admin' ? TIER_ORDER.length - 1 : TIER_ORDER.indexOf(KINDS[mine.kind].tier);
+  const tierIdx = KINDS[mine.kind].tier === 'admin' ? TIER_ORDER.length - 1 : KINDS[mine.kind].tier === 'eigenbau' ? 3 : TIER_ORDER.indexOf(KINDS[mine.kind].tier);
   const names = [...RACER_NAMES].sort(() => Math.random() - 0.5);
   dragOpponents = DRAG_LEVELS.map((lv, i) => {
     const tier = TIER_ORDER[Math.max(0, Math.min(TIER_ORDER.length - 1, tierIdx + lv.tierShift))];

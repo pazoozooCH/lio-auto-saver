@@ -3,6 +3,7 @@
 import * as THREE from 'three';
 import { Sky } from 'three/addons/objects/Sky.js';
 import { buildCar, animateCar, warmUp, makeQuality, mergeStatic, setLod } from './cars3d.js';
+import { buildJunkyard, JUNK, BENCH, BUILT, PARTS, inJunk, loadJunk, saveJunk, missingParts } from './junkyard.js';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { makeNoise, rng, smoothstep, surface, terrain, cloudDome } from './world3d.js';
 import { createCarSound, crash, gearbox, horn, createSiren } from './sound.js';
@@ -2107,6 +2108,74 @@ function stepStations() {
   city.atWin = atWin;
 }
 
+// ---------- Schrottplatz (junkyard.js) ----------
+// Teile liegen herum (hinfahren oder hingehen = einsammeln, nach einer Weile liegt dort ein neues), beim gelben Feld vor
+// der Hütte: Teile kaufen und mit allen sechs ein Eigenbau-Auto zusammenbauen (cityDealer.junkBuild in game.js). Der
+// fertige Wagen steht danach im Hof als dein geparktes Auto (einsteigen und losfahren).
+function setupJunk(kinds) {
+  if (!S.junk) S.junk = buildJunkyard({ scene: S.scene, sign: S.sign, solid: S.solid,
+    carMesh: (kind, color) => { const m = buildCar({ kind, color, special: 'junk' }, kinds); /* rostig und geflickt */ setLod(m, true); m.traverse(o => { o.castShadow = false; }); return m; } });
+  city.junkInv = loadJunk();
+}
+function stepJunk(dt) {
+  const J = S.junk;
+  if (!J) return;
+  const w = city.walk, x = w ? w.x : city.me.pos.x, z = w ? w.z : city.me.pos.z;
+  if (!inJunk(x, z, 150)) return;
+  const inv = city.junkInv;
+  for (const sp of J.spots) {
+    if (!sp.part) {
+      if ((sp.t -= dt) > 0) continue;
+      sp.part = PARTS[Math.floor(Math.random() * PARTS.length)];
+      sp.mesh = J.iconSprite(sp.part[1]); sp.mesh.userData.noWarp = true; S.scene.add(sp.mesh);
+    }
+    sp.mesh.position.set(sp.x, 1.4 + Math.sin(city.t * 2.2 + sp.x) * 0.25, sp.z);
+    if (Math.hypot(x - sp.x, z - sp.z) < (w ? 1.8 : 3.4) && !(city.me.alt > 3)) { // eingesammelt
+      const [id, emoji, name] = sp.part;
+      inv.parts[id] = (inv.parts[id] || 0) + 1; saveJunk(inv);
+      const have = PARTS.length - missingParts(inv).length;
+      showMsg('🔩 Gefunden: ' + emoji + ' ' + name + '  (' + have + '/' + PARTS.length + ' verschiedene Teile)', 2);
+      window.beep && window.beep(988, 0.1, 'triangle', 0.06);
+      S.scene.remove(sp.mesh); sp.mesh = null; sp.part = null; sp.t = 60 + Math.random() * 60;
+    }
+  }
+  const atBench = Math.hypot(x - BENCH.x, z - BENCH.z) < BENCH.r && (w || (Math.abs(city.me.speed) < 1 && city.me.alt < 2));
+  if (atBench && !city.atBench) {
+    city.atBench = true;
+    if (!city.dealer) showMsg('🌐 Online ist der Schrotthändler geschlossen (Teile sammeln geht)', 2);
+    else openPanel(junkPanel());
+  }
+  if (city.atBench && !atBench && Math.hypot(x - BENCH.x, z - BENCH.z) > BENCH.r + 3) { city.atBench = false; if (city.panel && city.panel.junk) closePanel(); }
+}
+function junkPanel() {
+  const inv = city.junkInv;
+  return { junk: true,
+    get title() { return '🛠️ Schrotthändler – ' + (PARTS.length - missingParts(inv).length) + '/' + PARTS.length + ' Teile'; },
+    rows: () => {
+      const miss = missingParts(inv);
+      return [...PARTS.map(([id, emoji, name, price]) => ({ id, label: emoji + ' ' + name, price, note: 'du hast ' + (inv.parts[id] || 0) })),
+        { id: 'build', label: '🔧 Auto zusammenbauen', price: 0, note: miss.length ? 'es fehlt: ' + miss.map(p => p[1]).join(' ') : 'alle Teile da!' }];
+    },
+    buy: id => {
+      if (id === 'build') { junkBuild(); return; }
+      const p = PARTS.find(q => q[0] === id);
+      if (city.pay(p[3]) < p[3]) return;
+      inv.parts[id] = (inv.parts[id] || 0) + 1; saveJunk(inv);
+      showMsg('🛒 Gekauft: ' + p[1] + ' ' + p[2], 1.6);
+    } };
+}
+function junkBuild() {
+  const inv = city.junkInv, miss = missingParts(inv);
+  if (miss.length) { showMsg('🔧 Es fehlt noch: ' + miss.map(p => p[1] + ' ' + p[2]).join(', '), 2.4); return; }
+  for (const [id] of PARTS) inv.parts[id]--;
+  saveJunk(inv);
+  const res = city.dealer.junkBuild(), v = res.v;
+  parkHere(buildCar(v, city.kinds), v, BUILT.x, BUILT.z, BUILT.h); // steht im Hof
+  closePanel();
+  showMsg('🎉 Fertig! Dein Eigenbau ' + res.name + ' Nr. ' + v.junkNo + ' steht im Hof – einzigartig' + (res.fresh ? ' und NEU in deiner Sammlung!' : '!') + ' Steig ein 🚗', 4);
+  window.beep && window.beep(784, 0.12, 'triangle', 0.07); window.beep && window.beep(1175, 0.3, 'triangle', 0.07, 0.14);
+}
+
 // ---------- Kino ----------
 // Im Saal bei den Sitzen X: hinsetzen und den Film schauen (Kamera auf die Leinwand), nochmals X: aufstehen.
 // Abends (18–23 Uhr) stehen Leute vor dem Eingang.
@@ -3340,7 +3409,7 @@ function groundAt(x, z) {
   if (inPassRegion(x, z)) return Math.max(0, S.country.ground(x, z)); // auch knapp am Stadtrand: dort liegt schon das Pass-Gelände
   if (Math.abs(x) <= LIMIT && Math.abs(z) <= LIMIT) return 0;
   if (onHighway(x, z)) return hwGround(x, z); // auf der Brücke oben
-  if (onRoads(x, z) || inArea(x, z) || inCountry(x, z) || inSuburb(x, z)) return 0;
+  if (onRoads(x, z) || inArea(x, z) || inCountry(x, z) || inSuburb(x, z) || inJunk(x, z)) return 0;
   const gx = (x + 1100) / 20, gz = (z + 1100) / 20, i = Math.floor(gx), j = Math.floor(gz), fx = gx - i, fz = gz - j;
   const a = landAt(i, j), b = landAt(i, j + 1), c = landAt(i + 1, j + 1), d = landAt(i + 1, j);
   return Math.max(0, fx + fz <= 1 ? a + (d - a) * fx + (b - a) * fz : c + (b - c) * (1 - fx) + (d - c) * (1 - fz));
@@ -5413,6 +5482,7 @@ function surfaceAt(x, z) {
   if (inMoon(x, z)) return 'moon';
   if (Math.abs(x) > HALF + ROAD / 2 || Math.abs(z) > HALF + ROAD / 2) {
     if (onHighway(x, z) || onRoads(x, z) || inArea(x, z) || suburbRoad(x, z) || monRoad(x, z) || onDeck(x, z)) return 'asphalt';
+    if (inJunk(x, z)) return 'gravel'; // Schrottplatz
     return countrySurface(x, z) || (onPass(x, z) ? 'asphalt' : 'grass');
   }
   const bi = Math.floor(x / BLOCK + N / 2), bj = Math.floor(z / BLOCK + N / 2);
@@ -5798,6 +5868,7 @@ function paintWorld(g, P, K) {
   const hw = []; for (let s = 0; s <= HW_LEN; s += 30) { const p = hwPoint(s); hw.push([p.x, p.z]); }
   line(hw, '#e2e5ea', Math.max(3, 30 * K)); line(hw, '#facc15', 1); // Autobahn mit Mittellinie
   for (const b of ROADS) rect(b, '#d4d8de'); // Zubringer (Flughafenstrasse, Raumbahnhof)
+  rect(JUNK, '#8d8172'); // Schrottplatz
   for (const sl of SLIPS) line(sl.map(p => [p.x, p.z]), '#d4d8de', Math.max(2, 9 * K)); // geschwungene Aus- und Einfahrten
   for (const e of EXITS) { const p = hwPoint(e.s), [x, y] = P(p.x - p.tz * 24, p.z + p.tx * 24); g.fillStyle = '#1d4ed8'; g.beginPath(); g.arc(x, y, Math.max(3, 12 * K), 0, 7); g.fill(); } // Ausfahrten
   rect({ x0: REST.x - 150, x1: REST.x + 150, z0: REST.z + 20, z1: REST.z + 130 }, '#f59e0b'); // Raststätte
@@ -5914,7 +5985,7 @@ function mapCar(g, x, y, h, col, k = 1) {
 function mapLabels() {
   const keys = city.keys.size, lock = (name, need) => (keys >= need ? name : '🔒 ' + name + ' (' + need + ' 🔑)');
   const L = [['🏙️ Stadt', 0, -HALF - 40], ['⛷️ Skigebiet', SKI.x, SKI.z], ['🐄 Alp', (FARM.x0 + FARM.x1) / 2, FARM.z0 - 30], ['🚀 Raumbahnhof', SPACE.x, SPACE.z + 50],
-    ['🛣️ Raststätte', REST.x, REST.z + 170], ['🏖️ Strand', -674, -700], [lock('⛰️ Pass', PASS_AREA.need), SUMMIT.x, SUMMIT.z + 60], ['🛣️ Autobahn', -HW.half - HW.R + 80, 1500], ['🌉 Brücke', -HW.half - HW.R + 90, -160]];
+    ['🛣️ Raststätte', REST.x, REST.z + 170], ['🏖️ Strand', -674, -700], [lock('⛰️ Pass', PASS_AREA.need), SUMMIT.x, SUMMIT.z + 60], ['🛣️ Autobahn', -HW.half - HW.R + 80, 1500], ['🌉 Brücke', -HW.half - HW.R + 90, -160], ['🔧 Schrottplatz', (JUNK.x0 + JUNK.x1) / 2, JUNK.z1 + 40]];
   L.push([MON_NAME, MONACO.x, MONACO.z - 330]);
   for (const S2 of SUBURBS) L.push([S2.name, (S2.rect.x0 + S2.rect.x1) / 2, S2.rect.z0 - 25]);
   for (const A of Object.values(AREAS)) L.push([lock(A.name, A.need), (A.rect.x0 + A.rect.x1) / 2, (A.rect.z0 + A.rect.z1) / 2]);
@@ -6090,6 +6161,7 @@ export function startCity({ player, kinds, topSpeed, onExit, pay = () => 0, earn
   city.hw = makeHighwayTraffic(S.scene, kinds);
   for (const m of city.hw.meshes) noShadow(m);
   setupDealer();
+  setupJunk(kinds);
   // Fahrzeuge, die erst später auftauchen, schon jetzt einmal bauen (danach nur noch kopieren – sonst ruckelt es dann)
   for (const v of [...city.base, { kind: 'police', color: kinds.police.color }, { kind: 'sports', color: '#18181b' }, { kind: 'muscle', color: '#18181b' },
     { kind: 'carrier', color: '#f59e0b' }]) if (kinds[v.kind]) buildCar({ special: null, ...v }, kinds);
@@ -6156,6 +6228,7 @@ function step(now) {
   stepDrift(dt);
   stepPolice(dt);
   stepWanted(dt);
+  stepJunk(dt);
   stepChunks();
   stepPlaces(dt);
   stepBases(dt);

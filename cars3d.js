@@ -54,12 +54,42 @@ function paintMaterial(v) {
   if (finish === 'lava') return new THREE.MeshPhysicalMaterial({ ...base, color: 0xffffff, map: lavaTexture(), emissive: 0xffffff,
     emissiveMap: lavaTexture(), emissiveIntensity: 1.1, metalness: 0.1, roughness: 0.7 });
   switch (v.special) {
+    case 'junk': return new THREE.MeshPhysicalMaterial({ ...base, color: 0xffffff, map: junkTexture(v.color || '#888888'), metalness: 0.25, roughness: 0.55, clearcoat: 0.3 });
     case 'gold': return new THREE.MeshPhysicalMaterial({ ...base, color: 0xffc83d, metalness: 0.9, roughness: 0.26, emissive: 0x3a2600, emissiveIntensity: 0.6 });
     case 'diamond': return new THREE.MeshPhysicalMaterial({ ...base, color: 0xcdefff, metalness: 0.2, roughness: 0.03, iridescence: 1, iridescenceIOR: 1.8 });
     case 'obsidian': return new THREE.MeshPhysicalMaterial({ ...base, color: 0x120a1c, metalness: 0.7, roughness: 0.12, emissive: 0x2a0f45, emissiveIntensity: 0.35 });
     case 'rainbow': return new THREE.MeshPhysicalMaterial({ ...base, color: 0xff0000, metalness: 0.4, roughness: 0.25 });
     default: return new THREE.MeshPhysicalMaterial({ ...base, color: new THREE.Color(v.color), metalness: 0.55, roughness: 0.24 }); // Metalliclack
   }
+}
+
+// Flicken-Lack für Eigenbau-Autos vom Schrottplatz: Grundfarbe, Bleche in anderen Farben, Grundierung, Rost, Nieten.
+// Das Muster hängt nur von der Farbe ab (jedes Exemplar hat eine eigene Farbe, also ein eigenes Muster).
+const junkTex = new Map();
+function junkTexture(color) {
+  if (junkTex.has(color)) return junkTex.get(color);
+  let seed = 0; for (const ch of color) seed = (seed * 31 + ch.charCodeAt(0)) >>> 0;
+  const rnd = () => { seed = (seed * 1664525 + 1013904223) >>> 0; return seed / 4294967296; };
+  const c = document.createElement('canvas'); c.width = c.height = 256;
+  const g = c.getContext('2d');
+  g.fillStyle = color; g.fillRect(0, 0, 256, 256);
+  const cols = ['#9ca3af', '#a8a29e', '#9a3412', '#b45309', '#1d4ed8', '#15803d', '#facc15', '#be123c', '#e5e7eb', '#0f766e'];
+  for (let k = 0; k < 9; k++) { // Bleche von anderen Autos
+    const w = 30 + rnd() * 90, h = 30 + rnd() * 90, x = rnd() * 256, y = rnd() * 256, col = cols[Math.floor(rnd() * cols.length)];
+    g.fillStyle = col; g.fillRect(x, y, w, h);
+    g.fillStyle = 'rgba(0,0,0,0.35)'; for (let i = 0; i < w; i += 8) { g.fillRect(x + i, y + 2, 2, 2); g.fillRect(x + i, y + h - 4, 2, 2); } // Nieten
+  }
+  for (let k = 0; k < 26; k++) { // Rostflecken
+    const x = rnd() * 256, y = rnd() * 256, r = 3 + rnd() * 14, gr = g.createRadialGradient(x, y, 0, x, y, r);
+    gr.addColorStop(0, 'rgba(120,53,15,0.9)'); gr.addColorStop(0.6, 'rgba(154,52,18,0.55)'); gr.addColorStop(1, 'rgba(154,52,18,0)');
+    g.fillStyle = gr; g.beginPath(); g.arc(x, y, r, 0, 7); g.fill();
+  }
+  g.strokeStyle = 'rgba(255,255,255,0.25)'; g.lineWidth = 1; // Kratzer
+  for (let k = 0; k < 14; k++) { const x = rnd() * 256, y = rnd() * 256; g.beginPath(); g.moveTo(x, y); g.lineTo(x + (rnd() - 0.5) * 50, y + (rnd() - 0.5) * 12); g.stroke(); }
+  const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; t.wrapS = t.wrapT = THREE.RepeatWrapping;
+  junkTex.set(color, t);
+  if (junkTex.size > 60) junkTex.delete(junkTex.keys().next().value);
+  return t;
 }
 
 const MAT = {};
@@ -1531,6 +1561,24 @@ function applyTune(C, tune) {
   }
 }
 
+// Eigenbau-Autos vom Schrottplatz: Grundform eines anderen Fahrzeugs, dazu angeschraubte Extras
+function junkExtras(C, kind) {
+  const { L, M } = C, top = (C.roofY ?? C.H) + 0.02;
+  if (kind === 'junkrod' || kind === 'junkracer') for (const s of [-1, 1]) { // dicke Auspuffrohre hinten
+    C.cyl(0.09, 0.11, 0.6, M.chrome, -L / 2 - 0.15, 0.42, s * 0.35, [0, 0, Math.PI / 2], 10);
+  }
+  if (kind === 'junkrod') C.box(0.5, 0.25, 0.6, M.chrome, L * 0.18, (C.side ? C.side.top : C.H * 0.6) + 0.12, 0); // Luftfilter auf der Haube
+  if (kind === 'junkbuggy' || kind === 'junktruck') { // Dachträger mit Reserverad
+    C.box(1.4, 0.06, 1.2, M.dark, -L * 0.1, top + 0.1, 0);
+    C.cyl(0.32, 0.32, 0.22, M.tyre || M.dark, -L * 0.1, top + 0.3, 0, [0, 0, 0], 14);
+  }
+  if (kind === 'junkbus') for (const x of [-0.3, 0.3]) C.box(0.8, 0.5, 0.8, new THREE.MeshStandardMaterial({ color: 0x92400e, roughness: 0.9 }), x * L, top + 0.25, x * 1.2); // Kisten auf dem Dach
+  if (kind === 'junkcabrio') C.box(0.12, 0.7, 0.12, M.steel, -L * 0.35, (C.side ? C.side.top : C.H * 0.6) + 0.35, 0); // Antenne mit Fähnchen
+  if (kind === 'junkracer') C.box(0.35, 0.06, C.W * 0.95, M.dark, -L / 2 + 0.3, (C.side ? C.side.top : C.H * 0.6) + 0.45, 0); // angeschraubter Heckflügel
+}
+const JUNK_BASE = { junkrod: 'muscle', junkbuggy: 'buggy', junktruck: 'monster', junkbus: 'van', junkcabrio: 'cabrio', junkracer: 'sports' };
+for (const [k, base] of Object.entries(JUNK_BASE)) BUILD[k] = C => { BUILD[base](C); junkExtras(C, k); };
+
 const templates = new Map();
 export function buildCar(v, kinds, hDiv) {
   const tune = v.tune || {};
@@ -1590,7 +1638,8 @@ function makeFar(root, paint) {
     }
     const g = (o.geometry.index ? o.geometry.toNonIndexed() : o.geometry.clone());
     if (!g.attributes.position || !g.attributes.normal) return;
-    for (const n of Object.keys(g.attributes)) if (n !== 'position' && n !== 'normal') g.deleteAttribute(n);
+    for (const n of Object.keys(g.attributes)) if (n !== 'position' && n !== 'normal' && !(n === 'uv' && kind === 'paint')) g.deleteAttribute(n);
+    if (kind === 'paint' && !g.attributes.uv) g.setAttribute('uv', new THREE.Float32BufferAttribute(new Float32Array(g.attributes.position.count * 2), 2)); // Muster (Flicken-Lack) auch von weitem
     g.applyMatrix4(m4.multiplyMatrices(inv, o.matrixWorld));
     if (kind === 'rest') {
       if (mt.emissive && mt.emissiveIntensity > 0.4 && lum(mt.emissive) > 0.2) col.copy(mt.emissive); // Lichter
