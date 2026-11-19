@@ -16,7 +16,8 @@ Browser-Spiel ohne Build: `index.html` + `game.js` (Spiellogik, Menüs und 2D-Ze
   Fensterrahmen); `{ classic: true }` = alte Kastenform. Scheiben `glassClear`: getönt, wenig Spiegelung (sonst wirken sie milchig),
   nur Vorderseite (vom Fahrersitz klar). Alte Kastenformen: Lichter vor die abgerundete Kante (bevel ≈ 0,08 m), Bus mit Front-/Heckscheibe (`ends`).
 - `city.js`: 3D-Stadt zum freien Herumfahren (Strassengitter 10 × 10 Blöcke, Häuser, Parks, Ampeln, Verkehr mit Abbiegen und Halten).
-  Umriss wie eine echte Stadt: Randblöcke in `MASK` sind frei (Wäldchen); Strassen nur, wo eine Seite ein Block ist (`segOn`,
+  Umriss wie eine echte Stadt: Randblöcke in `MASK` sind frei (Wäldchen); `ORGANIC`-Blöcke (auch in MASK) sind Quartiere mit
+  Gassen in Kurven (Gartenquartier SW, Sonnenhang NO → weiter ins Ostquartier; `SUBURBS` mit `inCity` in suburbs.js); Strassen nur, wo eine Seite ein Block ist (`segOn`,
   `blockOn`, `nodeSegs`; sonst gilt die Strasse als gesperrt über `isPed`). Anschlüsse am Stadtrand (Zufahrt, Hafen, Strand,
   Raumbahnhof, Pass) liegen bei ±320 (HALF); gespeicherte Autos, die jetzt in einem Haus stünden, kommen auf die Strasse (`parkFree`).
   Geschwungene Strassen: gerechnet wird im geraden Gitter, nur das Bild wird verbogen (`warpXZ`/`warpRot`): jede Strasse eigene Welle

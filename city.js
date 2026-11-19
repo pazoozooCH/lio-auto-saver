@@ -214,7 +214,9 @@ const warpV = v => { if (inWarp(v.x, v.z)) { warpXZ(v.x, v.z, _wa); v.x = _wa.x;
 const inGrid =(i, j) => i >= 0 && i <= N && j >= 0 && j <= N;
 // Umriss wie eine echte Stadt: diese Randblöcke sind frei (Wald und Wiese) – neben den Vororten, an Ecken und am Südrand.
 // Strassen gibt es nur, wo mindestens auf einer Seite ein Block der Stadt liegt (segOn); sonst gelten sie als gesperrt (isPed).
-const MASK = new Set(['0,0', '7,0', '8,0', '9,0', '9,1', '9,2', '9,3', '9,4', '9,5', '9,6', '0,7', '0,8', '0,9', '1,9', '7,9', '8,9', '9,9', '0,6']);
+// ORGANIC: frei geformte Quartiere in der Stadt (Gassen in Kurven, Einfamilienhäuser; SUBURBS mit inCity in suburbs.js)
+const ORGANIC = new Set(['1,7', '2,7', '1,8', '2,8', '7,1', '8,1', '7,2', '8,2']);
+const MASK = new Set(['0,0', '7,0', '8,0', '9,0', '9,1', '9,2', '9,3', '9,4', '9,5', '9,6', '0,7', '0,8', '0,9', '1,9', '7,9', '8,9', '9,9', '0,6', ...ORGANIC]);
 const blockOn = (bi, bj) => bi >= 0 && bj >= 0 && bi < N && bj < N && !MASK.has(bi + ',' + bj);
 const segOn = (i, j, d) => {
   const [fx, fz] = DIRS[d], i2 = i + fx, j2 = j + fz;
@@ -1177,8 +1179,10 @@ function buildWorld() {
   const copper = mat({ color: 0x5f9e88, metalness: 0.55, roughness: 0.45 }), slate = mat({ color: 0x3b4252, metalness: 0.3, roughness: 0.6 });
   for (let bi = 0; bi < N; bi++) for (let bj = 0; bj < N; bj++) {
     const cx = (node(bi) + node(bi + 1)) / 2, cz = (node(bj) + node(bj + 1)) / 2;
+    if (ORGANIC.has(bi + ',' + bj)) { scatter(tufts, cx - 26, cz - 26, cx + 26, cz + 26, 60, 0, 0.8, 1.4, (x, z) => !suburbRoad(x, z) && !suburbRoad(x + 5, z) && !suburbRoad(x, z + 5)); continue; } // Quartier mit Gassen (suburbs.js)
     if (!blockOn(bi, bj)) { // freier Block am Stadtrand: Wäldchen mit Wiese (eigener Zufall, der Haupt-Zufall bleibt gleich)
-      const free = (x, z) => ![[0, 0], [7, 0], [-7, 0], [0, 7], [0, -7]].some(([a, b]) => suburbRoad(x + a, z + b)); // nicht auf die Strassen der Vororte
+      const free = (x, z) => ![[0, 0], [7, 0], [-7, 0], [0, 7], [0, -7]].some(([a, b]) => suburbRoad(x + a, z + b)) // nicht auf die Strassen der Vororte
+        && !SUBURBS.some(S2 => S2.inCity && x > S2.rect.x0 && x < S2.rect.x1 && z > S2.rect.z0 && z < S2.rect.z1); // und nicht zu den Häusern der Quartiere
       for (let k = 0; k < 16; k++) {
         const tx = cx + (vr() - 0.5) * 48, tz = cz + (vr() - 0.5) * 48, pine = vr() < 0.5, sc = 0.8 + vr() * 0.7;
         if (!free(tx, tz)) continue;
@@ -5526,7 +5530,7 @@ function surfaceAt(x, z) {
     const ok = [[-ROAD, -ROAD], [ROAD, -ROAD], [-ROAD, ROAD], [ROAD, ROAD]].some(([a, b]) => blockOn(Math.floor((x + a) / BLOCK + N / 2), Math.floor((z + b) / BLOCK + N / 2)));
     return ok ? 'asphalt' : 'grass';
   }
-  if (!blockOn(bi, bj)) return 'grass'; // freier Block (Wäldchen)
+  if (!blockOn(bi, bj)) return suburbRoad(x, z) ? 'asphalt' : 'grass'; // freier Block (Wäldchen) oder Quartier mit Gassen
   const cx = (node(bi) + node(bi + 1)) / 2, cz = (node(bj) + node(bj + 1)) / 2, bs = baseOf(bi + ',' + bj);
   if (S.parks.has(bi + ',' + bj)) {
     if (Math.abs(x - cx) < 22 && Math.abs(z - cz) < 22 && Math.abs(x - cx) > 1.6 && Math.abs(z - cz) > 1.6) return 'grass';
@@ -5934,6 +5938,7 @@ function paintWorld(g, P, K) {
     for (let k = 0; k < 4; k++) ring.push([x0 + L - L * k / 4, z0 + L]); for (let k = 0; k < 4; k++) ring.push([x0, z0 + L - L * k / 4]);
     g.fillStyle = '#3f7a33'; g.beginPath(); ring.forEach(([x, z], k) => { const q = P(x, z); k ? g.lineTo(q[0], q[1]) : g.moveTo(q[0], q[1]); }); g.fill();
   }
+  drawSuburbs(g, P, K); // Quartiere mit Gassen in der Stadt (über dem Grün)
   for (const key of S.parks) {
     const [bi, bj] = key.split(',').map(Number), x0 = node(bi) + 7, z0 = node(bj) + 7, L = BLOCK - 14, pts = [];
     for (let k = 0; k < 4; k++) pts.push([x0 + L * k / 4, z0]); for (let k = 0; k < 4; k++) pts.push([x0 + L, z0 + L * k / 4]);

@@ -21,6 +21,18 @@ export const SUBURBS = [
     { pts: [[-410, 222], [-424, 290], [-486, 330], [-566, 304]], end: true },
     { pts: [[-485, 208], [-500, 260]], end: true },
   ], specials: 'west' },
+  // Quartiere IN der Stadt (inCity): dort fehlen die Strassen des Gitters (MASK/ORGANIC in city.js), stattdessen Gassen in Kurven
+  { name: '🌳 Gartenquartier', inCity: true, rect: { x0: -318, x1: -134, z0: 134, z1: 252 }, roads: [
+    { pts: [[-192, 135], [-196, 160], [-214, 186], [-246, 200], [-280, 196], [-300, 218]], end: true },
+    { pts: [[-135, 192], [-160, 198], [-188, 190], [-214, 186]] },
+    { pts: [[-214, 186], [-206, 214], [-182, 232], [-158, 236]], end: true },
+  ] },
+  { name: '🌞 Sonnenhang', inCity: true, rect: { x0: 134, x1: 318, z0: -318, z1: -134 }, roads: [
+    { pts: [[135, -192], [168, -184], [204, -200], [238, -197], [263, -192]] },
+    { pts: [[192, -135], [196, -160], [204, -200]] },
+    { pts: [[204, -200], [196, -236], [170, -258], [150, -290]], end: true },
+    { pts: [[238, -197], [262, -232], [290, -248]], end: true },
+  ] },
 ];
 // Weiche Linie durch die Kontrollpunkte (Catmull-Rom), Punkte etwa alle 3 m
 function smooth(pts) {
@@ -132,7 +144,7 @@ export function buildSuburbs({ group, asphaltMat, lineMat, grassMat, paveMat, si
       const y = 0.03 + k * 0.003;
       group.add(new THREE.Mesh(ribbon(R.line, -W / 2, W / 2, y), asphaltMat));
       for (const [a, b] of [[W / 2, W / 2 + SIDE], [-W / 2 - SIDE, -W / 2]]) {
-        const m = new THREE.Mesh(ribbon(R.line, a, b, 0.12, (x, z) => ALL.some(o => o !== R && roadDist(x, z, o) < W / 2 + SIDE + 0.5) || Math.max(Math.abs(x), Math.abs(z)) < 270), paveMat);
+        const m = new THREE.Mesh(ribbon(R.line, a, b, 0.12, (x, z) => ALL.some(o => o !== R && roadDist(x, z, o) < W / 2 + SIDE + 0.5) || (!S.inCity && Math.max(Math.abs(x), Math.abs(z)) < 270)), paveMat);
         m.receiveShadow = true; group.add(m);
       }
       if (R.end) { const e = R.line[R.line.length - 1]; add(new THREE.CylinderGeometry(10, 10, 0.04, 32), asphaltMat, e[0], y + 0.01, e[1]); }
@@ -142,7 +154,7 @@ export function buildSuburbs({ group, asphaltMat, lineMat, grassMat, paveMat, si
         const p = R.line[i], o = R.line[i - 1]; s += Math.hypot(p[0] - o[0], p[1] - o[1]);
         if (s < 36) continue; s = 0;
         const dx = p[0] - o[0], dz = p[1] - o[1], l = Math.hypot(dx, dz) || 1, side = (i % 2 ? 1 : -1) * (W / 2 + 1.2), lx = p[0] - dz / l * side, lz = p[1] + dx / l * side;
-        if (Math.max(Math.abs(lx), Math.abs(lz)) < 275 || ALL.some(q => q !== R && roadDist(lx, lz, q) < W / 2 + 1)) continue;
+        if ((!S.inCity && Math.max(Math.abs(lx), Math.abs(lz)) < 275) || ALL.some(q => q !== R && roadDist(lx, lz, q) < W / 2 + 1)) continue;
         add(lampPole, poleM, lx, 2.75, lz);
         add(headG, lampHead, lx + dz / l * side * 0.12, 5.5, lz - dx / l * side * 0.12, -Math.atan2(dz, dx));
       }
@@ -177,7 +189,7 @@ export function buildSuburbs({ group, asphaltMat, lineMat, grassMat, paveMat, si
       const ls = sign('🛒 QUARTIERLADEN', '#f59e0b', '#111827', 10, 1.6); ls.position.set(441, 6.3, 5.8); group.add(ls);
       // Spielplatz im Ring der Strassen
       const pg = { x0: 560, x1: 600, z0: -150, z1: -120 }; reserved.push(pg); playground(580, -135);
-    } else {
+    } else if (S.specials === 'west') {
       const pg = { x0: -470, x1: -440, z0: 245, z1: 270 }; reserved.push(pg); playground(-455, 258);
       SUB_PLACES.push({ x: -455, z: 258, icon: '🛝' }, { x: -540, z: 268, icon: '🥐' });
       const bk = wallBox(14, 4.5, 10, walls[0], 8); bk.position.set(-540, 2.35, 268); group.add(bk); // Bäckerei
@@ -196,7 +208,7 @@ export function buildSuburbs({ group, asphaltMat, lineMat, grassMat, paveMat, si
         for (const side of [1, -1]) {
           const hx = p[0] - tz * side * 15, hz = p[1] + tx * side * 15;
           const B = S.rect;
-          if (hx < B.x0 + 8 || hx > B.x1 - 8 || hz < B.z0 + 8 || hz > B.z1 - 8 || Math.max(Math.abs(hx), Math.abs(hz)) < 300) continue;
+          if (hx < B.x0 + 8 || hx > B.x1 - 8 || hz < B.z0 + 8 || hz > B.z1 - 8 || (!S.inCity && Math.max(Math.abs(hx), Math.abs(hz)) < 300)) continue;
           if (roadNear(hx, hz, 12.5) || houses.some(h => Math.hypot(h.x - hx, h.z - hz) < 17) || reserved.some(b => boxDist(hx, hz, b) < 8)) continue;
           houses.push({ x: hx, z: hz }); SUB_HOUSES.push({ x: hx, z: hz });
           house(hx, hz, tz * side, -tx * side, tx * side, tz * side); // (nx, nz) = zur Strasse, (ax, az) = lokale x-Achse
