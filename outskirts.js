@@ -1,6 +1,8 @@
-// Gebiete ausserhalb des Stadtgitters (für city.js). Die Autobahn: ein Rechteck mit runden Ecken südlich der Stadt
-// (etwa 7,8 km; die Südgerade liegt auf einem eigenen Geländestück bis z ≈ 3300) mit vier
-// Spuren je Richtung, Mittelleitplanke und Leitplanken aussen, Zufahrt vom Südrand der Stadt. Tempolimit 140 (HW_LIMIT) –
+// Gebiete ausserhalb des Stadtgitters (für city.js). Die Autobahn: ein grosser Ring (Rechteck mit runden Ecken, etwa 12 km)
+// rund um die ganze Insel – Stadt, Pass, Hafen, Vororte, Flughafen, Skigebiet –, mit vier Spuren je Richtung,
+// Mittelleitplanke und Leitplanken aussen. Im Westen führt sie auf einer Schrägseilbrücke über die Hafenbucht (BRIDGE,
+// hwY = Höhe der Fahrbahn), Ausfahrten (EXITS) innen zu den Zubringern (ROADS: Flughafenstrasse mit Abzweig zur Stadt,
+// zum Flughafen und Skigebiet, Strasse zum Raumbahnhof). Tempolimit 140 (HW_LIMIT) –
 // an das sich Raser und Drängler aber nicht halten (die fahren gegen 200).
 // Auf der Autobahn fährt jeder anders: gemütliche Lastwagen rechts, normale Autos (überholen und gehen wieder rechts),
 // Drängler (kleben am Vordermann, blinken mit dem Licht, hupen) und Raser (sehr schnell, wechseln dauernd die Spur).
@@ -10,23 +12,39 @@ import * as THREE from 'three';
 import { buildCar, animateCar } from './cars3d.js';
 import { landDist } from './island.js';
 
-// Mittellinie = Rechteck (x ±half, z cz … cz + L) mit Abstand R rundherum: oben (Norden, bei der Stadt) nach Osten,
-// rechts nach Süden, unten nach Westen, links nach Norden; die Ecken sind Viertelkreise
-export const HW = { cz: 710, half: 790, R: 260, L: 1500 };
+// Mittellinie = Rechteck (x ±half, z cz … cz + L) mit Abstand R rundherum: oben (Norden, hinter dem Pass) nach Osten,
+// rechts nach Süden, unten nach Westen (Raststätte, Tunnel), links nach Norden (Brücke); die Ecken sind Viertelkreise
+export const HW = { cz: -1060, half: 1000, R: 260, L: 3270 };
 export const HW_LIMIT = 140;
 const Q = Math.PI * HW.R / 2; // Viertelkreis
-export const HW_LEN = 4 * HW.half + 2 * HW.L + 4 * Q; // ≈ 7794 m
+export const HW_LEN = 4 * HW.half + 2 * HW.L + 4 * Q; // ≈ 12,2 km
 const S_SOUTH = 2 * HW.half + 2 * Q + HW.L; // Anfang der Südgeraden
-const TOP = HW.cz - HW.R; // die obere Gerade liegt bei z = 450
-const RAMP = { x0: -7, x1: 7, z0: 250, z1: TOP - 6 }; // Zufahrt von der Strasse am Südrand der Stadt (z = 256)
-const GAP = { s0: HW.half - 16, s1: HW.half + 16 }; // Einfahrt: dort fehlen Mittel- und Aussenleitplanke
+const S_EAST = 2 * HW.half + Q, S_WEST = 4 * HW.half + 3 * Q + HW.L; // Anfang der Ost- und der Westseite
+const sEast = z => S_EAST + (z - HW.cz), sWest = z => S_WEST + (HW.cz + HW.L - z); // s an der Stelle z
 const EDGE = 17.6, MEDIAN = 0.4; // Leitplanken: aussen und in der Mitte
 const LANES = [14.1, 10.4, 6.6, 2.9]; // Spurmitte: ganz rechts … ganz links (Überholspur)
 const WIDE = EDGE + 1.2; // so weit reicht die Autobahn seitlich
-const inGap = s => s > GAP.s0 && s < GAP.s1;
-// Ausfahrt zum Flughafen: innen an der oberen Geraden (für Richtung +s = nach Osten), dort fehlt die innere Leitplanke
-const AIR_EXIT = { x0: 210, x1: 362, z0: HW.cz - HW.R + EDGE - 2, z1: HW.cz - HW.R + EDGE + 14 }; // dahinter: links Flughafen, rechts die Strasse zum Skigebiet
-const airGap = s => s > AIR_EXIT.x0 + HW.half && s < AIR_EXIT.x1 + HW.half;
+// Zubringer (zweispurig, 14 m breit, ohne Leitplanken): Flughafenstrasse quer durch den Süden (z = 462) mit der Zufahrt vom
+// Südrand der Stadt (RAMP), im Westen um die Brückenrampe herum zur Ausfahrt, im Osten zum Raumbahnhof
+const RAMP = { x0: -7, x1: 7, z0: 250, z1: 462 }; // von der Strasse am Südrand der Stadt (z = 256) zur Flughafenstrasse
+export const ROADS = [RAMP,
+  { x0: -1107, x1: 1243, z0: 455, z1: 469 }, // Flughafenstrasse (Flughafen, Skigebiet, Ausfahrt Ost)
+  { x0: -1107, x1: -1093, z0: 455, z1: 667 }, { x0: -1243, x1: -1093, z0: 653, z1: 667 }, // nach Westen zur Ausfahrt hinter der Brücke
+  { x0: 600, x1: 1243, z0: 293, z1: 307 }, { x0: 600, x1: 614, z0: 199, z1: 307 }, // Raumbahnhof, Ostquartier und Stadt (Strasse z = 192)
+];
+// Ausfahrten: innen (rechts für Richtung +s), dort fehlen innere Leitplanke und Mittelleitplanke
+export const EXITS = [
+  { s: sWest(660), name: '🏙️ Stadt · ⚓ Hafen · ✈️ Flughafen' },
+  { s: sEast(462), name: '✈️ Flughafen · ⛷️ Skigebiet · 🏙️ Stadt' },
+  { s: sEast(300), name: '🚀 Raumbahnhof · 🏡 Ostquartier' },
+];
+const exitGap = s => EXITS.some(e => Math.abs(((s - e.s) % HW_LEN + HW_LEN * 1.5) % HW_LEN - HW_LEN / 2) < 16);
+// Brücke über die Hafenbucht (Westseite, Wasser zwischen z = −700 und 380): Rampen hinauf, oben 13 m über dem Wasser
+// (die Fähre zur Diamantinsel fährt darunter durch)
+const BRIDGE = { a: sWest(620), b: sWest(425), c: sWest(-745), d: sWest(-940), h: 13 };
+const sm = (a, b, v) => { const t = Math.min(1, Math.max(0, (v - a) / (b - a))); return t * t * (3 - 2 * t); };
+export const hwY = s => s < BRIDGE.a || s > BRIDGE.d ? 0 : BRIDGE.h * sm(BRIDGE.a, BRIDGE.b, s) * (1 - sm(BRIDGE.c, BRIDGE.d, s));
+const onDeckS = s => s > BRIDGE.b - 30 && s < BRIDGE.c + 30; // über dem Wasser (Pfeiler statt Damm)
 
 const arcAt = (cx, cz, a) => ({ x: cx + HW.R * Math.cos(a), z: cz + HW.R * Math.sin(a), tx: -Math.sin(a), tz: Math.cos(a) });
 export function hwPoint(s) {
@@ -57,26 +75,27 @@ export function hwProject(x, z) {
   else s = dz > 0 ? 4 * h + 2 * Q + L + (a - Math.PI / 2) * R : 4 * h + 3 * Q + 2 * L + (a + Math.PI) * R;
   return { s, lat: R - Math.hypot(dx, dz) };
 }
-const at = (s, lat) => { const p = hwPoint(s); return { x: p.x - p.tz * lat, z: p.z + p.tx * lat, tx: p.tx, tz: p.tz }; };
+const at = (s, lat) => { const p = hwPoint(s); return { x: p.x - p.tz * lat, z: p.z + p.tx * lat, tx: p.tx, tz: p.tz, y: hwY(s) }; };
 
 // Abstand zum nächsten Gebiet hier draussen (negativ = drin): für flaches Gelände und keine Bäume auf der Strasse
 const boxDist = (x, z, b) => {
   const dx = Math.max(b.x0 - x, 0, x - b.x1), dz = Math.max(b.z0 - z, 0, z - b.z1);
   return dx || dz ? Math.hypot(dx, dz) : -Math.min(x - b.x0, b.x1 - x, z - b.z0, b.z1 - z);
 };
-export function outskirtsDist(x, z) { return Math.min(Math.abs(hwProject(x, z).lat) - WIDE, boxDist(x, z, RAMP), boxDist(x, z, REST_BOX)); }
+export function outskirtsDist(x, z) { let d = Math.min(Math.abs(hwProject(x, z).lat) - WIDE, boxDist(x, z, REST_BOX)); for (const b of ROADS) d = Math.min(d, boxDist(x, z, b)); return d; }
+export const onRoads = (x, z) => ROADS.some(b => x > b.x0 && x < b.x1 && z > b.z0 && z < b.z1);
+// Bodenhöhe auf der Autobahn (auf der Brücke oben)
+export function hwGround(x, z) { const p = hwProject(x, z); return Math.abs(p.lat) < WIDE ? hwY(p.s) : 0; }
 
 // Darf ein Fahrzeug (Radius r) hier draussen stehen? Leitplanken aussen und in der Mitte, Zufahrt mit Leitplanken
 export function hwDrivable(x, z, r = 1) {
-  const p = hwProject(x, z), gap = inGap(p.s) && p.s < 2 * HW.half;
+  const p = hwProject(x, z), gap = exitGap(p.s);
   if (rwBlocked(p.s, p.lat, r)) return false; // Baustelle
   if (Math.abs(p.lat) <= EDGE - r * 0.8 && (Math.abs(p.lat) >= MEDIAN + r * 0.6 || gap)) return true;
-  if (gap && p.lat < 0 && p.lat > -WIDE - 3) return true; // Einfahrt von der Zufahrt her
-  if (x > AIR_EXIT.x0 + r * 0.6 && x < AIR_EXIT.x1 - r * 0.6 && z > AIR_EXIT.z0 && z < AIR_EXIT.z1 - r * 0.6) return true; // Ausfahrt zum Flughafen
-  if (restDrivable(x, z, r)) return true;
-  return x > RAMP.x0 + r * 0.6 && x < RAMP.x1 - r * 0.6 && z > RAMP.z0 && z < RAMP.z1 + 8;
+  if (gap && p.lat > 0 && p.lat < WIDE + 4) return true; // Ausfahrt (innen)
+  return restDrivable(x, z, r) || onRoads(x, z); // Zubringer: immer offen (auch vor dem Flughafen-Tor)
 }
-export const onHighway = (x, z) => Math.abs(hwProject(x, z).lat) < WIDE || boxDist(x, z, RAMP) < 0;
+export const onHighway = (x, z) => Math.abs(hwProject(x, z).lat) < WIDE;
 
 // ---------- Bauen ----------
 function strip(points, mat) { // points: Reihen von [x, y, z, u, v] (zwei je Reihe) → Band
@@ -95,13 +114,13 @@ function strip(points, mat) { // points: Reihen von [x, y, z, u, v] (zwei je Rei
   return m;
 }
 // Band entlang des Ovals zwischen lat0 und lat1 in der Höhe y (bzw. senkrecht von y0 bis y1 bei lat0 = lat1)
-function ribbon(lat0, lat1, y0, y1, mat, keep = () => true, step = 4) {
+function ribbon(lat0, lat1, y0, y1, mat, keep = () => true, step = 4) { // folgt der Höhe der Fahrbahn (Brücke)
   const out = [];
   let run = [];
   for (let s = 0; s <= HW_LEN + 0.01; s += step) {
     if (!keep(s)) { if (run.length > 1) out.push(strip(run, mat)); run = []; continue; }
-    const a = at(s, lat0), b = at(s, lat1);
-    run.push([[a.x, y0, a.z, lat0 / 8, s / 8], [b.x, y1, b.z, lat1 / 8, s / 8]]);
+    const a = at(s, lat0), b = at(s, lat1), h = a.y;
+    run.push([[a.x, y0 + h, a.z, lat0 / 8, s / 8], [b.x, y1 + h, b.z, lat1 / 8, s / 8]]);
   }
   if (run.length > 1) out.push(strip(run, mat));
   return out;
@@ -350,48 +369,110 @@ export function buildHighway({ group, asphaltMat, lineMat, sign, grassMat }) {
   add(ribbon(-WIDE + 0.5, WIDE - 0.5, 0.03, 0.03, asphaltMat)); // Fahrbahn
   for (const l of [-EDGE + 0.7, -0.8, 0.8, EDGE - 0.7]) add(ribbon(l - 0.12, l + 0.12, 0.05, 0.05, lineMat)); // Randlinien
   for (const b of [4.75, 8.5, 12.25]) for (const l of [-b, b]) add(ribbon(l - 0.1, l + 0.1, 0.05, 0.05, lineMat, s => s % 18 < 6)); // gestrichelt
-  const noGap = s => !(inGap(s) && s < 2 * HW.half);
+  const noGap = s => !exitGap(s);
   for (const l of [-MEDIAN, MEDIAN]) add(ribbon(l, l, 0, 0.85, concrete, noGap)); // Mittelleitplanke (Beton)
   add(ribbon(-MEDIAN, MEDIAN, 0.85, 0.85, concrete, noGap));
-  const outer = s => noGap(s) && !restGap(s); // aussen fehlt die Leitplanke bei der Einfahrt und an der Raststätte
-  add(ribbon(EDGE, EDGE, 0.45, 0.8, rail, s => !airGap(s))); add(ribbon(-EDGE, -EDGE, 0.45, 0.8, rail, outer)); // Leitplanken aussen
+  add(ribbon(EDGE, EDGE, 0.45, 0.8, rail, noGap)); add(ribbon(-EDGE, -EDGE, 0.45, 0.8, rail, s => !restGap(s))); // Leitplanken (innen fehlt sie an den Ausfahrten)
   const posts = [];
-  for (let s = 0; s < HW_LEN; s += 4) for (const l of [EDGE + 0.1, -EDGE - 0.1]) if (l > 0 ? !airGap(s) : outer(s)) posts.push(at(s, l));
-  // Ausfahrt Flughafen: Belag und Schilder (Richtung Osten, innere Seite)
-  const ex = new THREE.Mesh(new THREE.PlaneGeometry(AIR_EXIT.x1 - AIR_EXIT.x0, AIR_EXIT.z1 - AIR_EXIT.z0).rotateX(-Math.PI / 2), asphaltMat);
-  ex.position.set((AIR_EXIT.x0 + AIR_EXIT.x1) / 2, 0.025, (AIR_EXIT.z0 + AIR_EXIT.z1) / 2); ex.receiveShadow = true; group.add(ex);
-  for (const [x, text] of [[-120, '✈️ FLUGHAFEN ⛷️ SKIGEBIET – Ausfahrt in 300 m'], [150, '✈️ ⛷️ Ausfahrt ↘ rechts raus']]) for (const side of [0, 1]) {
-    const sg = sign(text, '#1d4ed8', '#ffffff', 10, 1.5); sg.position.set(x + side * 0.05, 4.5, HW.cz - HW.R + EDGE + 1.6); sg.rotation.y = -Math.PI / 2 + side * Math.PI; group.add(sg);
+  for (let s = 0; s < HW_LEN; s += 4) for (const l of [EDGE + 0.1, -EDGE - 0.1]) if (l > 0 ? noGap(s) : !restGap(s)) posts.push(at(s, l));
+  // Ausfahrten: Belag bis zum Zubringer, Schilder davor (Richtung +s, innen) und ein Schild am Zubringer
+  add(ribbon(EDGE - 1, WIDE + 6, 0.025, 0.025, asphaltMat, s => EXITS.some(e => Math.abs(s - e.s) < 22)));
+  for (const e of EXITS) {
+    for (const [ds, txt] of [[-320, e.name + ' – Ausfahrt in 300 m'], [-110, '↘ Ausfahrt: ' + e.name]]) for (const side of [0, 1]) {
+      const p = at(e.s + ds, EDGE + 1.6), sg = sign(txt, '#1d4ed8', '#ffffff', 10, 1.5);
+      sg.position.set(p.x, 4.5 + p.y, p.z); sg.rotation.y = -Math.atan2(p.tz, p.tx) - Math.PI / 2 + side * Math.PI; group.add(sg);
+    }
   }
-  for (const side of [0, 1]) { const sg = sign('✈️ Flughafen: auf der Autobahn nach Osten (links)', '#1d4ed8', '#ffffff', 11, 1.4); sg.position.set(-9.5, 4, RAMP.z1 - 60 + side * 0.05); sg.rotation.y = side * Math.PI; group.add(sg); }
   buildRest(group, { asphaltMat, lineMat, sign, grassMat, rail, posts });
-  // Zufahrt
-  const ramp = new THREE.Mesh(new THREE.PlaneGeometry(RAMP.x1 - RAMP.x0, RAMP.z1 + 4 - RAMP.z0).rotateX(-Math.PI / 2), asphaltMat);
-  ramp.position.set(0, 0.03, (RAMP.z0 + RAMP.z1 + 4) / 2); ramp.receiveShadow = true;
-  group.add(ramp);
-  for (let z = RAMP.z0 + 16; z < RAMP.z1 - 2; z += 12) { const d = new THREE.Mesh(new THREE.PlaneGeometry(0.2, 5).rotateX(-Math.PI / 2), lineMat); d.position.set(0, 0.05, z); group.add(d); }
-  for (const x of [RAMP.x0 - 0.4, RAMP.x1 + 0.4]) {
-    const r = new THREE.Mesh(new THREE.PlaneGeometry(RAMP.z1 - RAMP.z0 - 22, 0.35).rotateY(Math.PI / 2), rail);
-    r.position.set(x, 0.62, (RAMP.z0 + 20 + RAMP.z1 - 2) / 2); group.add(r);
-    for (let z = RAMP.z0 + 20; z < RAMP.z1 - 2; z += 4) posts.push({ x, z });
+  buildBridge(group, { grassMat });
+  // Zubringer: Belag, gestrichelte Mittellinie
+  for (const b of ROADS) {
+    const w = b.x1 - b.x0, d = b.z1 - b.z0, road = new THREE.Mesh(new THREE.PlaneGeometry(w, d).rotateX(-Math.PI / 2), asphaltMat);
+    road.position.set((b.x0 + b.x1) / 2, 0.03, (b.z0 + b.z1) / 2); road.receiveShadow = true; group.add(road);
+    const along = w > d, n = Math.floor((along ? w : d) / 12);
+    for (let k = 1; k < n; k++) {
+      const dash = new THREE.Mesh(new THREE.PlaneGeometry(along ? 5 : 0.2, along ? 0.2 : 5).rotateX(-Math.PI / 2), lineMat);
+      dash.position.set(along ? b.x0 + k * 12 : (b.x0 + b.x1) / 2, 0.05, along ? (b.z0 + b.z1) / 2 : b.z0 + k * 12); group.add(dash);
+    }
   }
   const postM = new THREE.InstancedMesh(new THREE.BoxGeometry(0.12, 0.8, 0.12), rail, posts.length), m4 = new THREE.Matrix4();
-  posts.forEach((p, k) => postM.setMatrixAt(k, m4.makeTranslation(p.x, 0.4, p.z)));
+  posts.forEach((p, k) => postM.setMatrixAt(k, m4.makeTranslation(p.x, 0.4 + (p.y || 0), p.z)));
   group.add(postM);
-  // Schilder: Autobahn (blau) am Anfang der Zufahrt, Tempo 140 vor der Einfahrt
-  for (const side of [0, 1]) {
-    const s1 = sign('🛣️ AUTOBAHN', '#1d4ed8', '#ffffff', 8, 1.6);
-    s1.position.set(9.5, 4, RAMP.z0 + 22 + side * 0.05); s1.rotation.y = side * Math.PI; group.add(s1);
+  // Wegweiser an den Zubringern
+  const guide = [[0, 300, 0, '🛣️ AUTOBAHN · ✈️ FLUGHAFEN · ⛷️ SKI'], [-1100, 560, 0, '🛣️ AUTOBAHN ⬆️ · 🏙️ STADT ⬇️'],
+    [1200, 476, Math.PI / 2, '🛣️ AUTOBAHN ➡️ · ✈️ FLUGHAFEN ⬅️'], [640, 315, Math.PI / 2, '🛣️ AUTOBAHN ➡️ · 🚀 RAUMBAHNHOF ⬆️']];
+  for (const [x, z, rot, txt] of guide) for (const side of [0, 1]) {
+    const sg = sign(txt, '#1d4ed8', '#ffffff', 10, 1.5); sg.position.set(x + (rot ? side * 0.05 : 9.5), 4, z + (rot ? 0 : side * 0.05)); sg.rotation.y = rot + side * Math.PI; group.add(sg);
   }
+  // Tempo 140 nach jeder Ausfahrt (für wer hineinfährt)
   const c = document.createElement('canvas'); c.width = c.height = 128;
   const g = c.getContext('2d');
   g.fillStyle = '#fff'; g.beginPath(); g.arc(64, 64, 60, 0, Math.PI * 2); g.fill();
   g.strokeStyle = '#d61f1f'; g.lineWidth = 14; g.beginPath(); g.arc(64, 64, 52, 0, Math.PI * 2); g.stroke();
   g.fillStyle = '#111'; g.font = 'bold 44px system-ui, sans-serif'; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText(String(HW_LIMIT), 64, 67);
   const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace;
-  const end = new THREE.Mesh(new THREE.CircleGeometry(0.6, 24), new THREE.MeshStandardMaterial({ map: t, side: THREE.DoubleSide }));
-  end.position.set(8.4, 2.4, RAMP.z1 - 30); end.rotation.y = Math.PI; group.add(end);
-  const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.05, 2.4, 6), rail); pole.position.set(8.4, 1.2, RAMP.z1 - 29.95); group.add(pole);
+  const limMat = new THREE.MeshStandardMaterial({ map: t, side: THREE.DoubleSide });
+  for (const e of EXITS) {
+    const p = at(e.s + 60, EDGE + 1.2), end = new THREE.Mesh(new THREE.CircleGeometry(0.6, 24), limMat);
+    end.position.set(p.x, 2.4, p.z); end.rotation.y = -Math.atan2(p.tz, p.tx) - Math.PI / 2; group.add(end);
+    const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.05, 2.4, 6), rail); pole.position.set(p.x + p.tx * 0.05, 1.2, p.z + p.tz * 0.05); group.add(pole);
+  }
+}
+
+// ---------- Brücke über die Hafenbucht ----------
+// Rampen auf einem Damm (Grasböschung, Stützmauer), über dem Wasser eine Platte auf Pfeilern; in der Mitte zwei Pylone
+// mit Schrägseilen. Unter dem Durchgang der Fähre (FERRY_GAP) stehen keine Pfeiler.
+const FERRY_GAP = { z0: -110, z1: 20 };
+function buildBridge(group, { grassMat }) {
+  const deckMat = new THREE.MeshStandardMaterial({ color: 0xa3a8b0, roughness: 0.85, side: THREE.DoubleSide });
+  const ramp = s => s > BRIDGE.a && s < BRIDGE.d && !onDeckS(s), deck = onDeckS;
+  // Damm: Böschung von der Fahrbahnkante hinunter zum Gelände
+  for (const sg of [-1, 1]) {
+    let run = [];
+    const flush = () => { if (run.length > 1) group.add(strip(sg > 0 ? run : run.map(r => [r[1], r[0]]), grassMat)); run = []; };
+    for (let s = BRIDGE.a; s <= BRIDGE.d; s += 4) {
+      if (!ramp(s)) { flush(); continue; }
+      const h = hwY(s), a = at(s, sg * WIDE), b = at(s, sg * (WIDE + 1.8 * h + 1));
+      run.push([[a.x, h, a.z, 0, s / 8], [b.x, -0.6, b.z, h / 4, s / 8]]);
+    }
+    flush();
+  }
+  for (const s of [BRIDGE.b - 30, BRIDGE.c + 30]) { // Widerlager: Mauer am Ende des Damms
+    const p = at(s, 0), h = hwY(s), w = new THREE.Mesh(new THREE.BoxGeometry(1.5, h + 8, 2 * WIDE + 1), deckMat);
+    w.position.set(p.x, (h - 8) / 2, p.z); w.rotation.y = -Math.atan2(p.tz, p.tx); w.castShadow = true; group.add(w);
+  }
+  // Platte: Unterseite und Seitenblende über dem Wasser
+  for (const m of ribbon(-WIDE - 0.4, WIDE + 0.4, -1.4, -1.4, deckMat, deck, 6)) group.add(m);
+  for (const l of [-WIDE - 0.4, WIDE + 0.4]) for (const m of ribbon(l, l, -1.4, 0.9, deckMat, deck, 6)) group.add(m);
+  // Pfeiler (nicht im Weg der Fähre)
+  const pil = [];
+  for (let s = BRIDGE.b - 20; s <= BRIDGE.c + 20; s += 48) {
+    const p = at(s, 0);
+    if (p.z > FERRY_GAP.z0 && p.z < FERRY_GAP.z1) continue;
+    pil.push(p);
+  }
+  const PH = BRIDGE.h + 34, pm = new THREE.InstancedMesh(new THREE.BoxGeometry(5, PH, 2.6), deckMat, pil.length * 2), m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), one = new THREE.Vector3(1, 1, 1);
+  pil.forEach((p, k) => { for (const sg of [0, 1]) { pm.setMatrixAt(k * 2 + sg, m4.compose(new THREE.Vector3(p.x - p.tz * (sg ? 9 : -9), BRIDGE.h - 1.4 - PH / 2, p.z + p.tx * (sg ? 9 : -9)), q.setFromAxisAngle(new THREE.Vector3(0, 1, 0), -Math.atan2(p.tz, p.tx)), one)); } });
+  pm.castShadow = true; group.add(pm);
+  // Pylone mit Schrägseilen in der Mitte
+  const mid = (BRIDGE.b + BRIDGE.c) / 2, white = new THREE.MeshStandardMaterial({ color: 0xf1f5f9, roughness: 0.5 }), cable = new THREE.MeshStandardMaterial({ color: 0xe5e7eb, metalness: 0.6, roughness: 0.3 });
+  const TH = 52, cab = [];
+  for (const ds of [-260, 260]) {
+    const sc = mid + ds;
+    for (const sg of [-1, 1]) {
+      const p = at(sc, sg * (WIDE + 1.6)), t = new THREE.Mesh(new THREE.BoxGeometry(2.4, TH + 34, 2.4), white);
+      t.position.set(p.x, BRIDGE.h + TH / 2 - 17, p.z); t.castShadow = true; group.add(t);
+      for (let k = 1; k <= 7; k++) for (const dir of [-1, 1]) { // Seile fächerförmig zur Fahrbahnkante
+        const e = at(sc + dir * k * 26, sg * (WIDE + 0.2));
+        cab.push([new THREE.Vector3(p.x, BRIDGE.h + TH - 6 + k * 0.6, p.z), new THREE.Vector3(e.x, BRIDGE.h + 0.9, e.z)]);
+      }
+    }
+    const a = at(sc, -WIDE - 1.6), b = at(sc, WIDE + 1.6), beam = new THREE.Mesh(new THREE.BoxGeometry(0.1, 2.2, 2 * WIDE + 3.2), white); // Querbalken oben
+    beam.position.set((a.x + b.x) / 2, BRIDGE.h + TH - 1, (a.z + b.z) / 2); beam.rotation.y = -Math.atan2(a.tz, a.tx); beam.scale.x = 20; group.add(beam);
+  }
+  const cm = new THREE.InstancedMesh(new THREE.CylinderGeometry(0.09, 0.09, 1, 5), cable, cab.length), up = new THREE.Vector3(0, 1, 0), d = new THREE.Vector3();
+  cab.forEach(([A, B], k) => { d.subVectors(B, A); const len = d.length(); cm.setMatrixAt(k, m4.compose(A.clone().add(B).multiplyScalar(0.5), q.setFromUnitVectors(up, d.normalize()), new THREE.Vector3(1, len, 1))); });
+  group.add(cm);
 }
 
 // ---------- Verkehr ----------
@@ -424,7 +505,7 @@ function newCar(type, dir, s, lane, extra = false) {
     gapT: GAPT[type], laneT: Math.random() * 2, flashT: 0, honkT: 0, x: 0, z: 0, mesh: null, col: pick(COLORS), extra, ph: Math.floor(Math.random() * 3) };
 }
 
-export function makeHighwayTraffic(scene, kinds, n = 260) {
+export function makeHighwayTraffic(scene, kinds, n = Math.round(HW_LEN / 30)) { // etwa gleich dicht wie früher (260 auf 7,8 km)
   const cars = [];
   for (let k = 0; k < n; k++) {
     const type = randType(), dir = k % 2 ? -1 : 1;
@@ -700,10 +781,10 @@ export function stepHighway(cars, dt, t, me, cam, hooks) {
   if (A) { // Rauch und Warndreieck
     const w = A.wrecks[0], { smoke, tri } = cars.props;
     smoke.visible = tri.visible = true;
-    smoke.position.set(w.x, 0, w.z);
+    smoke.position.set(w.x, hwY(A.s || 0), w.z);
     smoke.children.forEach((b, k) => { const ph = (t * 0.35 + k / smoke.children.length) % 1; b.position.set(Math.sin(k * 2.4) * 0.9, 1 + ph * 8, Math.cos(k * 2.4) * 0.9); b.scale.setScalar(0.5 + ph * 2.4); });
     const p = at(A.s - A.dir * 90, A.dir * 16.9);
-    tri.position.set(p.x, 0.45, p.z); tri.rotation.y = -Math.atan2(p.tz, p.tx) + Math.PI / 2;
+    tri.position.set(p.x, 0.45 + p.y, p.z); tri.rotation.y = -Math.atan2(p.tz, p.tx) + Math.PI / 2;
   }
   const see = me.see || 240, near = Math.min(150, see * 0.55), near2 = near * near, rel2 = (near + 25) ** 2, see2 = see * see;
   const { body, cab } = cars.far;
@@ -840,10 +921,10 @@ export function stepHighway(cars, dt, t, me, cam, hooks) {
   cars.meshed.length = 0;
   for (const c of chosen) { if (!c.mesh) c.mesh = cars.pool[c.type].pop(); cars.meshed.push(c); }
   for (const c of vis) {
-    const m = c.mesh, yaw = c.yaw;
+    const m = c.mesh, yaw = c.yaw, cy = c.rest ? 0 : hwY(c.s); // auf der Brücke oben
     if (m) {
       m.visible = true;
-      m.position.set(c.x, 0, c.z);
+      m.position.set(c.x, cy, c.z);
       m.rotation.y = yaw;
       for (const w of m.userData.wheels) w.rotation.z -= c.speed * c.cdt / 0.35;
       if (m.userData.flash) m.userData.flash.visible = c.flashT > 0 && Math.floor(t * 8) % 2 === 0;
@@ -851,11 +932,11 @@ export function stepHighway(cars, dt, t, me, cam, hooks) {
     } else if (nFar < MAXI) { // Klotz
       const truck = c.type === 'slow', co = Math.cos(yaw), si = Math.sin(yaw);
       dummy.rotation.set(0, yaw, 0);
-      dummy.position.set(c.x - (truck ? co * 0.9 : 0), 0.3, c.z + (truck ? si * 0.9 : 0));
+      dummy.position.set(c.x - (truck ? co * 0.9 : 0), 0.3 + cy, c.z + (truck ? si * 0.9 : 0));
       dummy.scale.set(truck ? c.len * 0.75 : c.len, truck ? 2.6 : 0.8, truck ? 2.3 : 1.85);
       dummy.updateMatrix(); body.setMatrixAt(nFar, dummy.matrix); body.setColorAt(nFar, tmpCol.setHex(c.col));
       const off = truck ? c.len * 0.38 : -c.len * 0.06;
-      dummy.position.set(c.x + co * off, truck ? 0.3 : 1.1, c.z - si * off);
+      dummy.position.set(c.x + co * off, (truck ? 0.3 : 1.1) + cy, c.z - si * off);
       dummy.scale.set(truck ? c.len * 0.2 : c.len * 0.5, truck ? 2.2 : 0.62, truck ? 2.2 : 1.6);
       dummy.updateMatrix(); cab.setMatrixAt(nFar, dummy.matrix);
       nFar++;
@@ -874,7 +955,7 @@ export function stepHighway(cars, dt, t, me, cam, hooks) {
 // Flughafen im Osten mit Piste, Terminal, Tower und Flugzeugen (eines startet immer wieder).
 export const AREAS = {
   harbor: { need: 5, name: '⚓ Hafen', rect: { x0: -700, x1: -340, z0: -150, z1: 110 }, road: { x0: -350, x1: -256, z0: -7, z1: 7 }, gate: { x: -334, z: 0 } },
-  // Flughafen: im Autobahn-Ring (Ausfahrt AIR_EXIT auf der inneren Seite der oberen Geraden, Richtung Osten)
+  // Flughafen: an der Flughafenstrasse (ROADS), Zufahrt von Norden
   airport: { need: 12, name: '✈️ Flughafen', rect: { x0: -330, x1: 330, z0: 520, z1: 840 }, road: { x0: 296, x1: 310, z0: 470, z1: 525 }, gate: { x: 303, z: 500, rot: Math.PI / 2 } },
 };
 const WATER = { x0: -1100, x1: -702, z0: -700, z1: 380, y: -4 }; // Hafenbecken (der Boden liegt tiefer), nicht bis zur Autobahn
@@ -1178,7 +1259,6 @@ export function slideInside(x, z, r, keys) {
     const q = passNearest(x, z), max = PASS_W - r * 0.5 - 0.05;
     if (q.d < max + 4) { const k = max / (q.d || 1); return { x: q.p.x + (x - q.p.x) * k, z: q.p.z + (z - q.p.z) * k }; }
   }
-  if (z > RAMP.z0 && z < RAMP.z1 && Math.abs(x) < RAMP.x1 + 0.5) return { x: Math.max(RAMP.x0 + r * 0.6 + 0.05, Math.min(RAMP.x1 - r * 0.6 - 0.05, x)), z };
   if (inRestZone(x, z)) return null; // Raststätte: einfach zurück an die letzte gute Stelle
   const p = hwProject(x, z);
   if (Math.abs(p.lat) < EDGE + 0.6) { // nur wer auf der Fahrbahn war (von aussen nicht durch die Leitplanke)
@@ -1197,7 +1277,7 @@ export function slideInside(x, z, r, keys) {
 export function offroadWhy(x, z, r, keys) {
   if (Math.abs(x) > 8000 || z < -8000 || z > 9000) return 'world';
   if (inBox(x, z, WATER, -r) || landDist(x, z) < r + 2) return 'water'; // Bucht und Meer um beide Inseln
-  if (Math.abs(hwProject(x, z).lat) < WIDE + r || boxDist(x, z, REST_BOX) < r || boxDist(x, z, RAMP) < r + 1.5) return 'highway';
+  if (Math.abs(hwProject(x, z).lat) < WIDE + r || boxDist(x, z, REST_BOX) < r) return 'highway';
   for (const A of Object.values(AREAS)) if (keys < A.need && (boxDist(x, z, A.rect) < r + 2 || boxDist(x, z, A.road) < r + 2)) return 'locked:' + A.name + ':' + A.need;
   if (inRegion(x, z) && keys < PASS_AREA.need) return 'locked:' + PASS_AREA.name + ':' + PASS_AREA.need;
   return '';

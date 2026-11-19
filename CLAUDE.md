@@ -86,21 +86,22 @@ Browser-Spiel ohne Build: `index.html` + `game.js` (Spiellogik, Menüs und 2D-Ze
   bleibt das bisherige stehen, wo man ausgestiegen ist; aus der eigenen Base jedes Auto beliebig oft (`switchCar(v, true)`).
   Weit weg erst gebaut, wenn man näher kommt (`stepParked`); Zusammenstösse über zwei Kreise in `S.round`; Base-Knopf 🧹 holt alle zurück.
   Karte: zu Fuss die Spielfigur (`mapPerson`), dein Auto und geparkte Autos als kleine Autos (`mapCar`).
-- `outskirts.js`: Gebiete ausserhalb des Stadtgitters (für `city.js`): Autobahn im Süden (Rechteck mit runden Ecken, 7,8 km, vier Spuren je Richtung; die Südgerade liegt auf
-  einem zweiten Geländestück) mit Tempolimit 140, Raststätte an der Südgeraden (`REST`, Tanken über `REST_ZONES`; Autos fahren hinein, parkieren und wieder weg:
+- `outskirts.js`: Gebiete ausserhalb des Stadtgitters (für `city.js`): Autobahn als grosser Ring um die ganze Insel (`HW`, Rechteck mit runden Ecken,
+  12,2 km, vier Spuren je Richtung) mit Tempolimit 140; im Westen Schrägseilbrücke über die Hafenbucht (`BRIDGE`, Fahrbahnhöhe `hwY(s)`,
+  `hwGround`; Fähre fährt darunter durch, `FERRY_GAP` ohne Pfeiler). Ausfahrten innen (`EXITS`, `exitGap`) zu den Zubringern `ROADS`
+  (Flughafenstrasse z = 462 mit Zufahrt `RAMP` vom Südrand der Stadt, Flughafen und Skistrasse; Strasse zum Raumbahnhof), Raststätte an der Südgeraden (`REST`, Tanken über `REST_ZONES`; Autos fahren hinein, parkieren und wieder weg:
   `stepRestCar`, Wege mit `makePath`/`pathAt`), lange Staus
   (`startJam`, Zusatzautos verschwinden wieder). Viele Autos: nur die nächsten bekommen ein echtes 3D-Auto aus einem Vorrat
   (`POOL`), die anderen sind Klötze (InstancedMesh); weit weg nur jedes dritte Bild gerechnet (Verkehr mit
   Lastwagen, Normalen, Dränglern, Rasern; Tunnel mit Hügel, Baustelle mit Leitkegeln, Polizei jagt Raser,
   „Knapp vorbei“-Bonus über `hooks.nearMiss`; Unfälle mit Stau und Rettungsgasse: `startAccident`, Retter `cars.rescue`,
   wer die Gasse blockiert, bekommt über `hooks.gasse` einen Strafzettel), Hafen (Westen, ab 5 goldenen Schlüsseln), Flughafen (Osten, ab 12) und
-  Passstrasse mit Höhe (Norden, ab 20; `passGround` = Bodenhöhe, `passTerrain` formt das Gelände). Der Flughafen liegt im Autobahn-Ring
-  (Ausfahrt `AIR_EXIT` innen an der oberen Geraden, Richtung Osten). In der Stadt:
+  Passstrasse mit Höhe (Norden, ab 20; `passGround` = Bodenhöhe, `passTerrain` formt das Gelände). Der Flughafen liegt an der Flughafenstrasse. In der Stadt:
   Überraschungen (Feuer, Banküberfall, Notfall → Spital), 30 goldene Schlüssel (Spielstand `autoRetterKeys`).
 - `country.js`: neue Gebiete draussen (für `city.js`): Bauernhof auf der Alp am Pass (`ALP` in outskirts.js: ebene Wiese;
   Matsch, Kühe, Heuballen mit dem Traktor, Traktor zum Einsteigen: `city.rides`), Strand im Westen (Promenade, Sand, Steg mit
   Boot: `city.boat`), Skigebiet Schneeberg im Autobahn-Ring (`SKI`/`skiH`: Berg, `LIFTS` mit Sesseln, `PISTES`, Skidorf;
-  Strasse von der Flughafen-Ausfahrt), Raumbahnhof `SPACE`. Schnee auf der Passstrasse ab Höhe 55.
+  Strasse von der Flughafenstrasse), Raumbahnhof `SPACE`. Schnee auf der Passstrasse ab Höhe 55.
   Böden: `countrySurface` ('gravel', 'mud', 'sand', 'snow'), Wirkung in `stepMe` (`SURF`, `SURF_GRIP`).
 - `moon.js`: der Mond (für `city.js`, bei MOON weit weg): Krater (`moonGround`), Erde und Sterne, Mondbasis, Landefähre,
   Schweizer Fahne, Mondsteine (`stepMoon`), Mond-Buggy (`MOON_BUGGY` in `city.rides`). Hin und zurück mit der Mondrakete

@@ -15,7 +15,7 @@ import { buildMonaco, monGround, monRoad, inMonaco, nearMonPier, MON_BOAT, MON_P
 import { buildSuburbs, suburbDist, inSuburb, suburbRoad, drawSuburbs, SUBURBS, SUB_PLACES } from './suburbs.js';
 import { loadLook, makeLook, skyEnvironment, lookWanted, setLookWanted } from './look.js';
 import { makeChat } from './chat.js';
-import { buildHighway, outskirtsDist, hwDrivable, onHighway, makeHighwayTraffic, stepHighway, hwProject, hwPoint, HW, HW_LEN, HW_LIMIT, REST, REST_ZONES, makePath, pathAt, turnTo,
+import { buildHighway, outskirtsDist, hwDrivable, onHighway, hwGround, onRoads, ROADS, EXITS, makeHighwayTraffic, stepHighway, hwProject, hwPoint, HW, HW_LEN, HW_LIMIT, REST, REST_ZONES, makePath, pathAt, turnTo,
   AREAS, buildAreas, stepAreas, groundShape, areaDrivable, inArea, lockedGate, offroadWhy,
   PASS_AREA, buildPass, passGround, passDrivable, onPass, passTerrain, passNearest, inPassRegion, passPoints, SUMMIT, slideInside, waveFlag } from './outskirts.js';
 import { makeEffects, camView, cockpit, COCKPIT, CAM_NAMES, FLY_HTML, FLY_KEYS, flyCss, flyHelp, flyToggle, flyStep } from './fx.js';
@@ -602,11 +602,11 @@ function buildWorld() {
     if (y < SEA_Y) { c.lerp(bedC, smoothstep(SEA_Y, SEA_Y - 6, y)); c.lerp(deepC, smoothstep(SEA_Y - 8, SEA_Y - 26, y)); } // Meeresboden: flach hell, tief dunkel
   };
   // Gelände in zwei grossen Stücken (20-m-Raster wie groundAt): Insel mit Küste und Meeresboden rundherum
-  const land = terrain({ size: 3400, segments: 170, center: [0, 200], height, detail: grassDetail, detailRepeat: 400, color: landColor });
+  const land = terrain({ size: 3400, segments: 170, center: [0, 0], height, detail: grassDetail, detailRepeat: 400, color: landColor });
   land.material.normalScale.set(0.9, 0.9); // Wiesen mit sichtbaren Halmen (plastischer)
   scene.add(land);
   // Süden: ein zweites Stück Gelände für die lange Autobahn und die Raststätte (gleiches Material, gleiches Raster)
-  const landS = terrain({ size: 3400, segments: 170, center: [0, 3600], height, detail: grassDetail, detailRepeat: 400, color: landColor });
+  const landS = terrain({ size: 3400, segments: 170, center: [0, 3400], height, detail: grassDetail, detailRepeat: 400, color: landColor });
   landS.material.dispose(); landS.material = land.material;
   scene.add(landS);
   // Meer bis zum Horizont (der Dunst verdeckt den Rand)
@@ -3288,7 +3288,8 @@ function groundAt(x, z) {
   if (Math.abs(x) <= HALF + 20 && Math.abs(z) <= HALF + 20) return 0;
   if (inPassRegion(x, z)) return Math.max(0, S.country.ground(x, z)); // auch knapp am Stadtrand: dort liegt schon das Pass-Gelände
   if (Math.abs(x) <= LIMIT && Math.abs(z) <= LIMIT) return 0;
-  if (onHighway(x, z) || inArea(x, z) || inCountry(x, z) || inSuburb(x, z)) return 0;
+  if (onHighway(x, z)) return hwGround(x, z); // auf der Brücke oben
+  if (onRoads(x, z) || inArea(x, z) || inCountry(x, z) || inSuburb(x, z)) return 0;
   const gx = (x + 1100) / 20, gz = (z + 1100) / 20, i = Math.floor(gx), j = Math.floor(gz), fx = gx - i, fz = gz - j;
   const a = landAt(i, j), b = landAt(i, j + 1), c = landAt(i + 1, j + 1), d = landAt(i + 1, j);
   return Math.max(0, fx + fz <= 1 ? a + (d - a) * fx + (b - a) * fz : c + (b - c) * (1 - fx) + (d - c) * (1 - fz));
@@ -3302,7 +3303,7 @@ function stepDrift(dt) {
   const onRoad = surfaceAt(me.pos.x, me.pos.z) === 'asphalt';
   const ni = node(Math.round(me.pos.x / BLOCK + N / 2)), nj = node(Math.round(me.pos.z / BLOCK + N / 2));
   const inCity = Math.abs(me.pos.x) < HALF + ROAD / 2 && Math.abs(me.pos.z) < HALF + ROAD / 2;
-  const y = !inCity ? 0.01 : Math.abs(me.pos.x - ni) < ROAD / 2 || Math.abs(me.pos.z - nj) < ROAD / 2 ? 0.035 : 0.175;
+  const y = !inCity ? groundAt(me.pos.x, me.pos.z) + 0.01 : Math.abs(me.pos.x - ni) < ROAD / 2 || Math.abs(me.pos.z - nj) < ROAD / 2 ? 0.035 : 0.175;
   const back = me.len * 0.32, side = 0.8;
   for (const k of [0, 1]) {
     const sx = k ? 1 : -1, wx = me.pos.x - fx * back - fz * side * sx, wz = me.pos.z - fz * back + fx * side * sx;
@@ -4624,7 +4625,7 @@ function keySpots() {
     const [bi, bj] = parks[k % parks.length].split(',').map(Number), cx = (node(bi) + node(bi + 1)) / 2, cz = (node(bj) + node(bj + 1)) / 2;
     spots.push({ x: cx + (k % 2 ? 14 : -14), y: 1.2, z: cz + (k % 3 ? 14 : -14) });
   }
-  for (const [s, lat] of [[300, 16], [1500, -16], [2600, 16], [3500, -16], [4400, 16]]) { // Autobahn: auf dem Pannenstreifen
+  for (const [s, lat] of [[900, 16], [1500, -16], [2600, 16], [3500, -16], [4400, 16]]) { // Autobahn: auf dem Pannenstreifen
     const p = hwPoint(s);
     spots.push({ x: p.x - p.tz * lat, y: 1.2, z: p.z + p.tx * lat });
   }
@@ -5359,7 +5360,7 @@ function surfaceAt(x, z) {
   if (city && city.boat && !city.walk) return 'water';
   if (inMoon(x, z)) return 'moon';
   if (Math.abs(x) > HALF + ROAD / 2 || Math.abs(z) > HALF + ROAD / 2) {
-    if (onHighway(x, z) || inArea(x, z) || suburbRoad(x, z) || monRoad(x, z) || onDeck(x, z)) return 'asphalt';
+    if (onHighway(x, z) || onRoads(x, z) || inArea(x, z) || suburbRoad(x, z) || monRoad(x, z) || onDeck(x, z)) return 'asphalt';
     return countrySurface(x, z) || (onPass(x, z) ? 'asphalt' : 'grass');
   }
   const bi = Math.floor(x / BLOCK + N / 2), bj = Math.floor(z / BLOCK + N / 2);
@@ -5744,7 +5745,8 @@ function paintWorld(g, P, K) {
   line([[263, 192], [SPACE.x, SPACE.z]], '#cbd5e1', 14 * K); { const [x, y] = P(SPACE.x, SPACE.z); g.fillStyle = '#cbd5e1'; g.beginPath(); g.arc(x, y, SPACE.r * K, 0, 7); g.fill(); }
   const hw = []; for (let s = 0; s <= HW_LEN; s += 30) { const p = hwPoint(s); hw.push([p.x, p.z]); }
   line(hw, '#e2e5ea', Math.max(3, 30 * K)); line(hw, '#facc15', 1); // Autobahn mit Mittellinie
-  line([[0, HALF], [0, HW.cz - HW.R]], '#d4d8de', 14 * K);
+  for (const b of ROADS) rect(b, '#d4d8de'); // Zubringer (Flughafenstrasse, Raumbahnhof)
+  for (const e of EXITS) { const p = hwPoint(e.s), [x, y] = P(p.x - p.tz * 24, p.z + p.tx * 24); g.fillStyle = '#1d4ed8'; g.beginPath(); g.arc(x, y, Math.max(3, 12 * K), 0, 7); g.fill(); } // Ausfahrten
   rect({ x0: REST.x - 150, x1: REST.x + 150, z0: REST.z + 20, z1: REST.z + 130 }, '#f59e0b'); // Raststätte
   drawSuburbs(g, P, K); // Vororte
   // Diamantinsel: Fährlinie, Strassen, Villen, Kai, Piste, Palast
@@ -5859,7 +5861,7 @@ function mapCar(g, x, y, h, col, k = 1) {
 function mapLabels() {
   const keys = city.keys.size, lock = (name, need) => (keys >= need ? name : '🔒 ' + name + ' (' + need + ' 🔑)');
   const L = [['🏙️ Stadt', 0, -HALF - 40], ['⛷️ Skigebiet', SKI.x, SKI.z], ['🐄 Alp', (FARM.x0 + FARM.x1) / 2, FARM.z0 - 30], ['🚀 Raumbahnhof', SPACE.x, SPACE.z + 50],
-    ['🛣️ Raststätte', REST.x, REST.z + 170], ['🏖️ Strand', -674, -700], [lock('⛰️ Pass', PASS_AREA.need), SUMMIT.x, SUMMIT.z + 60], ['🛣️ Autobahn', -HW.half - 40, HW.cz + 400]];
+    ['🛣️ Raststätte', REST.x, REST.z + 170], ['🏖️ Strand', -674, -700], [lock('⛰️ Pass', PASS_AREA.need), SUMMIT.x, SUMMIT.z + 60], ['🛣️ Autobahn', -HW.half - HW.R + 80, 1500], ['🌉 Brücke', -HW.half - HW.R + 90, -160]];
   L.push([MON_NAME, MONACO.x, MONACO.z - 330]);
   for (const S2 of SUBURBS) L.push([S2.name, (S2.rect.x0 + S2.rect.x1) / 2, S2.rect.z0 - 25]);
   for (const A of Object.values(AREAS)) L.push([lock(A.name, A.need), (A.rect.x0 + A.rect.x1) / 2, (A.rect.z0 + A.rect.z1) / 2]);
