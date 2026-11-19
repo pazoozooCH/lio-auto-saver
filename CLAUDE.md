@@ -43,6 +43,11 @@ Browser-Spiel ohne Build: `index.html` + `game.js` (Spiellogik, Menüs und 2D-Ze
   Polizei nur nach einem Blitzer: Rotlicht-Kamera an jeder zehnten Ampel (`S.redCams`) oder Radarkasten (`S.speedCams`,
   mehr als 5 km/h über dem Limit); Tempolimit je Strasse in `streetLimit` (Ring 80, Mitte 30, sonst 50).
   Über 140 km/h geblitzt: 3 Minuten Gefängnis (Block 2,2), freikaufen 100 Münzen; Endzeit im Spielstand `autoRetterJail`.
+  Autos klauen (`stealCar`, `canSteal`): zu Fuss zu einem fremden Verkehrsauto, X; Alarm (`city.alarm`, Warnblinker `hazardGroup`),
+  gesucht `city.wanted` (⭐ je Auto, höchstens 3, `WANTED_TIME` ohne gesehen zu werden). `stepWanted`: Streifen im Verkehr sehen dich
+  (`canSee`, Häuser dazwischen) → `startChase(c)` (der Streifenwagen selbst jagt); mehr Streifen über `ensurePatrols` (`c.patrol`).
+  Aussteigen geht auch während der Jagd (`exitCar`), dann rennt ein Polizist nach (`P.cop`, `stepCop`, `makeCop`). Erwischt:
+  Busse, `giveBack` gibt das Auto zurück und holt dein eigenes (`city.stolenFrom`, ein geparktes Auto); bei ⭐⭐⭐ Gefängnis.
   Weiter in der Stadt: Unfälle der Bots mit Stau (`stepAccidents`), Tank/Akku (`city.fuel`, Tankstelle mit Ladesäule),
   Schaden mit Kratzern und Werkstatt (`hurt`, Block 6,3, davor Parkplatz für den Auftrag Einparken), Wetter (`stepWeather`),
   Fahrschule (Auftrag `school`, Führerschein in `autoRetterLicense`) und Autohändler (Block 1,3, `cityDealer` in `game.js`).
