@@ -204,6 +204,7 @@ function restDrivable(x, z, r) {
   for (const b of restSolid) if (Math.abs(x - b.x) < b.hx + r * 0.6 && Math.abs(z - b.z) < b.hz + r * 0.6) return false; // parkierte Fahrzeuge
   return true;
 }
+export const inRest = (x, z) => boxDist(x, z, REST_BOX) < 4; // Raststätte (Parkplätze, Tankstelle, Restaurant)
 const inRestZone = (x, z) => Math.abs(x - REST.x) < REST.end + 5 && z - REST.z > EDGE + 0.5 && z - REST.z < 140;
 
 // Weg durch Punkte [x, z] (Catmull-Rom, alle ~0,5 m ein Punkt; d = Länge bis dorthin, L = ganze Länge)

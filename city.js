@@ -15,7 +15,7 @@ import { buildMonaco, monGround, monRoad, inMonaco, nearMonPier, MON_BOAT, MON_P
 import { buildSuburbs, suburbDist, inSuburb, suburbRoad, drawSuburbs, SUBURBS, SUB_PLACES } from './suburbs.js';
 import { loadLook, makeLook, skyEnvironment, lookWanted, setLookWanted } from './look.js';
 import { makeChat } from './chat.js';
-import { buildHighway, outskirtsDist, hwDrivable, onHighway, hwGround, onRoads, ROADS, EXITS, SLIPS, makeHighwayTraffic, stepHighway, hwProject, hwPoint, HW, HW_LEN, HW_LIMIT, REST, REST_ZONES, makePath, pathAt, turnTo,
+import { buildHighway, outskirtsDist, hwDrivable, onHighway, hwGround, onRoads, ROADS, EXITS, SLIPS, inRest, makeHighwayTraffic, stepHighway, hwProject, hwPoint, HW, HW_LEN, HW_LIMIT, REST, REST_ZONES, makePath, pathAt, turnTo,
   AREAS, buildAreas, stepAreas, groundShape, areaDrivable, inArea, lockedGate, offroadWhy,
   PASS_AREA, buildPass, passGround, passDrivable, onPass, passTerrain, passNearest, inPassRegion, passPoints, SUMMIT, slideInside, waveFlag } from './outskirts.js';
 import { makeEffects, camView, cockpit, COCKPIT, CAM_NAMES, FLY_HTML, FLY_KEYS, flyCss, flyHelp, flyToggle, flyStep } from './fx.js';
@@ -30,7 +30,7 @@ const FLY_MAX = 100, FLY_SPEED = 1.25; // Fliegen: höchste Höhe (über dem hö
 const STOP = BLOCK - 12;        // Haltelinie (Abstand von der vorigen Kreuzung); die Wagenmitte hält eine halbe Länge davor
 const CYCLE = 22;               // Ampelzyklus in Sekunden
 const TRAFFIC = 64;             // so viele Autos fahren herum
-const SEE = 140;                // weiter weg werden Autos nicht gezeichnet
+const SEE = 115;                // weiter weg werden Autos nicht gezeichnet (jedes Auto sind viele Zeichen-Befehle)
 const DIRS = [[1, 0], [0, 1], [-1, 0], [0, -1]]; // +x, +z, −x, −z
 const SPECIAL = { '2,5': 'gas', '5,2': 'wash', '5,5': 'pizza', '2,2': 'jail', '6,3': 'workshop', '1,3': 'dealer', '6,6': 'hospital', '3,6': 'blue', '7,5': 'house', '4,2': 'park', '2,6': 'drive', '6,4': 'kino', '5,6': 'stadium' }; // Blöcke mit Tankstelle, Waschanlage, Pizzeria, Gefängnis, Werkstatt, Autohändler, Spital, Blauer Zone
 // Basen: sechs Blöcke nebeneinander am oberen Stadtrand, Platz s im Block (s + 1, 0); Einfahrt von der Strasse, an der man startet
@@ -1578,13 +1578,55 @@ function buildWorld() {
   const t0 = performance.now();
   for (const o of [...scene.children]) warpStatic(o, new Set([sky, stars, clouds]));
   console.log('Stadt verbogen in', Math.round(performance.now() - t0), 'ms');
+  const chunks = window.__chunkSize === 0 ? [] : chunkInstances(scene, new Set([pools]));
   warmUp(renderer, scene, camera);
   const flash = new THREE.Mesh(new THREE.SphereGeometry(0.6, 12, 8), new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0, depthWrite: false }));
   flash.visible = false;
   scene.add(flash);
   sky.userData.noWarp = stars.userData.noWarp = true; // wandern mit der Kamera (render): Himmel überall, auch weit draussen
-  return { skyMesh: sky, stars, monaco, renderer, scene, camera, sun, clouds, lamps, solid, round, parks, places, sign, country, height, moon, redCams, speedCams, flash, areas, ground: { asphalt: asphaltMat, grass: grassMat, pave: paveMat, land: land.material },
+  return { chunks, skyMesh: sky, stars, monaco, renderer, scene, camera, sun, clouds, lamps, solid, round, parks, places, sign, country, height, moon, redCams, speedCams, flash, areas, ground: { asphalt: asphaltMat, grass: grassMat, pave: paveMat, land: land.material },
     night: { sky: su, hemi, envs: { ...envs, day: dayEnv }, walls: [...walls, ...homeWalls], heads: headM.material, pools, stars, headlight, fog: scene.fog } };
+}
+
+// Gegen Ruckeln: grosse InstancedMesh (Bäume, Büsche, Blumen, Grasbüschel über die ganze Insel) in Kacheln von CHUNK
+// Metern teilen. So zeichnet three.js nur, was im Bild (und im Schattenbereich) liegt, statt jedes Bild alles. Kleines
+// (Gras, Blumen) wird weiter weg ganz weggelassen (stepChunks). Gilt nur für Dinge, die sich nach dem Bauen nicht ändern.
+const CHUNK = 300, SMALL_SEE = 170;
+function chunkInstances(scene, skip) {
+  const list = [], out = [], m = new THREE.Matrix4(), col = new THREE.Color();
+  scene.traverse(o => { if (o.isInstancedMesh && o.count > 48 && !skip.has(o) && o.parent) list.push(o); });
+  const size = window.__chunkSize || CHUNK; // zum Messen änderbar
+  for (const im of list) {
+    const buckets = new Map();
+    for (let k = 0; k < im.count; k++) {
+      im.getMatrixAt(k, m);
+      const key = Math.floor(m.elements[12] / size) + ',' + Math.floor(m.elements[14] / size);
+      let b = buckets.get(key); if (!b) buckets.set(key, b = []); b.push(k);
+    }
+    if (!im.geometry.boundingSphere) im.geometry.computeBoundingSphere();
+    const small = im.geometry.boundingSphere.radius < 1.6;
+    if (buckets.size < 2) { im.frustumCulled = true; im.computeBoundingSphere(); out.push({ o: im, small }); continue; }
+    for (const ks of buckets.values()) {
+      const c = new THREE.InstancedMesh(im.geometry, im.material, ks.length);
+      ks.forEach((k, i) => { im.getMatrixAt(k, m); c.setMatrixAt(i, m); if (im.instanceColor) { im.getColorAt(k, col); c.setColorAt(i, col); } });
+      c.castShadow = im.castShadow; c.receiveShadow = im.receiveShadow; c.renderOrder = im.renderOrder; c.layers.mask = im.layers.mask;
+      c.matrixAutoUpdate = im.matrixAutoUpdate; c.matrix.copy(im.matrix); c.position.copy(im.position); c.quaternion.copy(im.quaternion); c.scale.copy(im.scale);
+      c.userData = im.userData; c.name = im.name; c.visible = im.visible; c.frustumCulled = true;
+      c.computeBoundingSphere();
+      im.parent.add(c);
+      out.push({ o: c, small });
+    }
+    im.parent.remove(im);
+    im.dispose(); // nur die Instanz-Daten; Form und Material gehören jetzt den Kacheln
+  }
+  for (const ch of out) { ch.o.updateMatrixWorld(true); ch.c = ch.o.boundingSphere.center.clone().applyMatrix4(ch.o.matrixWorld); ch.r = ch.o.boundingSphere.radius; }
+  return out;
+}
+function stepChunks() { // Kleines weit weg nicht zeichnen (alle paar Bilder prüfen)
+  if ((city.chunkT = (city.chunkT || 0) - 1) > 0) return;
+  city.chunkT = 8;
+  const cam = S.camera.position;
+  for (const ch of S.chunks) if (ch.small) ch.o.visible = Math.hypot(ch.c.x - cam.x, ch.c.z - cam.z) - ch.r < SMALL_SEE;
 }
 
 // Platz in der Stadtmitte mit Brunnen und Bänken
@@ -3278,6 +3320,11 @@ const allowedAt = (x, z, r) => {
 // wie das Gelände-Netz (20-m-Dreiecke, sonst schwebt man oder versinkt zwischen den Ecken)
 const groundMemo = new Map();
 function landAt(i, j) { const k = i * 100000 + j; let h = groundMemo.get(k); if (h === undefined) { h = S.height(-1100 + i * 20, -1100 + j * 20); groundMemo.set(k, h); } return h; }
+function landRaw(x, z) { // Gelände-Netz genau wie groundAt, aber auch unter 0 (Senken am Wasser)
+  const gx = (x + 1100) / 20, gz = (z + 1100) / 20, i = Math.floor(gx), j = Math.floor(gz), fx = gx - i, fz = gz - j;
+  const a = landAt(i, j), b = landAt(i, j + 1), c = landAt(i + 1, j + 1), d = landAt(i + 1, j);
+  return fx + fz <= 1 ? a + (d - a) * fx + (b - a) * fz : c + (b - c) * (1 - fx) + (d - c) * (1 - fz);
+}
 function groundAt(x, z) {
   if (inMoon(x, z)) return moonGround(x, z);
   if (onDeck(x, z)) return FERRY_Y; // Autodeck der Fähre
@@ -3709,6 +3756,7 @@ function stepGrass() {
     const x = (i + gHash(i, j, 0)) * C, z = (j + gHash(i, j, 9)) * C;
     if ((x - P.x) ** 2 + (z - P.z) ** 2 > GRASS.r * GRASS.r || surfaceAt(x, z) !== 'grass' || landDist(x, z) < 12) continue;
     if ((inPassRegion(x, z) && passNearest(x, z).d < 9) || [[1.5, 0], [-1.5, 0], [0, 1.5], [0, -1.5]].some(([a, b]) => surfaceAt(x + a, z + b) !== 'grass')) continue; // nicht auf Strassen und ihren Rändern
+    if (inRest(x, z) || inMonaco(x, z) || (Math.max(Math.abs(x), Math.abs(z)) > HALF + 20 && !inPassRegion(x, z) && landRaw(x, z) < 0.15)) continue; // nicht auf der Raststätte, der Diamantinsel und am/im Wasser (tiefes Gelände)
     const s = 0.8 + gHash(i, j, 4) * 0.8;
     warpXZ(x, z, w); // wie alles andere: in der Stadt verbogen
     im.setMatrixAt(n++, m.compose(p.set(w.x, groundAt(x, z), w.z), q.setFromAxisAngle(UP, gHash(i, j, 7) * 6.28), sc.set(s, s * (0.8 + gHash(i, j, 2) * 0.5), s)));
@@ -6104,6 +6152,7 @@ function step(now) {
   stepDrift(dt);
   stepPolice(dt);
   stepWanted(dt);
+  stepChunks();
   stepPlaces(dt);
   stepBases(dt);
   stepParked(dt);
@@ -6324,9 +6373,14 @@ function render(dt) {
   }
   cam.fov = 62 + Math.min(16, Math.abs(me.speed) * 0.15);
   cam.updateProjectionMatrix();
-  const sp = warpV(_sunP.set(me.pos.x, 0, me.pos.z));
-  S.sun.position.set(sp.x + 70, 110 + city.gy, sp.z - 40);
-  S.sun.target.position.set(sp.x, city.gy, sp.z);
+  // Schatten nur jedes zweite Bild neu rechnen (spart viel); die Sonne wandert nur dann mit, sonst verrutschen die Schatten
+  S.renderer.shadowMap.autoUpdate = false;
+  if ((city.shadowF = (city.shadowF || 0) + 1) % 2 === 0 || dt > 0.045) {
+    const sp = warpV(_sunP.set(me.pos.x, 0, me.pos.z));
+    S.sun.position.set(sp.x + 70, 110 + city.gy, sp.z - 40);
+    S.sun.target.position.set(sp.x, city.gy, sp.z);
+    S.renderer.shadowMap.needsUpdate = true;
+  }
   S.clouds.position.set(cam.position.x, 0, cam.position.z);
   S.skyMesh.position.set(cam.position.x, 0, cam.position.z); S.stars.position.set(cam.position.x, 0, cam.position.z);
   S.fx.update(dt, cam, S.renderer);

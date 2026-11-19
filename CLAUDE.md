@@ -75,7 +75,10 @@ Browser-Spiel ohne Build: `index.html` + `game.js` (Spiellogik, Menüs und 2D-Ze
   curtain, panel (glänzendes Glas mit Lichtstreifen, Rauheit/Metall- und Reliefbild); Glasbalkone, Solarzellen/Dachgärten
   (`roofSpots`). Pflanzen mit Farbverlauf (`shadeGeo`): Laubbäume, Tannen im Wald (`pines`), Büsche, Grasbüschel (4 einseitige
   Bilder, sonst dunkle Rückseite), Blumen – alles Instanzen, eigener Zufall `vr` (der Haupt-Zufall `r` darf sich nicht verschieben).
-  Dichtes Gras um den Spieler (`stepGrass`, `GRASS`): wandert mit, nur wo `surfaceAt` = 'grass', fester Zufall je Feld (`gHash`).
+  Dichtes Gras um den Spieler (`stepGrass`, `GRASS`): wandert mit, nur wo `surfaceAt` = 'grass', fester Zufall je Feld (`gHash`);
+  nicht auf der Raststätte (`inRest`), der Diamantinsel und in Senken am Wasser (`landRaw` < 0,15).
+  Tempo: grosse InstancedMesh werden nach dem Bauen in Kacheln geteilt (`chunkInstances`, `CHUNK` 300 m, kleines weit weg aus:
+  `stepChunks`); Schatten nur jedes zweite Bild (`render`); Autos bis `SEE` 115 m gezeichnet.
   Figuren aus wenigen Stücken mit Vertex-Farben (`figMesh`, `faceParts`); `makePerson` würfelt Kleid, Frisur, Mütze, Tasche.
   Spielfigur zu Fuss: `makePlayer` (Gelenke für Knie/Ellbogen, `spin` für Saltos), `animatePlayer`; Tricks in `stepAir`
   (E/▲ springen, Q/▼ Backflip, rennend Doppel-Backflip, in der Luft ⬅️➡️ Pirouette; auch auf Ski).
