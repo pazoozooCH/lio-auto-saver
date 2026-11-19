@@ -12,7 +12,9 @@ Browser-Spiel ohne Build: `index.html` + `game.js` (Spiellogik, Menüs und 2D-Ze
 - `cars3d.js`: 3D-Fahrzeuge für alle Modi; jedes Fahrzeug hat in `BUILD` eine eigene Bauanleitung. Neuere Fahrzeuge
   haben in `KINDS` ein `look` (wird in 2D wie dieses Fahrzeug gezeichnet) und ein `badge` (Bildchen auf der Seite).
   Normale Autos (Limousine, Kompakt, Kombi, Sport, Coupé, SUV, Schrägheck, Pickup) haben eine echte Karosserie
-  (`REAL` + `realBody`: Querschnitte, Radkästen, Kabine mit Säulen, gemalte Front/Heck); `{ classic: true }` = alte Kastenform.
+  (`REAL` + `realBody`: Querschnitte, Radkästen, Kabine mit Säulen, gemalte Front/Heck, dunkle Seitenschweller, schwarzer
+  Fensterrahmen); `{ classic: true }` = alte Kastenform. Scheiben `glassClear`: getönt, wenig Spiegelung (sonst wirken sie milchig),
+  nur Vorderseite (vom Fahrersitz klar). Alte Kastenformen: Lichter vor die abgerundete Kante (bevel ≈ 0,08 m), Bus mit Front-/Heckscheibe (`ends`).
 - `city.js`: 3D-Stadt zum freien Herumfahren (Strassengitter, Häuser, Parks, Ampeln, Verkehr mit Abbiegen und Halten).
   Geschwungene Strassen: gerechnet wird im geraden Gitter, nur das Bild wird verbogen (`warpXZ`/`warpRot`): jede Strasse eigene Welle
   (`SW`, fester Zufall), Blöcke verschieden gross (`SW.ox`/`SW.oz`), Stadt rund statt viereckig (`WARP_ROUND`),

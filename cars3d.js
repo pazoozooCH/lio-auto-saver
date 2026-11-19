@@ -15,7 +15,7 @@ const PROFILE = {
   suv: { body: [[0, .26], [0, .58], [.82, .58], [1, .5], [1, .26]], cabin: [.05, .08, .7, .82, .56, .97], width: 1.95 },
   pickup: { body: [[0, .26], [0, .56], [1, .54], [1, .26]], cabin: [.52, .54, .74, .86, .54, .97], width: 1.95 },
   box: { body: [[0, .18], [0, 1], [.74, 1], [.76, .74], [.9, .72], [1, .46], [1, .18]], glass: [[.77, .7], [.89, .68], [.97, .48], [.77, .48]], width: 2.25, tall: true },
-  bus: { body: [[0, .14], [0, 1], [1, 1], [1, .14]], glass: [[.03, .56], [.03, .9], [.97, .9], [.97, .56]], width: 2.45, tall: true },
+  bus: { body: [[0, .14], [0, 1], [1, 1], [1, .14]], glass: [[.03, .56], [.03, .9], [.97, .9], [.97, .56]], width: 2.45, tall: true, ends: true },
   hatch: { body: [[0, .22], [0, .58], [.05, .62], [.86, .58], [1, .46], [1, .22]], cabin: [.04, .1, .62, .8, .58, .98], width: 1.75 },
   coupe: { body: [[0, .22], [0, .5], [.05, .56], [.75, .56], [.93, .5], [1, .32], [.98, .22]], cabin: [.2, .38, .6, .76, .54, .9], width: 1.85, twoDoor: true },
   microbus: { body: [[0, .16], [0, .88], [.05, 1], [.9, 1], [1, .86], [1, .16]], glass: [[.03, .62], [.04, .9], [.95, .9], [.99, .62]], width: 2.0, tall: true },
@@ -44,7 +44,7 @@ function lavaTexture() {
 }
 
 function paintMaterial(v) {
-  const base = { clearcoat: 1, clearcoatRoughness: 0.06 };
+  const base = { clearcoat: 1, clearcoatRoughness: 0.04 };
   const finish = v.tune && v.tune.finish; // Tuning-Lack geht vor
   if (finish === 'chrome') return new THREE.MeshPhysicalMaterial({ ...base, color: 0xf2f4f8, metalness: 0.85, roughness: 0.16, envMapIntensity: 1.6 });
   if (finish === 'neon') {
@@ -58,7 +58,7 @@ function paintMaterial(v) {
     case 'diamond': return new THREE.MeshPhysicalMaterial({ ...base, color: 0xcdefff, metalness: 0.2, roughness: 0.03, iridescence: 1, iridescenceIOR: 1.8 });
     case 'obsidian': return new THREE.MeshPhysicalMaterial({ ...base, color: 0x120a1c, metalness: 0.7, roughness: 0.12, emissive: 0x2a0f45, emissiveIntensity: 0.35 });
     case 'rainbow': return new THREE.MeshPhysicalMaterial({ ...base, color: 0xff0000, metalness: 0.4, roughness: 0.25 });
-    default: return new THREE.MeshPhysicalMaterial({ ...base, color: new THREE.Color(v.color), metalness: 0.45, roughness: 0.32 });
+    default: return new THREE.MeshPhysicalMaterial({ ...base, color: new THREE.Color(v.color), metalness: 0.55, roughness: 0.24 }); // Metalliclack
   }
 }
 
@@ -81,8 +81,9 @@ function shared() {
   MAT.wood = new THREE.MeshStandardMaterial({ color: 0xa0703c, roughness: 0.85 });
   MAT.gold = new THREE.MeshStandardMaterial({ color: 0xffd34d, metalness: 1, roughness: 0.22 });
   MAT.white = new THREE.MeshStandardMaterial({ color: 0xf4f4f4, roughness: 0.5 });
-  MAT.glassClear = new THREE.MeshPhysicalMaterial({ color: 0x1c2a38, metalness: 0.1, roughness: 0.03, transparent: true, opacity: 0.42,
-    clearcoat: 1, clearcoatRoughness: 0.02, envMapIntensity: 2.4, depthWrite: false });
+  // getönt wie echte Scheiben (von aussen dunkel, spiegelt den Himmel); nur Vorderseite: vom Fahrersitz aus ganz klar
+  MAT.glassClear = new THREE.MeshPhysicalMaterial({ color: 0x0a121a, metalness: 0, roughness: 0.05, transparent: true, opacity: 0.84,
+    clearcoat: 1, clearcoatRoughness: 0.02, envMapIntensity: 0.9, depthWrite: false });
   MAT.glassTint = new THREE.MeshPhysicalMaterial({ color: 0x0b1016, metalness: 0.4, roughness: 0.04, transparent: true, opacity: 0.86,
     clearcoat: 1, envMapIntensity: 2.2, depthWrite: false });
   // Innenverkleidung: bekommt drinnen kaum Sonne, darum leuchtet sie etwas von selbst
@@ -368,13 +369,13 @@ function kit(v, kinds, hDiv, spec) {
 const REAL = {
   sedan: { top: [[0, .42], [.015, .52], [.05, .57], [.16, .59], [.45, .6], [.74, .585], [.85, .56], [.95, .52], [1, .43]],
     bot: [[0, .24], [.04, .13], [.08, .1], [.92, .1], [.97, .14], [1, .24]], axles: [.2, .79], gh: [.15, .36, .58, .74], roof: .93,
-    pf: 4.5, pr: 5, cp: [.15, .31], posts: [[.5, .02, 'dark']] },
+    pf: 4.5, pr: 5, cp: [.15, .31], posts: [[.5, .035, 'dark']] },
   compact: { top: [[0, .45], [.015, .58], [.05, .62], [.72, .61], [.86, .58], [.96, .53], [1, .44]],
     bot: [[0, .24], [.04, .12], [.96, .12], [1, .24]], axles: [.16, .82], gh: [.03, .12, .53, .72], roof: .95,
-    pf: 4, pr: 6, cp: [.03, .17], posts: [[.44, .02, 'dark']], twoDoor: true },
+    pf: 4, pr: 6, cp: [.03, .17], posts: [[.44, .035, 'dark']], twoDoor: true },
   kombi: { top: [[0, .44], [.012, .58], [.04, .6], [.7, .6], [.85, .57], [.95, .53], [1, .43]],
     bot: [[0, .24], [.04, .13], [.08, .1], [.92, .1], [.97, .14], [1, .24]], axles: [.18, .8], gh: [.025, .05, .57, .73], roof: .92,
-    pf: 4.5, pr: 7, cp: [.025, .075], posts: [[.26, .02, 'dark'], [.48, .02, 'dark']] },
+    pf: 4.5, pr: 7, cp: [.025, .075], posts: [[.26, .035, 'dark'], [.48, .035, 'dark']] },
   sport: { top: [[0, .44], [.02, .54], [.08, .58], [.28, .59], [.72, .57], [.84, .56], [.95, .48], [1, .36]],
     bot: [[0, .22], [.04, .1], [.95, .1], [1, .2]], axles: [.18, .81], gh: [.2, .44, .58, .73], roof: .9,
     pf: 3.2, pr: 4.5, cp: [.2, .38], posts: [], twoDoor: true, redCaliper: true },
@@ -383,13 +384,13 @@ const REAL = {
     pf: 4, pr: 5, cp: [.18, .34], posts: [], twoDoor: true, redCaliper: true },
   suv: { top: [[0, .44], [.012, .6], [.04, .62], [.74, .62], [.88, .6], [.96, .55], [1, .46]],
     bot: [[0, .26], [.04, .18], [.96, .18], [1, .26]], axles: [.18, .81], gh: [.025, .05, .62, .76], roof: .95,
-    pf: 5, pr: 7, cp: [.025, .08], posts: [[.28, .02, 'dark'], [.5, .02, 'dark']], clad: true },
+    pf: 5, pr: 7, cp: [.025, .08], posts: [[.28, .035, 'dark'], [.5, .035, 'dark']], clad: true },
   hatch: { top: [[0, .45], [.015, .58], [.05, .61], [.72, .6], [.86, .57], [.96, .52], [1, .43]],
     bot: [[0, .24], [.04, .12], [.96, .12], [1, .24]], axles: [.17, .81], gh: [.04, .13, .58, .73], roof: .94,
-    pf: 4, pr: 6, cp: [.04, .18], posts: [[.45, .02, 'dark']] },
+    pf: 4, pr: 6, cp: [.04, .18], posts: [[.45, .035, 'dark']] },
   pickup: { top: [[0, .5], [.01, .56], [.5, .565], [.52, .57], [.82, .565], [.92, .55], [.98, .5], [1, .42]],
     bot: [[0, .26], [.03, .17], [.97, .17], [1, .26]], axles: [.18, .82], gh: [.5, .53, .71, .82], roof: .95,
-    pf: 6, pr: 9, cp: [.5, .535], posts: [[.62, .02, 'dark']], bed: [.025, .48], clad: true },
+    pf: 6, pr: 9, cp: [.5, .535], posts: [[.62, .035, 'dark']], bed: [.025, .48], clad: true },
 };
 
 // Glatte Linie durch Punkte [x, y] (0…1): erst gerade Stücke, dann mehrmals weichgezeichnet
@@ -562,10 +563,10 @@ function realBody(C, name, opts = {}) {
     return loftGeos(rows, true, 3, (i, j) => {
       const th = (ths[j] + ths[j + 1]) / 2, d = Math.min(Math.abs(th + PI / 2), Math.abs(th - 3 * PI / 2));
       if (d < 0.95) return 1;
+      const st = station(xs[i]), [, y, z] = rows[i][j];
       if (S.clad) {
-        const st = station(xs[i]), [, y, z] = rows[i][j];
         if (Math.abs(z) > st.hw * 0.8 && (y < st.yb + 0.24 * (st.yt - st.yb) || (st.lift > 0.02 && y < st.yb + st.lift + 0.07))) return 2; // nur an der Seite
-      }
+      } else if (Math.abs(z) > st.hw * 0.8 && st.lift < 0.02 && y < st.yb + 0.24 * (st.yt - st.yb)) return 2; // Seitenschweller unten (dunkel, wie echte Autos)
       return 0;
     });
   }), [C.paint, under, clad]);
@@ -613,7 +614,7 @@ function realBody(C, name, opts = {}) {
       if (e > 0.75) return roof || e < 1.05 ? 0 : 1; // Dach, A-/C-Säulen, Front- und Heckscheibe
       if (inX(x, S.cp)) return 0;
       for (const [c, w, kind] of S.posts) if (Math.abs(x - X(c)) < w * L / 2) return kind === 'dark' ? 2 : 0;
-      return 1;
+      return e > 0.66 ? 2 : 1; // oben schwarzer Fensterrahmen
     })), [C.paint, glass, M.dark]);
     for (const p of parts) if (p) C.body.add(p);
     // von innen: Dach und Säulen verkleidet (sonst sähe man vom Fahrersitz durchs Dach in den Himmel)
@@ -812,12 +813,20 @@ function profileBody(C, name, opts = {}) {
   }
   if (P.glass) C.ext(roundPoly(P.glass.map(([x, y]) => [X(x), y * H]), 0.08), W, M.glass, 0.02); // etwas breiter als die Karosserie, damit man die Scheiben sieht
   if (P.tall) for (const s of [-1, 1]) C.box(0.08, 0.34, 0.1, M.dark, L / 2 - 0.3, H * 0.62, s * (W / 2 + 0.1)); // grosse Spiegel
+  if (P.ends && !opts.noEndGlass) { // Front- und Heckscheibe mit schwarzem Rahmen (vor der abgerundeten Kante, bevel ≈ 0,08 m)
+    const gy0 = P.glass[0][1] * H, gy1 = P.glass[1][1] * H, gm = (gy0 + gy1) / 2, gh = gy1 - gy0;
+    for (const front of [true, false]) {
+      const x = edgeAt(pts, gm, front), s = front ? 1 : -1, h = gh * (front ? 0.95 : 0.7), w = W * (front ? 0.84 : 0.7);
+      C.box(0.03, h + 0.08, w + 0.08, M.dark, x + s * 0.08, gm, 0);
+      C.box(0.03, h, w, M.glass, x + s * 0.095, gm, 0);
+    }
+  }
   C.roofY = C.roofY || H + 0.05;
   C.roofX = C.roofX === undefined ? X(0.4) : C.roofX;
   C.wheelPair(X(opts.wheels ? opts.wheels[0] : P.tall ? 0.16 : 0.18), C.r, 0.32, opts.rim, opts.spokes);
   C.wheelPair(X(opts.wheels ? opts.wheels[1] : P.tall ? 0.84 : 0.82), C.r, 0.32, opts.rim, opts.spokes);
   const ly = P.tall ? 0.45 * H : 0.42 * H, lyRear = P.tall ? 0.3 * H : 0.46 * H;
-  C.lights(edgeAt(pts, ly, true) + 0.02, edgeAt(pts, lyRear, false) - 0.02, ly, lyRear);
+  C.lights(edgeAt(pts, ly, true) + 0.09, edgeAt(pts, lyRear, false) - 0.09, ly, lyRear); // vor die abgerundete Kante
   // Stossstangen unten, Kühlergrill und Nummernschilder
   const by = bottom + 0.09, fx = edgeAt(pts, by, true), rx = edgeAt(pts, by, false);
   C.box(0.12, 0.12, W * 0.9, M.dark, fx - 0.02, by, 0);
