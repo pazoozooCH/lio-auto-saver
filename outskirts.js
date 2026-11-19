@@ -693,7 +693,7 @@ function zoneOf(cars, c) {
   for (const Z of cars.zones) if (Z.dir === c.dir) { const d = zoneDist(Z, c); if (d > -12 && d < Z.len) return Z; }
   return null;
 }
-const gasseOff = c => c.lane === 3 ? -1.0 : 1.15; // in der Gasse: Überholspur zur Mitte, die anderen nach rechts
+const gasseOff = c => c.lane === 3 ? -1.5 : 1.6; // in der Gasse: Überholspur zur Mitte, die anderen nach rechts (gut 5 m frei)
 const km = m => (Math.round(m / 100) / 10).toFixed(1).replace('.', ',');
 
 // Liegt ein Stück der Strecke (Richtung dir, von s0 rückwärts len Meter) schon in einem Stau oder in der Baustelle?
@@ -776,6 +776,19 @@ function stepRescue(c, dt, A, P) {
   return 30;
 }
 
+// Zusammenstoss mit dir: beide als Kapseln entlang der Fahrzeuge (Lastwagen lang und schmal statt eines grossen Kreises),
+// du als drei Kreise wie in der Stadt. Gibt die Richtung zum Wegschieben zurück (nx, nz, wie tief) oder null.
+function hitBox(me, c) {
+  const truck = c.type === 'slow' || c.len > 6.5, w = truck ? 1.25 : 0.95, a = Math.max(0, c.len / 2 - w);
+  const fx = Math.cos(c.yaw), fz = -Math.sin(c.yaw), r = 0.95, am = Math.max(0, (me.len || 4.4) / 2 - r), hx = Math.cos(me.heading), hz = Math.sin(me.heading);
+  let best = null;
+  for (const k of [-1, 0, 1]) {
+    const px = me.x + hx * am * k, pz = me.z + hz * am * k, t = Math.max(-a, Math.min(a, (px - c.x) * fx + (pz - c.z) * fz));
+    const qx = px - (c.x + fx * t), qz = pz - (c.z + fz * t), d = Math.hypot(qx, qz), depth = w + r - d;
+    if (depth > 0 && (!best || depth > best.depth)) best = { nx: d > 1e-3 ? qx / d : -fz, nz: d > 1e-3 ? qz / d : fx, depth };
+  }
+  return best;
+}
 // Ein Schritt: me = { x, z, heading, speed, len, radius, on, see } (on: steht auf der Autobahn),
 // hooks = { honk, msg, bump, nearMiss, siren, gasse }
 const dummy = new THREE.Object3D(), tmpCol = new THREE.Color();
@@ -955,7 +968,8 @@ export function stepHighway(cars, dt, t, me, cam, hooks) {
     const dx = c.x - cam.x, dz = c.z - cam.z, d2 = dx * dx + dz * dz;
     if (P && Math.abs(me.x - c.x) < 12 && Math.abs(me.z - c.z) < 12) {
       // du wirst angefahren oder fährst auf
-      if (Math.hypot(me.x - c.x, me.z - c.z) < (me.radius + c.radius) * 0.75) { hooks.bump(c); if (!c.wreck) c.speed *= 0.5; c.nmBad = 3; }
+      const hb = hitBox(me, c);
+      if (hb) { hooks.bump(c, hb); if (!c.wreck) c.speed *= 0.5; c.nmBad = 3; }
     }
     // knapp überholt (auf der Nebenspur, du deutlich schneller): Bonus
     if (c.nmBad > 0) c.nmBad -= cdt;

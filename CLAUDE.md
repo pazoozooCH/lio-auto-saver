@@ -97,7 +97,8 @@ Browser-Spiel ohne Build: `index.html` + `game.js` (Spiellogik, Menüs und 2D-Ze
   (`POOL`), die anderen sind Klötze (InstancedMesh); weit weg nur jedes dritte Bild gerechnet (Verkehr mit
   Lastwagen, Normalen, Dränglern, Rasern; Tunnel mit Hügel, Baustelle mit Leitkegeln, Polizei jagt Raser,
   „Knapp vorbei“-Bonus über `hooks.nearMiss`; Unfälle mit Stau und Rettungsgasse: `startAccident`, Retter `cars.rescue`,
-  wer die Gasse blockiert, bekommt über `hooks.gasse` einen Strafzettel), Hafen (Westen, ab 5 goldenen Schlüsseln), Flughafen (Osten, ab 12) und
+  wer die Gasse blockiert, bekommt über `hooks.gasse` einen Strafzettel; Gasse gut 5 m breit über `gasseOff`;
+  Zusammenstösse mit dir über `hitBox`: Kapsel entlang des Fahrzeugs, Lastwagen schmal und lang statt grosser Kreis), Hafen (Westen, ab 5 goldenen Schlüsseln), Flughafen (Osten, ab 12) und
   Passstrasse mit Höhe (Norden, ab 20; `passGround` = Bodenhöhe, `passTerrain` formt das Gelände). Der Flughafen liegt an der Flughafenstrasse. In der Stadt:
   Überraschungen (Feuer, Banküberfall, Notfall → Spital), 30 goldene Schlüssel (Spielstand `autoRetterKeys`).
 - `country.js`: neue Gebiete draussen (für `city.js`): Bauernhof auf der Alp am Pass (`ALP` in outskirts.js: ebene Wiese;

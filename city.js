@@ -3250,9 +3250,9 @@ const hwHooks = {
     if (v > 0 && city.hwSiren === undefined) city.hwSiren = createSiren();
     if (city.hwSiren) city.hwSiren.set(v);
   },
-  bump: c => {
-    const me = city.me, dx = me.pos.x - c.x, dz = me.pos.z - c.z, d = Math.hypot(dx, dz) || 1, min = (me.radius + c.radius) * 0.75;
-    me.pos.x += dx / d * (min - d); me.pos.z += dz / d * (min - d);
+  bump: (c, hb) => { // hb: Richtung und Tiefe aus hitBox (outskirts.js)
+    const me = city.me;
+    me.pos.x += hb.nx * hb.depth; me.pos.z += hb.nz * hb.depth;
     if (city.crashT <= 0) { const rel = Math.abs(me.speed - c.speed); crash(0.2 + rel / 25, 'car'); hurt(rel / 20, c.x, c.z); city.crashT = 0.6; }
     me.speed *= 0.7;
   },
