@@ -32,7 +32,7 @@ const TRACTOR = { x: 285, z: -695, h: 0 };
 // ---------- Strand ----------
 const BEACH = { x0: -702, x1: -646, z0: -660, z1: -170 };
 const PROM = { x0: -646, x1: -632, z0: -660, z1: -150 };
-const BEACH_ROAD = { x0: -646, x1: -250, z0: -200, z1: -184 }; // genau auf der Stadtstrasse z = −192 (beide Spuren)
+const BEACH_ROAD = { x0: -646, x1: -314, z0: -200, z1: -184 }; // genau auf der Stadtstrasse z = −192 (beide Spuren)
 const PIER = { x0: -772, x1: -700, z0: -424, z1: -416 };
 const WATER = { x0: -1100, x1: -702, z0: -700, z1: 380, y: -4 }; // wie in outskirts.js
 const BOAT_HOME = { x: -780, z: -420, h: Math.PI };
@@ -40,7 +40,7 @@ const KIOSK = { x0: -676, x1: -666, z0: -306, z1: -298 };
 
 // ---------- Raketenstart (Mondausflug) ----------
 export const SPACE = { x: 700, z: 200, r: 26 }; // Startplatz mit der Mondrakete
-const SPACE_ROAD = { x0: 250, x1: 690, z0: 184, z1: 200 }; // Verlängerung der Stadtstrasse z = 192 nach Osten
+const SPACE_ROAD = { x0: 314, x1: 690, z0: 184, z1: 200 }; // Verlängerung der Stadtstrasse z = 192 nach Osten
 
 // ---------- Skigebiet ----------
 const SNOW_ROAD = 55; // ab dieser Höhe liegt Schnee auf der Passstrasse

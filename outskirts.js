@@ -28,7 +28,7 @@ const LANES = [14.1, 10.4, 6.6, 2.9]; // Spurmitte: ganz rechts … ganz links (
 const WIDE = EDGE + 1.2; // so weit reicht die Autobahn seitlich
 // Zubringer (zweispurig, 14 m breit, ohne Leitplanken): Flughafenstrasse quer durch den Süden (z = 462) mit der Zufahrt vom
 // Südrand der Stadt (RAMP), im Westen um die Brückenrampe herum zur Ausfahrt, im Osten zum Raumbahnhof
-const RAMP = { x0: -7, x1: 7, z0: 250, z1: 462 }; // von der Strasse am Südrand der Stadt (z = 256) zur Flughafenstrasse
+const RAMP = { x0: -7, x1: 7, z0: 314, z1: 462 }; // von der Strasse am Südrand der Stadt (z = 320) zur Flughafenstrasse
 export const ROADS = [RAMP,
   { x0: -1107, x1: 1114, z0: 455, z1: 469 }, // Flughafenstrasse (Flughafen, Skigebiet)
   { x0: 1100, x1: 1114, z0: 455, z1: 607 }, { x0: 1100, x1: 1243, z0: 593, z1: 607 }, // im Osten zur Ausfahrt
@@ -1028,7 +1028,7 @@ export function stepHighway(cars, dt, t, me, cam, hooks) {
 // führt von der Stadt hin (road), das Gebiet selbst ist eben (rect). Der Hafen liegt im Westen am Wasser, der
 // Flughafen im Osten mit Piste, Terminal, Tower und Flugzeugen (eines startet immer wieder).
 export const AREAS = {
-  harbor: { need: 5, name: '⚓ Hafen', rect: { x0: -700, x1: -340, z0: -150, z1: 110 }, road: { x0: -350, x1: -256, z0: -7, z1: 7 }, gate: { x: -334, z: 0 } },
+  harbor: { need: 5, name: '⚓ Hafen', rect: { x0: -700, x1: -340, z0: -150, z1: 110 }, road: { x0: -350, x1: -320, z0: -7, z1: 7 }, gate: { x: -334, z: 0 } },
   // Flughafen: an der Flughafenstrasse (ROADS), Zufahrt von Norden
   airport: { need: 12, name: '✈️ Flughafen', rect: { x0: -330, x1: 330, z0: 520, z1: 840 }, road: { x0: 296, x1: 310, z0: 470, z1: 525 }, gate: { x: 303, z: 500, rot: Math.PI / 2 } },
 };
@@ -1202,7 +1202,7 @@ export function stepAreas(A, dt, keys, hooks) {
 // (passGround); das Gelände wird um sie herum geformt (passTerrain): flach unter der Fahrbahn, dazwischen Hänge,
 // am Rand geht es ins normale Gelände über. Ein eigenes, feineres Geländestück liegt über dem groben.
 export const PASS_AREA = { need: 20, name: '⛰️ Passstrasse', gate: { x: 0, z: -334, rot: Math.PI / 2 } };
-const PASS_CTRL = [[0, -262], [0, -340], [0, -400], [-120, -430], [-200, -450], [-232, -472], [-210, -500], [-100, -525], [100, -560],
+const PASS_CTRL = [[0, -326], [0, -350], [0, -400], [-120, -430], [-200, -450], [-232, -472], [-210, -500], [-100, -525], [100, -560],
   [200, -580], [232, -602], [210, -630], [100, -655], [-100, -690], [-200, -710], [-232, -732], [-210, -760], [-100, -785], [60, -815],
   [150, -840], [170, -870], [120, -900], [40, -915]];
 const PASS_TOP = 110, PASS_FLAT = 140, PASS_W = 4.6; // Gipfelhöhe, ebene Anfahrt, halbe Fahrbahnbreite

@@ -21,7 +21,7 @@ import { buildHighway, outskirtsDist, hwDrivable, onHighway, hwGround, onRoads, 
   PASS_AREA, buildPass, passGround, passDrivable, onPass, passTerrain, passNearest, inPassRegion, passPoints, SUMMIT, slideInside, waveFlag } from './outskirts.js';
 import { makeEffects, camView, cockpit, COCKPIT, CAM_NAMES, FLY_HTML, FLY_KEYS, flyCss, flyHelp, flyToggle, flyStep } from './fx.js';
 
-const N = 8;                    // Blöcke pro Seite
+const N = 10;                   // Blöcke pro Seite (einzelne Randblöcke bleiben frei: MASK)
 const BLOCK = 64;               // Abstand der Kreuzungen (Meter)
 const ROAD = 14;                // Strassenbreite: eine Spur je Richtung
 const LANE = 3.5;               // Spurmitte rechts neben der Strassenmitte
@@ -33,7 +33,7 @@ const CYCLE = 22;               // Ampelzyklus in Sekunden
 const TRAFFIC = 64;             // so viele Autos fahren herum
 const SEE = 115;                // weiter weg werden Autos nicht gezeichnet (jedes Auto sind viele Zeichen-Befehle)
 const DIRS = [[1, 0], [0, 1], [-1, 0], [0, -1]]; // +x, +z, −x, −z
-const SPECIAL = { '2,5': 'gas', '5,2': 'wash', '5,5': 'pizza', '2,2': 'jail', '6,3': 'workshop', '1,3': 'dealer', '6,6': 'hospital', '3,6': 'blue', '7,5': 'house', '4,2': 'park', '2,6': 'drive', '6,4': 'kino', '5,6': 'stadium' }; // Blöcke mit Tankstelle, Waschanlage, Pizzeria, Gefängnis, Werkstatt, Autohändler, Spital, Blauer Zone
+const SPECIAL = { '3,6': 'gas', '6,3': 'wash', '6,6': 'pizza', '3,3': 'jail', '7,4': 'workshop', '2,4': 'dealer', '7,7': 'hospital', '4,7': 'blue', '8,6': 'house', '5,3': 'park', '3,7': 'drive', '7,5': 'kino', '6,7': 'stadium' }; // Blöcke mit Tankstelle, Waschanlage, Pizzeria, Gefängnis, Werkstatt, Autohändler, Spital, Blauer Zone
 // Basen: sechs Blöcke nebeneinander am oberen Stadtrand, Platz s im Block (s + 1, 0); Einfahrt von der Strasse, an der man startet
 const BASES = 6, BASE_CARS = 10, BASE_COLORS = ['#ef4444', '#3b82f6', '#22c55e', '#f59e0b', '#a855f7', '#ec4899'];
 const baseOf = key => { const [i, j] = key.split(',').map(Number); return j === 0 && i >= 1 && i <= BASES ? i - 1 : -1; };
@@ -209,12 +209,23 @@ function unwarpFrame() {
 const warpV = v => { if (inWarp(v.x, v.z)) { warpXZ(v.x, v.z, _wa); v.x = _wa.x; v.z = _wa.z; } return v; };
 
 const inGrid =(i, j) => i >= 0 && i <= N && j >= 0 && j <= N;
+// Umriss wie eine echte Stadt: diese Randblöcke sind frei (Wald und Wiese) – neben den Vororten, an Ecken und am Südrand.
+// Strassen gibt es nur, wo mindestens auf einer Seite ein Block der Stadt liegt (segOn); sonst gelten sie als gesperrt (isPed).
+const MASK = new Set(['0,0', '7,0', '8,0', '9,0', '9,1', '9,2', '9,3', '9,4', '9,5', '9,6', '0,7', '0,8', '0,9', '1,9', '7,9', '8,9', '9,9', '0,6']);
+const blockOn = (bi, bj) => bi >= 0 && bj >= 0 && bi < N && bj < N && !MASK.has(bi + ',' + bj);
+const segOn = (i, j, d) => {
+  const [fx, fz] = DIRS[d], i2 = i + fx, j2 = j + fz;
+  if (!inGrid(i, j) || !inGrid(i2, j2)) return false;
+  if (fx) { const bi = Math.min(i, i2); return blockOn(bi, j - 1) || blockOn(bi, j); }
+  const bj = Math.min(j, j2); return blockOn(i - 1, bj) || blockOn(i, bj);
+};
+const nodeSegs = (i, j) => [0, 1, 2, 3].filter(d => segOn(i, j, d)).length;
 // Echte Stadt: an einigen Kreuzungen ein Kreisel (keine Ampel, Autos fahren rundherum), und einzelne Strassenstücke sind
 // Fussgängerzonen (Autos fahren dort nicht durch; so gibt es T-Kreuzungen und längere Blöcke)
-const ROUND = new Set(['2,3', '6,2', '3,6', '6,6', '5,7']), ROUND_R = 5.4; // Kreisel: Spur im Kreis mit diesem Radius
+const ROUND = new Set(['3,4', '7,3', '4,7', '7,7', '6,8']), ROUND_R = 5.4; // Kreisel: Spur im Kreis mit diesem Radius
 const PED = (() => { // Schlüssel "i,j,d" für beide Richtungen jedes Fussgängerstücks
   const r = rng(808), out = new Set(), used = new Set(), list = [];
-  const bad = (bi, bj) => SPECIAL[bi + ',' + bj] || (bi === N >> 1 && bj === N >> 1) || baseOf(bi + ',' + bj) >= 0;
+  const bad = (bi, bj) => SPECIAL[bi + ',' + bj] || (bi === N >> 1 && bj === N >> 1) || baseOf(bi + ',' + bj) >= 0 || !blockOn(bi, bj);
   for (let t = 0; list.length < 4 && t < 500; t++) {
     const ax = r() < 0.5, i = 1 + Math.floor(r() * (N - 2)), j = 1 + Math.floor(r() * (N - 2)), i2 = ax ? i + 1 : i, j2 = ax ? j : j + 1;
     if (i2 >= N || j2 >= N) continue; // nicht am Ring
@@ -227,8 +238,8 @@ const PED = (() => { // Schlüssel "i,j,d" für beide Richtungen jedes Fussgäng
   out.list = list;
   return out;
 })();
-const isPed = (i, j, d) => PED.has(i + ',' + j + ',' + d);
-const hasLights = (i, j) => !((i === 0 || i === N) && (j === 0 || j === N)) && !ROUND.has(i + ',' + j); // Ecken: nur Kurve; Kreisel: keine Ampel
+const isPed = (i, j, d) => PED.has(i + ',' + j + ',' + d) || !segOn(i, j, d); // Fussgängerzone oder keine Strasse (freier Block)
+const hasLights = (i, j) => nodeSegs(i, j) >= 3 && !ROUND.has(i + ',' + j); // Ecken: nur Kurve; Kreisel: keine Ampel
 const axisOf = d => (d % 2 === 0 ? 'x' : 'z');
 // Tempolimit einer Strasse (k: Nummer der Strasse): aussen der Ring 80, durch die Mitte (Platz) 30, sonst 50 km/h
 const streetLimit = k => (k === 0 || k === N ? 80 : k === N / 2 ? 30 : 50);
@@ -578,7 +589,7 @@ function buildWorld() {
   boxPts(FARM, 60); boxPts({ x0: -HALF - 80, x1: HALF + 80, z0: -HALF - 80, z1: HALF + 80 }, 0);
   for (const S2 of SUBURBS) boxPts(S2.rect, 40);
   for (let a = 0; a < 6.3; a += 0.2) { isle.push([SKI.x + Math.cos(a) * (SKI.r + 60), SKI.z + Math.sin(a) * (SKI.r + 60)]); isle.push([SPACE.x + Math.cos(a) * 90, SPACE.z + Math.sin(a) * 90]); }
-  boxPts({ x0: -702, x1: -250, z0: -700, z1: -150 }, 10); // Strand und Promenade (die Bucht liegt westlich davon)
+  boxPts({ x0: -702, x1: -HALF, z0: -700, z1: -150 }, 10); // Strand und Promenade (die Bucht liegt westlich davon)
   setIsland(isle);
   const SEABED = -9;
   const height = (x, z) => { // Land; an der Küste geht es hinunter ins Meer (bei Hügeln als Klippe)
@@ -621,6 +632,7 @@ function buildWorld() {
   const roads = quads(1 / 8), lines = quads();
   for (let i = 0; i <= N; i++) for (let j = 0; j <= N; j++) {
     const x = node(i), z = node(j);
+    if (!nodeSegs(i, j)) continue; // mitten im Grünen: keine Kreuzung
     roads.rect(x, z, ROAD, ROAD, 0.02);
     const goX = i < N && !isPed(i, j, 0), goZ = j < N && !isPed(i, j, 1); // Fussgängerzone: keine Strasse
     if (goX) roads.add(x + ROAD / 2, z - ROAD / 2, node(i + 1) - ROAD / 2, z + ROAD / 2, 0.02);
@@ -652,8 +664,8 @@ function buildWorld() {
     ['#f1f5f9', '#334155', 'panel'], ['#fef3c7', '#57534e', 'panel']].forEach(([wall, frame, st], k) => walls.push(facadeMat(facade(wall, frame, rng(900 + k), st), 1.2)));
   const roofMat = mat({ color: 0x4b4f57, roughness: 0.9 }), metal = mat({ color: 0x9aa0aa, metalness: 0.6, roughness: 0.4 });
   const plaza = (N >> 1) + ',' + (N >> 1);
-  const parks = new Set(); // sieben Parks, über die Stadt verteilt
-  while (parks.size < 7) { const k = Math.floor(r() * N) + ',' + Math.floor(r() * N); if (k !== plaza && !SPECIAL[k] && baseOf(k) < 0) parks.add(k); }
+  const parks = new Set(); // neun Parks, über die Stadt verteilt
+  while (parks.size < 9) { const k = Math.floor(r() * N) + ',' + Math.floor(r() * N); if (k !== plaza && !SPECIAL[k] && baseOf(k) < 0 && !MASK.has(k)) parks.add(k); }
   const places = { bases: [] }; // Tankstelle, Waschanlage, Pizzeria: Mitte des Blocks; Basen
   // Schild mit Schrift (beidseitig lesbar)
   const sign = (text, bg, fg, w = 8, h = 1.6) => {
@@ -1162,6 +1174,16 @@ function buildWorld() {
   const copper = mat({ color: 0x5f9e88, metalness: 0.55, roughness: 0.45 }), slate = mat({ color: 0x3b4252, metalness: 0.3, roughness: 0.6 });
   for (let bi = 0; bi < N; bi++) for (let bj = 0; bj < N; bj++) {
     const cx = (node(bi) + node(bi + 1)) / 2, cz = (node(bj) + node(bj + 1)) / 2;
+    if (!blockOn(bi, bj)) { // freier Block am Stadtrand: Wäldchen mit Wiese (eigener Zufall, der Haupt-Zufall bleibt gleich)
+      const free = (x, z) => ![[0, 0], [7, 0], [-7, 0], [0, 7], [0, -7]].some(([a, b]) => suburbRoad(x + a, z + b)); // nicht auf die Strassen der Vororte
+      for (let k = 0; k < 16; k++) {
+        const tx = cx + (vr() - 0.5) * 48, tz = cz + (vr() - 0.5) * 48, pine = vr() < 0.5, sc = 0.8 + vr() * 0.7;
+        if (!free(tx, tz)) continue;
+        if (pine) pines.push([tx, 0, tz, sc]); else trees.push([tx, 0, tz, sc]);
+      }
+      scatter(tufts, cx - 26, cz - 26, cx + 26, cz + 26, 160, 0, 0.9, 1.6, free); scatter(bushes, cx - 24, cz - 24, cx + 24, cz + 24, 8, 0, 0.8, 1.4, free);
+      continue;
+    }
     const slab = new THREE.Mesh(new THREE.BoxGeometry(block, 0.16, block), paveMat);
     slab.position.set(cx, 0.08, cz); slab.receiveShadow = true;
     decor.add(slab);
@@ -1188,7 +1210,7 @@ function buildWorld() {
       continue;
     }
     // Aussenquartier: Einfamilienhäuser mit Giebeldach und Garten
-    const edge = bi === 0 || bj === 0 || bi === N - 1 || bj === N - 1;
+    const edge = !blockOn(bi - 1, bj) || !blockOn(bi + 1, bj) || !blockOn(bi, bj - 1) || !blockOn(bi, bj + 1); // am Stadtrand
     if (edge && r() < 0.7) {
       const g = quads(1 / 4), h = inner / 2;
       g.add(cx - h, cz - h, cx + h, cz + h, 0.17);
@@ -1449,8 +1471,8 @@ function buildWorld() {
   // Strassenlampen auf den Trottoirs
   const lampPos = [];
   for (let i = 0; i <= N; i++) for (let j = 0; j <= N; j++) for (const s of [20, 44]) {
-    if (i < N) for (const side of [-1, 1]) lampPos.push([node(i) + s, node(j) + side * 8.3]);
-    if (j < N) for (const side of [-1, 1]) lampPos.push([node(i) + side * 8.3, node(j) + s]);
+    if (i < N && segOn(i, j, 0)) for (const side of [-1, 1]) lampPos.push([node(i) + s, node(j) + side * 8.3]);
+    if (j < N && segOn(i, j, 1)) for (const side of [-1, 1]) lampPos.push([node(i) + side * 8.3, node(j) + s]);
   }
   const poleM = new THREE.InstancedMesh(new THREE.CylinderGeometry(0.09, 0.13, 6, 8), mat({ color: 0x3a3f4b, metalness: 0.6, roughness: 0.4 }), lampPos.length);
   const headM = new THREE.InstancedMesh(new THREE.BoxGeometry(0.9, 0.18, 0.4), lampHeadMat, lampPos.length);
@@ -2768,7 +2790,7 @@ function onBale() {
 const PEDS = 64, RING = 23.5, PED_SEE = 110; // weiter weg werden Fussgänger nicht gezeichnet
 const SHIRTS = [0x2563eb, 0xdc2626, 0x16a34a, 0xf59e0b, 0x7c3aed, 0xec4899, 0x0e7490, 0xf4f4f5, 0x1f2937], HAIRS = [0x5a3a1e, 0x1b1b1b, 0xd4a017, 0x8b4513, 0x9ca3af];
 const SKINS = [0xf2c9a0, 0xe0ac69, 0x8d5524, 0xc68642, 0xffdbac];
-const pedBlockOk = (bi, bj) => bi >= 0 && bj >= 0 && bi < N && bj < N && baseOf(bi + ',' + bj) < 0;
+const pedBlockOk = (bi, bj) => blockOn(bi, bj) && baseOf(bi + ',' + bj) < 0;
 const corner = (bi, bj, k) => { const cx = (node(bi) + node(bi + 1)) / 2, cz = (node(bj) + node(bj + 1)) / 2; return [cx + (k === 1 || k === 2 ? RING : -RING), cz + (k >= 2 ? RING : -RING)]; };
 // Charaktere: jeder geht anders, trägt etwas Eigenes und sagt eigene Sprüche (wenn du nahe kommst, hupst oder gesucht wirst)
 const PED_TYPES = {
@@ -3836,6 +3858,14 @@ function stepGrass() {
   }
   im.count = n; im.instanceMatrix.needsUpdate = true;
 }
+// Die Stadt ist neu gebaut worden: steht ein gespeichertes Auto jetzt in einem Haus, kommt es auf die nächste Strasse
+function parkFree(P) {
+  if (Math.max(Math.abs(P.x), Math.abs(P.z)) > HALF + 10) return;
+  if (!S.solid.some(b => P.x > b.x0 - 1.2 && P.x < b.x1 + 1.2 && P.z > b.z0 - 1.2 && P.z < b.z1 + 1.2)) return;
+  const nx = node(Math.round(P.x / BLOCK + N / 2)), nz = node(Math.round(P.z / BLOCK + N / 2));
+  if (Math.abs(P.x - nx) < Math.abs(P.z - nz)) { P.x = nx + LANE; P.h = Math.PI / 2; } else { P.z = nz + LANE; P.h = 0; }
+  saveParked();
+}
 function stepParked(dt) {
   if ((city.parkT = (city.parkT || 0) - dt) > 0) return;
   city.parkT = 0.25;
@@ -3844,6 +3874,7 @@ function stepParked(dt) {
   for (const P of city.parked) {
     const near = Math.hypot(P.x - me.pos.x, P.z - me.pos.z) < PARK_SEE || Math.hypot(P.x - cam.x, P.z - cam.z) < PARK_SEE;
     if (!P.mesh && near && !built) {
+      parkFree(P);
       const v = city.kinds[P.v.kind] ? P.v : { ...P.v, kind: 'car' };
       setParkMesh(P, buildCar(v, city.kinds)); parkCols(P); built = true;
     }
@@ -5144,6 +5175,7 @@ function startChase(from = null) {
   // Kreuzung etwa 70 m hinter dir
   let best = null, bd = Infinity;
   for (let i = 0; i <= N; i++) for (let j = 0; j <= N; j++) {
+    if (!nodeSegs(i, j)) continue;
     const x = node(i), z = node(j), dx = x - T.x, dz = z - T.z, dist = Math.hypot(dx, dz);
     const behind = -(dx * fx + dz * fz);
     const score = Math.abs(dist - 75) + (behind > 0 ? 0 : 200);
@@ -5165,9 +5197,9 @@ function bfs(start, goal) {
   while (queue.length) {
     const [i, j] = queue.shift();
     if (i === goal[0] && j === goal[1]) break;
-    for (const [dx, dz] of DIRS) {
-      const ni = i + dx, nj = j + dz;
-      if (!inGrid(ni, nj) || prev.has(key(ni, nj))) continue;
+    for (let d = 0; d < 4; d++) {
+      const ni = i + DIRS[d][0], nj = j + DIRS[d][1];
+      if (!segOn(i, j, d) || prev.has(key(ni, nj))) continue; // nur echte Strassen
       prev.set(key(ni, nj), [i, j]); queue.push([ni, nj]);
     }
   }
@@ -5487,7 +5519,11 @@ function surfaceAt(x, z) {
   }
   const bi = Math.floor(x / BLOCK + N / 2), bj = Math.floor(z / BLOCK + N / 2);
   const nx = node(Math.round(x / BLOCK + N / 2)), nz = node(Math.round(z / BLOCK + N / 2));
-  if (Math.abs(x - nx) < ROAD / 2 || Math.abs(z - nz) < ROAD / 2) return 'asphalt';
+  if (Math.abs(x - nx) < ROAD / 2 || Math.abs(z - nz) < ROAD / 2) { // Strasse – ausser zwischen freien Blöcken
+    const ok = [[-ROAD, -ROAD], [ROAD, -ROAD], [-ROAD, ROAD], [ROAD, ROAD]].some(([a, b]) => blockOn(Math.floor((x + a) / BLOCK + N / 2), Math.floor((z + b) / BLOCK + N / 2)));
+    return ok ? 'asphalt' : 'grass';
+  }
+  if (!blockOn(bi, bj)) return 'grass'; // freier Block (Wäldchen)
   const cx = (node(bi) + node(bi + 1)) / 2, cz = (node(bj) + node(bj + 1)) / 2, bs = baseOf(bi + ',' + bj);
   if (S.parks.has(bi + ',' + bj)) {
     if (Math.abs(x - cx) < 22 && Math.abs(z - cz) < 22 && Math.abs(x - cx) > 1.6 && Math.abs(z - cz) > 1.6) return 'grass';
@@ -5858,13 +5894,13 @@ function paintWorld(g, P, K) {
   const keys = city.keys.size;
   const rect = (b, col) => { const [x0, y0] = P(b.x0, b.z0), [x1, y1] = P(b.x1, b.z1); g.fillStyle = col; g.fillRect(x0, y0, x1 - x0, y1 - y0); };
   const line = (pts, col, w) => { g.strokeStyle = col; g.lineWidth = w; g.lineJoin = g.lineCap = 'round'; g.beginPath(); pts.forEach(([x, z], k) => { const [a, b] = P(x, z); k ? g.lineTo(a, b) : g.moveTo(a, b); }); g.stroke(); };
-  rect({ x0: -702, x1: -646, z0: -660, z1: -170 }, '#ecd9a0'); line([[-646, -192], [-250, -192]], '#cbd5e1', 14 * K); // Strand und Strasse
+  rect({ x0: -702, x1: -646, z0: -660, z1: -170 }, '#ecd9a0'); line([[-646, -192], [-HALF, -192]], '#cbd5e1', 14 * K); // Strand und Strasse
   for (const A of Object.values(AREAS)) { rect(A.rect, keys >= A.need ? '#a3aab4' : '#4b5563'); rect(A.road, '#cbd5e1'); }
   rect({ x0: -270, x1: 310, z0: 605, z1: 655 }, '#e5e7eb'); // Piste
   { const [x, y] = P(SKI.x, SKI.z); g.fillStyle = '#eef4fa'; g.beginPath(); g.arc(x, y, SKI.r * K, 0, 7); g.fill(); } // Skigebiet
   rect(FARM, '#8fb04a'); // Alp
   line(passPoints().filter((p, i) => i % 3 === 0).map(p => [p.x, p.z]), keys >= PASS_AREA.need ? '#d4d8de' : '#6b7280', 10 * K);
-  line([[263, 192], [SPACE.x, SPACE.z]], '#cbd5e1', 14 * K); { const [x, y] = P(SPACE.x, SPACE.z); g.fillStyle = '#cbd5e1'; g.beginPath(); g.arc(x, y, SPACE.r * K, 0, 7); g.fill(); }
+  line([[HALF + 7, 192], [SPACE.x, SPACE.z]], '#cbd5e1', 14 * K); { const [x, y] = P(SPACE.x, SPACE.z); g.fillStyle = '#cbd5e1'; g.beginPath(); g.arc(x, y, SPACE.r * K, 0, 7); g.fill(); }
   const hw = []; for (let s = 0; s <= HW_LEN; s += 30) { const p = hwPoint(s); hw.push([p.x, p.z]); }
   line(hw, '#e2e5ea', Math.max(3, 30 * K)); line(hw, '#facc15', 1); // Autobahn mit Mittellinie
   for (const b of ROADS) rect(b, '#d4d8de'); // Zubringer (Flughafenstrasse, Raumbahnhof)
@@ -5884,6 +5920,13 @@ function paintWorld(g, P, K) {
   g.fillStyle = '#7b8490'; g.beginPath();
   for (let k = 0; k < 64; k++) { const t = (k % 16) / 16 * 2 - 1, side = k >> 4, q = P(...[[t * HALF, -HALF], [HALF, t * HALF], [-t * HALF, HALF], [-HALF, -t * HALF]][side]); k ? g.lineTo(q[0], q[1]) : g.moveTo(q[0], q[1]); }
   g.closePath(); g.fill();
+  for (const key of MASK) { // freie Blöcke am Rand: Grün (Umriss wie eine echte Stadt)
+    const [bi, bj] = key.split(',').map(Number);
+    const x0 = node(bi) - ROAD / 2, z0 = node(bj) - ROAD / 2, L = BLOCK + ROAD, ring = [];
+    for (let k = 0; k < 4; k++) ring.push([x0 + L * k / 4, z0]); for (let k = 0; k < 4; k++) ring.push([x0 + L, z0 + L * k / 4]);
+    for (let k = 0; k < 4; k++) ring.push([x0 + L - L * k / 4, z0 + L]); for (let k = 0; k < 4; k++) ring.push([x0, z0 + L - L * k / 4]);
+    g.fillStyle = '#3f7a33'; g.beginPath(); ring.forEach(([x, z], k) => { const q = P(x, z); k ? g.lineTo(q[0], q[1]) : g.moveTo(q[0], q[1]); }); g.fill();
+  }
   for (const key of S.parks) {
     const [bi, bj] = key.split(',').map(Number), x0 = node(bi) + 7, z0 = node(bj) + 7, L = BLOCK - 14, pts = [];
     for (let k = 0; k < 4; k++) pts.push([x0 + L * k / 4, z0]); for (let k = 0; k < 4; k++) pts.push([x0 + L, z0 + L * k / 4]);
@@ -5891,6 +5934,7 @@ function paintWorld(g, P, K) {
     g.fillStyle = '#4a8f3c'; g.beginPath(); pts.forEach(([x, z], k) => { const q = P(x, z); k ? g.lineTo(q[0], q[1]) : g.moveTo(q[0], q[1]); }); g.fill();
   }
   for (let i = 0; i <= N; i++) for (const ax of [0, 1]) for (let k = 0; k < N; k++) {
+    if (ax ? !segOn(k, i, 0) : !segOn(i, k, 1)) continue; // keine Strasse (freier Block)
     const ped = ax ? isPed(k, i, 0) : isPed(i, k, 1), pts = [];
     for (let t = node(k); t <= node(k + 1) + 0.1; t += 8) pts.push(ax ? [t, node(i)] : [node(i), t]);
     line(pts, ped ? '#e8d6aa' : '#dfe3ea', ped ? 6 * K : ROAD * K);

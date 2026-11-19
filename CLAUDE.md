@@ -15,7 +15,10 @@ Browser-Spiel ohne Build: `index.html` + `game.js` (Spiellogik, Menüs und 2D-Ze
   (`REAL` + `realBody`: Querschnitte, Radkästen, Kabine mit Säulen, gemalte Front/Heck, dunkle Seitenschweller, schwarzer
   Fensterrahmen); `{ classic: true }` = alte Kastenform. Scheiben `glassClear`: getönt, wenig Spiegelung (sonst wirken sie milchig),
   nur Vorderseite (vom Fahrersitz klar). Alte Kastenformen: Lichter vor die abgerundete Kante (bevel ≈ 0,08 m), Bus mit Front-/Heckscheibe (`ends`).
-- `city.js`: 3D-Stadt zum freien Herumfahren (Strassengitter, Häuser, Parks, Ampeln, Verkehr mit Abbiegen und Halten).
+- `city.js`: 3D-Stadt zum freien Herumfahren (Strassengitter 10 × 10 Blöcke, Häuser, Parks, Ampeln, Verkehr mit Abbiegen und Halten).
+  Umriss wie eine echte Stadt: Randblöcke in `MASK` sind frei (Wäldchen); Strassen nur, wo eine Seite ein Block ist (`segOn`,
+  `blockOn`, `nodeSegs`; sonst gilt die Strasse als gesperrt über `isPed`). Anschlüsse am Stadtrand (Zufahrt, Hafen, Strand,
+  Raumbahnhof, Pass) liegen bei ±320 (HALF); gespeicherte Autos, die jetzt in einem Haus stünden, kommen auf die Strasse (`parkFree`).
   Geschwungene Strassen: gerechnet wird im geraden Gitter, nur das Bild wird verbogen (`warpXZ`/`warpRot`): jede Strasse eigene Welle
   (`SW`, fester Zufall), Blöcke verschieden gross (`SW.ox`/`SW.oz`), Stadt rund statt viereckig (`WARP_ROUND`),
   läuft draussen bis `WARP_OUT` (HALF + 160) sanft aus (auch das Gelände-Netz wird verbogen).
@@ -42,22 +45,22 @@ Browser-Spiel ohne Build: `index.html` + `game.js` (Spiellogik, Menüs und 2D-Ze
   einsteigen ins eigene Auto oder in eines der eigenen Base.
   Polizei nur nach einem Blitzer: Rotlicht-Kamera an jeder zehnten Ampel (`S.redCams`) oder Radarkasten (`S.speedCams`,
   mehr als 5 km/h über dem Limit); Tempolimit je Strasse in `streetLimit` (Ring 80, Mitte 30, sonst 50).
-  Über 140 km/h geblitzt: 3 Minuten Gefängnis (Block 2,2), freikaufen 100 Münzen; Endzeit im Spielstand `autoRetterJail`.
+  Über 140 km/h geblitzt: 3 Minuten Gefängnis (Block 3,3), freikaufen 100 Münzen; Endzeit im Spielstand `autoRetterJail`.
   Autos klauen (`stealCar`, `canSteal`): zu Fuss zu einem fremden Verkehrsauto, X; Alarm (`city.alarm`, Warnblinker `hazardGroup`),
   gesucht `city.wanted` (⭐ je Auto, höchstens 3, `WANTED_TIME` ohne gesehen zu werden). `stepWanted`: Streifen im Verkehr sehen dich
   (`canSee`, Häuser dazwischen) → `startChase(c)` (der Streifenwagen selbst jagt); mehr Streifen über `ensurePatrols` (`c.patrol`).
   Aussteigen geht auch während der Jagd (`exitCar`), dann rennt ein Polizist nach (`P.cop`, `stepCop`, `makeCop`). Erwischt:
   Busse, `giveBack` gibt das Auto zurück und holt dein eigenes (`city.stolenFrom`, ein geparktes Auto); bei ⭐⭐⭐ Gefängnis.
   Weiter in der Stadt: Unfälle der Bots mit Stau (`stepAccidents`), Tank/Akku (`city.fuel`, Tankstelle mit Ladesäule),
-  Schaden mit Kratzern und Werkstatt (`hurt`, pro Unfall nur ein Viertel von früher, Block 6,3, davor Parkplatz für den Auftrag Einparken), Wetter (`stepWeather`),
-  Fahrschule (Auftrag `school`, Führerschein in `autoRetterLicense`) und Autohändler (Block 1,3, `cityDealer` in `game.js`).
-  Blaue Zone (Block 3,6, `stepBlue`/`stepLot`): Verkehrsautos parkieren dort, mal viel los, mal ruhig; selber parkieren gibt
+  Schaden mit Kratzern und Werkstatt (`hurt`, pro Unfall nur ein Viertel von früher, Block 7,4, davor Parkplatz für den Auftrag Einparken), Wetter (`stepWeather`),
+  Fahrschule (Auftrag `school`, Führerschein in `autoRetterLicense`) und Autohändler (Block 2,4, `cityDealer` in `game.js`).
+  Blaue Zone (Block 4,7, `stepBlue`/`stepLot`): Verkehrsautos parkieren dort, mal viel los, mal ruhig; selber parkieren gibt
   Münzen, nach 3 Minuten (Parkscheibe) ein Strafzettel.
   Fussgänger (`stepPeds`, `PEDS` 64, gezeichnet bis `PED_SEE`): gehen um die Blöcke, überqueren bei Rot auf dem Zebrastreifen, Autos halten an (`followLimit`).
   Charaktere `PED_TYPES` (Jogger, Senior mit Stock, Kind mit Ballon, mit Hund, Handy, Geschäftsmann, Tourist): `makeCharacter`,
   `stepCharacter` (Pausen, Sprüche beim Näherkommen/Hupen/gesucht über `pedSay`). Verkehr: `TRAFFIC` 64.
   Baustelle (`stepWorks`): sperrt ein Strassenstück, Verkehr fährt Umleitung (`isClosed` in `planTurn`).
-  Eigenes Haus (Block 7,5, `stepHouse`): am Briefkasten kaufen und Gartensachen kaufen, Garage = gratis reparieren und tanken;
+  Eigenes Haus (Block 8,6, `stepHouse`): am Briefkasten kaufen und Gartensachen kaufen, Garage = gratis reparieren und tanken;
   Spielstand `autoRetterHouse`. Haus von innen (Tür geht für den Besitzer zu Fuss auf, Kamera bleibt drinnen); Bett:
   X = schlafen bis 7 Uhr (`goSleep`/`stepSleep`, nur allein und ab 19 Uhr). Testen im Hintergrund-Tab: `window.__cityTick(n)` rechnet n Bilder.
   Freies Gelände: neben den Strassen darf man überall fahren (`allowedAt` + `offroadWhy` in outskirts.js: nicht ins Wasser,
@@ -67,8 +70,8 @@ Browser-Spiel ohne Build: `index.html` + `game.js` (Spiellogik, Menüs und 2D-Ze
   abheben, landen flach und langsam, sonst Bruch = zurück zur Piste). Tempomat über der km/h-Anzeige (`city.cruise`, C, + / −;
   höchstens die Höchstgeschwindigkeit des Autos). Stadtbild: Strassenbäume, Bänke, Läden mit Markisen, Balkone (Instanzen).
   Stadtleben: Läden über `openPanel` (Tankstellen-Snacks `gasShop`, Lackieren `paint`, Tuning `tuning` → `dealer.mod` in game.js
-  speichert Farbe/Tuning, Drive-in `order`/`pickup`). Parkhaus (Block 4,2: `parkY`/`parkStep`/`parkBlocked`, Ebenen `city.pkL`),
-  Kino (6,4: Film auf der Leinwand, X bei den Sitzen), Stadion (5,6: Spiel 14–22 Uhr, `S.match`).
+  speichert Farbe/Tuning, Drive-in `order`/`pickup`). Parkhaus (Block 5,3: `parkY`/`parkStep`/`parkBlocked`, Ebenen `city.pkL`),
+  Kino (7,5: Film auf der Leinwand, X bei den Sitzen), Stadion (6,7: Spiel 14–22 Uhr, `S.match`).
   Verkehr (`setupTrafficSpecials`/`trafficSpecial`): Postautos an Haltestellen, Schulbus mit Blinklicht (nicht überholen),
   Ambulanz-Einsätze (`city.amb`, Platz machen), nachts keine Lastwagen (`c.off`), dafür Strassenwischer.
   Grafik-Stil: farbig, leicht cartoonartig (nicht fotorealistisch). Fassaden `facade(wall, frame, r, style)`: classic, ribbon,
