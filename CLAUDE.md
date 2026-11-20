@@ -134,7 +134,11 @@ Browser-Spiel ohne Build: `index.html` + `game.js` (Spiellogik, Menüs und 2D-Ze
   `hide`: Materialien), `opaque` (fälschlich durchsichtig), Lack (`paint`, ein oder mehrere Materialien, wird grau gemacht und eingefärbt), `credit`.
   Box beim Vorbereiten genau messen (`setFromObject(…, true)`), sonst schweben gedrehte Modelle.
   `prepareModel` fasst je Material zusammen: gespiegelte Teile umdrehen (`flipWinding`), alle Werte als Float32, Bilder nur
-  UV-Lage 0 (`uv1` fällt weg, sonst Shader-Fehler = unsichtbare Teile), Ecken-Farben aus (`vertexColors`, sonst schwarz), danach `mergeVertices` (Speicher); Räder als Kopie (Datei-Puffer wird frei). `hide` wirkt vor dem Messen
+  UV-Lage 0 (`uv1` fällt weg, sonst Shader-Fehler = unsichtbare Teile), Ecken-Farben aus (`vertexColors`, sonst schwarz), danach `mergeVertices` (Speicher); Räder als Kopie (Datei-Puffer wird frei).
+  Fehlt metalness im Modell (glTF = 1), wird sie auf 0,25 gesetzt (sonst schwarz). Fahrersitz-Kamera: `modelEye` (hinter der
+  Oberkante der Frontscheibe, Dach nur in der Mitte gesucht), sonst `eyeX`/`eyeY` in MODELS. Lichter nach Material-Namen
+  (`LAMP_RE`) in `MODEL_LAMPS`, leuchten nachts (city.js); `blink` = Blaulicht (Polizei: Dodge Charger mit eigener Bemalung).
+  Richtung prüfen: Kamera „vorne“ in der Stadt (`window.__citySwitch(v)`, `window.__cityCam(3)`) muss die Front zeigen. `hide` wirkt vor dem Messen
   (Teile weit weg verkleinern sonst das ganze Auto). `loadCarModels` lädt sie (auch vor der Stadt in game.js), `useModel` ersetzt das eigene Auto (gleiche
   Länge, Räder drehen, keine einfache Fassung). Ersteller in der Danke-Zeile im Startbild (game.js, `drawVersion`) nennen (CC BY).
   Marken sind im Moment erlaubt (Martin: privates Spiel). Neue Datei auch in `APP_FILES`; pages.yml kopiert den ganzen Ordner.

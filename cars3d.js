@@ -1611,7 +1611,7 @@ for (const [k, base] of Object.entries(JUNK_BASE)) BUILD[k] = C => { BUILD[base]
 // ---------- Echte 3D-Modelle (GLB, aus dem Ordner models/) ----------
 // MODELS: Datei → welche Fahrzeugtypen damit gezeichnet werden, len = echte Länge in Metern. forward = wohin die Nase im Modell zeigt ('+z'/'-z'/'+x'/'-x'),
 // wheels = Namen der Rad-Teile (drehen sich), drop = Teile, die weg können (Innenraum, Motor …: weniger Dreiecke),
-// paint = Name(n) der Lack-Materialien (werden in der Wagenfarbe eingefärbt), hide = Materialien weglassen, opaque = fälschlich durchsichtige Materialien, credit = Ersteller (Lizenz CC BY verlangt das).
+// paint = Name(n) der Lack-Materialien (werden in der Wagenfarbe eingefärbt), hide = Materialien weglassen, opaque = fälschlich durchsichtige Materialien, blink = Blaulicht, eyeX/eyeY = Augen des Fahrers (m, wenn die Schätzung in modelEye nicht passt), credit = Ersteller (Lizenz CC BY verlangt das).
 // Solange ein Modell noch nicht geladen ist (oder fehlt), zeichnet buildCar das eigene Auto.
 export const MODELS = [
   { file: 'models/lowpoly_generic_suv.glb', len: 4.75, kinds: ['offroad'], forward: '+z', wheels: /^Wheel_/i, drop: /^Shadow/i, paint: /^Body$/i,
@@ -1623,7 +1623,7 @@ export const MODELS = [
   { file: 'models/cullinan.glb', len: 5.34, kinds: ['luxsuv'], forward: '+z', wheels: /^wheel_(fl|fr|rl|rr)$/i, paint: /^colou?red$/i, credit: '„Rolls Royce Cullinan“ von NewViStudios, CC BY 4.0' },
   { file: 'models/g_class.glb', len: 4.66, kinds: ['jeep'], forward: '+z', paint: /carpaint/i, credit: '„2013 Mercedes-Benz G-Class G 550“ von Ddiaz Design, CC BY-NC-SA 4.0' },
   { file: 'models/ferrari_488.glb', len: 4.6, kinds: ['supercar'], forward: '+z', wheels: /wheel(fl|fr|rl|rr)_setpt_mesh_lod0/i, paint: /carpaint/i, credit: '„Ferrari 488 Pista“ von Tiaan Pretorius, CC BY 4.0' },
-  { file: 'models/lambo_revuelto.glb', len: 4.95, kinds: ['hyperev'], forward: '-x', paint: /^(MAT_CarpaintMain|CarPaintBlack)$/, credit: '„Lamborghini Revuelto“ von Outlaw Games, CC BY-NC 4.0' },
+  { file: 'models/lambo_revuelto.glb', len: 4.95, kinds: ['hyperev'], forward: '+x', eyeX: 0.1, eyeY: 1.0, paint: /^(MAT_CarpaintMain|CarPaintBlack)$/, credit: '„Lamborghini Revuelto“ von Outlaw Games, CC BY-NC 4.0' },
   { file: 'models/laferrari.glb', len: 4.7, kinds: ['hyper'], forward: '+z', paint: /^(Body|Material\.14[67])$/, credit: '„Ferrari Laferrari“ von vecarz, CC BY-NC-SA 4.0' },
   { file: 'models/porsche_gt2rs.glb', len: 4.55, kinds: ['gtcar'], forward: '+z', paint: /^colou?red$/i, credit: '„2018 Porsche 911 GT2 RS Weissach Package“ von Ddiaz Design, CC BY-NC-SA 4.0' },
   { file: 'models/porsche_911_4s.glb', len: 4.5, kinds: ['sports'], forward: '+z', paint: /^paint$/i, hide: /^coat$/, credit: '„(FREE) Porsche 911 Carrera 4S“ von Karol Miklas, CC BY-SA 4.0' },
@@ -1634,13 +1634,16 @@ export const MODELS = [
   { file: 'models/audi_r8.glb', len: 4.43, kinds: ['racer'], forward: '+z', paint: /2023Paint_Material1$/, credit: '„2023 Audi R8 Coupe V10 GT RWD“ von Ddiaz Design, CC BY-NC-SA 4.0' },
   { file: 'models/jesko.glb', len: 4.61, kinds: ['lemans'], forward: '+z', paint: /mm_ext1$/, credit: '„2020 Koenigsegg Jesko“ von Ddiaz Design, CC BY 4.0' },
   { file: 'models/koenigsegg_one1.glb', len: 4.5, kinds: ['gtlegend'], forward: '+z', credit: '„Koenigsegg One1 low poly“ von jkazulyblanco, CC BY 4.0' },
-  { file: 'models/pagani_imola.glb', len: 4.8, kinds: ['musclegt'], forward: '+z', paint: /2021Paint_Material$/, credit: '„2021 Pagani Imola“ von Ddiaz Design, CC BY-NC-SA 4.0' },
+  { file: 'models/pagani_imola.glb', len: 4.8, kinds: ['musclegt'], forward: '+z', eyeX: -0.2, eyeY: 0.9, paint: /2021Paint_Material$/, credit: '„2021 Pagani Imola“ von Ddiaz Design, CC BY-NC-SA 4.0' },
   { file: 'models/cayenne.glb', len: 4.93, kinds: ['car'], forward: '+z', paint: /^pMAT_Porsche_Cayenne1$/, credit: '„2020 Porsche Cayenne Turbo Coupe“ von Ddiaz Design, CC BY-NC-SA 4.0' },
   { file: 'models/defender.glb', len: 4.95, kinds: ['safari'], forward: '+z', paint: /^Pintura$/, hide: /^Pintura_\.004$/, credit: '„Land Rover Defender – Edition Grasmere Green“ von PROJECT CAR90, CC BY 4.0' },
-  { file: 'models/suburban.glb', len: 5.58, kinds: ['oldtimer'], forward: '+z', paint: /^Reference4ref002reference4ref002paintmetallic1Mtl$/, opaque: /^Wheelsdually0(04|15|16)/, credit: '„1989 Chevrolet Suburban“ von Randomness, CC BY 4.0' },
+  { file: 'models/suburban.glb', len: 5.58, kinds: ['oldtimer'], forward: '-z', paint: /^Reference4ref002reference4ref002paintmetallic1Mtl$/, opaque: /^Wheelsdually0(04|15|16)/, credit: '„1989 Chevrolet Suburban“ von Randomness, CC BY 4.0' },
   { file: 'models/express_van.glb', len: 5.69, kinds: ['delivery'], forward: '+z', paint: /^CGphong5SG1$/, credit: '„2003 Chevrolet Express GMC Savana 2500 Cargo Van“ von Ddiaz Design, CC BY 4.0' },
   { file: 'models/mclaren_765lt.glb', len: 4.6, kinds: ['stockcar'], forward: '+z', paint: /2021(Paint|Coloured)_Material$/, credit: '„2022 McLaren 765LT“ von Ddiaz Design, CC BY-NC-SA 4.0' },
   { file: 'models/bugatti_tourbillon.glb', len: 4.67, kinds: ['luxlimo'], forward: '+z', paint: /2026Paint_Material1$/, credit: '„2026 Bugatti Tourbillon“ von Ddiaz Design, CC BY-NC-SA 4.0' },
+  { file: 'models/cadillac_xt6.glb', len: 5.05, kinds: ['ecar'], forward: '+z', paint: /^Paint_Color$/, credit: '„Cadillac XT6 Luxury 2023 (free)“ von 3dShowroom, CC BY 4.0' },
+  { file: 'models/police_charger.glb', len: 5.1, kinds: ['police'], forward: '+z', blink: /^emergrx$/, credit: '„Dodge Charger SRT (Police)“ von temich, CC BY-NC 4.0' }, // eigene Polizei-Bemalung, Blaulicht blinkt
+  { file: 'models/urus.glb', len: 5.11, kinds: ['pickupxl'], forward: '+z', paint: /2018Paint_Material$/, credit: '„2019 Lamborghini Urus“ von Ddiaz Design, CC BY-NC-SA 4.0' },
   { file: 'models/golf_gti.glb', len: 4.27, kinds: ['kompakt'], forward: '+z', paint: /^Carpaint$/, credit: '„VW Golf GTi MK7“ von vecarz, CC BY-NC 4.0' },
 ];
 const modelOf = new Map(); // Typ → fertig vorbereitetes Modell
@@ -1676,6 +1679,9 @@ function grayMap(tex) {
   const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; t.flipY = tex.flipY; t.wrapS = tex.wrapS; t.wrapT = tex.wrapT;
   return t;
 }
+// Lichter der echten Modelle (nach Material-Namen): city.js lässt sie nachts leuchten
+export const MODEL_LAMPS = new Set();
+const LAMP_RE = /light|lamp|lanterna|freio|signal/i, NOT_LAMP_RE = /metal|chrom|black|cover|lines|pipe|bump|detail|fog|plate|warning|reflector/i;
 // Dreiecke umdrehen (nicht indizierte Geometrie: Ecke 2 und 3 jedes Dreiecks tauschen)
 function flipWinding(g) {
   for (const [name, a0] of Object.entries(g.attributes)) {
@@ -1718,15 +1724,24 @@ function prepareModel(scene, M) {
       for (const v of Object.values(o.material)) if (v && v.isTexture && v.channel) { v.channel = 0; v.needsUpdate = true; }
       if (M.opaque && M.opaque.test(o.material.name)) { o.material.transparent = false; o.material.opacity = 1; o.material.depthWrite = true; } // fälschlich durchsichtig
       if (o.material.vertexColors) { o.material.vertexColors = false; o.material.needsUpdate = true; } // Ecken-Farben fallen weg (sonst schwarz)
+      const mt = o.material, nm = mt.name || '';
+      if (!mt.metalnessMap && mt.metalness > 0.6 && !/chrom|metal|alu|rim|wheel|silver|mirror|spiegel|cromad/i.test(nm)) mt.metalness = 0.25; // fehlt im Modell: glTF nimmt 1 = ganz Metall (wirkt schwarz)
+      if ((M.blink && M.blink.test(nm)) || (LAMP_RE.test(nm) && !NOT_LAMP_RE.test(nm))) { // Lichter: leuchten in ihrer eigenen Farbe (nachts, Blaulicht blinkt)
+        const bl = M.blink && M.blink.test(nm);
+        mt.emissive = new THREE.Color(bl ? 0x2f6bff : mt.map ? 0xffffff : mt.color); mt.emissiveMap = bl ? null : mt.map || null; mt.emissiveIntensity = 0; // Blaulicht: blau
+        if (!bl) MODEL_LAMPS.add(mt);
+        mt.needsUpdate = true;
+      }
     }
     byMat.get(o.material).push(g); gone.push(o);
   });
   for (const o of gone) o.parent.remove(o);
   for (const o of wheelSet) if (o.isMesh) o.geometry = o.geometry.clone(); // eigene Kopie: die ganze Datei (Puffer) muss nicht im Speicher bleiben
   for (const [mat, geos] of byMat) { // nicht 'wheel' heissen (drehte sich sonst)
+    const blink = M.blink && M.blink.test(mat.name || '') ? 1 : 0;
     let g = geos.length > 1 ? mergeGeometries(geos, false) : geos[0];
     if (g) { const gi = mergeVertices(g, 1e-5); if (gi.index && gi.attributes.position.count < g.attributes.position.count * 0.8) g = gi; } // gleiche Ecken teilen: weniger Speicher (Handy)
-    for (const q of g ? [g] : geos) { const m = new THREE.Mesh(q, mat); m.name = 'part:' + mat.name; holder.add(m); } // klappt es nicht: einzeln
+    for (const q of g ? [g] : geos) { const m = new THREE.Mesh(q, mat); m.name = 'part:' + mat.name; if (blink) m.userData.blink = 1; holder.add(m); } // klappt es nicht: einzeln
   }
   let paint = null, tris = 0;
   holder.traverse(o => {
@@ -1742,7 +1757,27 @@ function prepareModel(scene, M) {
   });
   // weitere Lack-Materialien bekommen denselben Lack (eine Wagenfarbe)
   if (paint) holder.traverse(o => { if (o.isMesh && !Array.isArray(o.material) && o.material !== paint && M.paint.test(o.material.name)) o.material = paint; });
-  return { holder, length: size.x, height: size.y, paint, wheels: M.wheels, tris: Math.round(tris), credit: M.credit, len: M.len };
+  return { holder, length: size.x, height: size.y, paint, wheels: M.wheels, tris: Math.round(tris), credit: M.credit, len: M.len, eye: modelEye(holder, size), eyeX: M.eyeX, eyeY: M.eyeY };
+}
+// Augen des Fahrers im Modell (Fahrersitz-Kamera): knapp hinter der Oberkante der Frontscheibe, etwas unter dem Dach, links
+function modelEye(holder, size) {
+  const N = 48, L = size.x, top = new Float32Array(N).fill(-1e9), x0 = -L / 2, v = new THREE.Vector3();
+  holder.updateMatrixWorld(true);
+  holder.traverse(o => {
+    if (!o.isMesh || !o.name.startsWith('part:') || o.material.transparent) return; // nur feste Teile (keine Scheiben)
+    const p = o.geometry.attributes.position;
+    for (let i = 0; i < p.count; i++) {
+      v.fromBufferAttribute(p, i);
+      if (Math.abs(v.z) > size.z * 0.3) continue; // Mitte: Dach, nicht Spiegel
+      const b = Math.max(0, Math.min(N - 1, Math.floor((v.x - x0) / L * N)));
+      if (v.y > top[b]) top[b] = v.y;
+    }
+  });
+  const b0 = Math.floor(N * 0.22), b1 = Math.ceil(N * 0.78); // Dach nur in der Mitte suchen (hinten oft Flügel oder Motorhaube)
+  let roof = -1e9; for (let b = b0; b < b1; b++) roof = Math.max(roof, top[b]);
+  let front = b1 - 1; while (front > b0 && top[front] < roof - size.y * 0.06) front--; // vorderstes Stück auf Dachhöhe
+  const ex = x0 + (front + 0.5) / N * L - L * 0.1, ey = roof - L * 0.055, ez = -size.z * 0.19;
+  return [ex, ey, ez];
 }
 // Das eigene Auto (für Masse, Augen, Schatten) durch das Modell ersetzen: gleiche Länge, Räder drehen sich
 function useModel(C, P) {
@@ -1788,6 +1823,7 @@ export function buildCar(v, kinds, hDiv) {
       mergeStatic(C.body);
       farPaint = C.paint; farProc = makeFar(C.group, C.paint);
       const pm = useModel(C, MP);
+      if (MP.eye) { const sc = C.L / MP.length; C.eye = MP.eye.map(n => n * sc); if (MP.eyeX !== undefined) C.eye[0] = MP.eyeX; if (MP.eyeY !== undefined) C.eye[1] = MP.eyeY; }
       if (pm) { C.paint = pm.clone(); C.paint.color.set(v.special === 'gold' ? '#ffcf33' : v.color || '#cccccc'); C.group.traverse(o => { if (o.material === pm) o.material = C.paint; }); }
     } else {
       if (C.side) sideDetails(C);

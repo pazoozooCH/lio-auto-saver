@@ -2,7 +2,7 @@
 // Wird von game.js erst geladen, wenn man in die Stadt fährt.
 import * as THREE from 'three';
 import { Sky } from 'three/addons/objects/Sky.js';
-import { buildCar, animateCar, warmUp, makeQuality, mergeStatic, setLod } from './cars3d.js';
+import { buildCar, animateCar, warmUp, makeQuality, mergeStatic, setLod, MODEL_LAMPS } from './cars3d.js';
 import { buildJunkyard, JUNK, BENCH, BUILT, PARTS, inJunk, loadJunk, saveJunk, missingParts } from './junkyard.js';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { makeNoise, rng, smoothstep, surface, terrain, cloudDome } from './world3d.js';
@@ -6321,6 +6321,7 @@ export function startCity({ player, kinds, topSpeed, onExit, pay = () => 0, earn
   camLook.set(me.pos.x, 1.2, me.pos.z);
   window.__city = () => city; // für Tests im Browser
   window.__cityS = () => S;
+  window.__citySwitch = v => switchCar(v, true); window.__cityCam = m => { camMode = m; }; // Tests: Auto wechseln, Kamera
   window.__cityTick = n => { for (let k = 0; k < n && city; k++) step(city.last + 1000 / 60); }; // Tests: Bilder rechnen, auch im Hintergrund
   window.__cityWarp = (x, z) => warpXZ(x, z, { x: 0, z: 0 }); // Tests: wo liegt ein Punkt im Bild
   window.__cityMission = type => startMission(type); // Aufträge und Überraschungen direkt starten
@@ -6449,6 +6450,7 @@ function stepDayNight(dt) {
   n.stars.material.opacity = night;
   if (S.clouds.material && S.clouds.material.color) S.clouds.material.color.setScalar(0.25 + 0.75 * day);
   if (city.headMat) city.headMat.emissiveIntensity = 0.35 + 3.3 * night; // Scheinwerfer aller Autos: am Tag klares Glas, nachts hell
+  for (const m of MODEL_LAMPS) m.emissiveIntensity = 1.4 * night; // Lichter der echten Automodelle
   const me = city.me, fx = Math.cos(me.heading), fz = Math.sin(me.heading);
   n.headlight.intensity = 90 * night;
   n.headlight.position.set(me.pos.x + fx * 1.5, 1.1, me.pos.z + fz * 1.5);
@@ -6662,6 +6664,7 @@ function endCity() {
   S.ui.hint.textContent = HINT;
   for (const car of c.cars) { S.scene.remove(car.mesh); if (car.tri) S.scene.remove(car.tri); } // Formen gehören den Vorlagen in cars3d.js
   if (c.headMat) c.headMat.emissiveIntensity = 0.35; // Scheinwerfer wieder wie am Tag (gilt auch fürs Rennen)
+  for (const m of MODEL_LAMPS) m.emissiveIntensity = 0;
   if (c.netCars) c.netCars.dispose();
   if (c.chat) c.chat.dispose();
   S.ui.root.hidden = true;
