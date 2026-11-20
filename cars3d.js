@@ -1608,6 +1608,94 @@ Object.assign(BUILD, {
 const JUNK_BASE = { junkrod: 'muscle', junkbuggy: 'buggy', junktruck: 'monster', junkbus: 'van', junkcabrio: 'cabrio', junkracer: 'sports' };
 for (const [k, base] of Object.entries(JUNK_BASE)) BUILD[k] = C => { BUILD[base](C); junkExtras(C, k); };
 
+// ---------- Echte 3D-Modelle (GLB, aus dem Ordner models/) ----------
+// MODELS: Datei → welche Fahrzeugtypen damit gezeichnet werden. forward = wohin die Nase im Modell zeigt ('+z'/'-z'/'+x'/'-x'),
+// wheels = Namen der Rad-Teile (drehen sich), drop = Teile, die weg können (Innenraum, Motor …: weniger Dreiecke),
+// paint = Name des Lack-Materials (wird in der Wagenfarbe eingefärbt), credit = Ersteller (Lizenz CC BY verlangt das).
+// Solange ein Modell noch nicht geladen ist (oder fehlt), zeichnet buildCar das eigene Auto.
+export const MODELS = [
+  { file: 'models/lowpoly_generic_suv.glb', kinds: ['luxsuv', 'offroad'], forward: '+z', wheels: /^Wheel_/i, drop: /^Shadow/i, paint: /^Body$/i,
+    credit: '„Lowpoly Generic SUV“ von mk2design (sketchfab.com/mk2design), CC BY 4.0' },
+];
+const modelOf = new Map(); // Typ → fertig vorbereitetes Modell
+let modelsLoading = null;
+export function loadCarModels() {
+  if (modelsLoading) return modelsLoading;
+  modelsLoading = (async () => {
+    let GLTFLoader;
+    try { ({ GLTFLoader } = await import('three/examples/jsm/loaders/GLTFLoader.js')); } catch (e) { return false; }
+    const loader = new GLTFLoader();
+    await Promise.all(MODELS.map(async M => {
+      try {
+        const g = await loader.loadAsync(M.file);
+        const prep = prepareModel(g.scene, M);
+        for (const k of M.kinds) { modelOf.set(k, prep); for (const key of [...templates.keys()]) if (key.startsWith(k + '|')) templates.delete(key); }
+      } catch (e) { console.warn('Automodell fehlt:', M.file, e); }
+    }));
+    return true;
+  })();
+  return modelsLoading;
+}
+// Lack: das Bild des Lacks in Grau umwandeln (Details bleiben), die Farbe kommt dann vom Material
+function grayMap(tex) {
+  const img = tex && tex.image;
+  if (!img || !img.width) return null;
+  const c = document.createElement('canvas'); c.width = img.width; c.height = img.height;
+  const g = c.getContext('2d'); g.drawImage(img, 0, 0);
+  const d = g.getImageData(0, 0, c.width, c.height), a = d.data;
+  let sum = 0; for (let k = 0; k < a.length; k += 4) sum += 0.3 * a[k] + 0.59 * a[k + 1] + 0.11 * a[k + 2];
+  const f = 230 / Math.max(1, sum / (a.length / 4)); // im Mittel fast weiss: die Wagenfarbe bestimmt
+  for (let k = 0; k < a.length; k += 4) { const l = Math.min(255, (0.3 * a[k] + 0.59 * a[k + 1] + 0.11 * a[k + 2]) * f); a[k] = a[k + 1] = a[k + 2] = l; }
+  g.putImageData(d, 0, 0);
+  const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; t.flipY = tex.flipY; t.wrapS = tex.wrapS; t.wrapT = tex.wrapT;
+  return t;
+}
+function prepareModel(scene, M) {
+  const drop = [];
+  scene.traverse(o => { if (M.drop && M.drop.test(o.name)) drop.push(o); });
+  for (const o of drop) o.parent && o.parent.remove(o);
+  // Nase nach +x drehen (so wie die eigenen Autos), auf den Boden stellen, Mitte auf 0
+  const rot = { '+z': Math.PI / 2, '-z': -Math.PI / 2, '+x': 0, '-x': Math.PI }[M.forward || '+z'];
+  const holder = new THREE.Group(); holder.add(scene); scene.rotation.y += rot; holder.updateMatrixWorld(true);
+  const box = new THREE.Box3().setFromObject(holder), size = box.getSize(new THREE.Vector3());
+  scene.position.x -= (box.min.x + box.max.x) / 2; scene.position.z -= (box.min.z + box.max.z) / 2; scene.position.y -= box.min.y;
+  holder.updateMatrixWorld(true);
+  let paint = null, tris = 0;
+  scene.traverse(o => {
+    if (!o.isMesh) return;
+    o.castShadow = true; o.receiveShadow = true;
+    const g = o.geometry; tris += (g.index ? g.index.count : g.attributes.position.count) / 3;
+    const mats = Array.isArray(o.material) ? o.material : [o.material];
+    for (const m of mats) if (M.paint && M.paint.test(m.name) && !paint) {
+      paint = m;
+      const gm = grayMap(m.map); if (gm) { m.map = gm; m.color.set(0xffffff); }
+      m.envMapIntensity = 1.3;
+    }
+  });
+  return { holder, length: size.x, height: size.y, paint, wheels: M.wheels, tris: Math.round(tris), credit: M.credit };
+}
+// Das eigene Auto (für Masse, Augen, Schatten) durch das Modell ersetzen: gleiche Länge, Räder drehen sich
+function useModel(C, P) {
+  const keep = C.group.children.filter(o => o.name === 'shadow');
+  for (const o of [...C.group.children]) if (!keep.includes(o)) C.group.remove(o);
+  const body = new THREE.Group(); body.name = 'body';
+  const inst = P.holder.clone(true), s = C.L / P.length;
+  inst.scale.setScalar(s); body.add(inst); C.group.add(body);
+  C.group.updateMatrixWorld(true);
+  const wheels = [];
+  inst.traverse(o => { if (P.wheels && P.wheels.test(o.name)) wheels.push(o); });
+  const top = wheels.filter(w => !wheels.some(o => o !== w && isAncestor(o, w))); // nur die obersten Rad-Teile
+  for (const w of top) { // Drehpunkt in der Radmitte, Achse quer zum Auto (wie bei den eigenen Autos: rotation.z)
+    const b = new THREE.Box3().setFromObject(w), c = b.getCenter(new THREE.Vector3());
+    const pivot = new THREE.Group(); pivot.name = 'wheel'; pivot.position.copy(C.group.worldToLocal(c.clone()));
+    C.group.add(pivot); pivot.updateMatrixWorld(true); pivot.attach(w);
+  }
+  let paint = null;
+  body.traverse(o => { if (o.isMesh && o.material === P.paint) paint = o.material; });
+  return paint;
+}
+const isAncestor = (a, b) => { for (let p = b.parent; p; p = p.parent) if (p === a) return true; return false; };
+
 const templates = new Map(), paints = new Map();
 // Die Farbe steckt nur im Lack: eine Vorlage je Typ (sonst baut jede Farbe ein ganzes Auto neu – viel zu viel Speicher fürs Handy).
 // Ausnahmen: Typen, die die Farbe in Bilder malen (Streifen).
@@ -1622,9 +1710,15 @@ export function buildCar(v, kinds, hDiv) {
     if (templates.size > 150) templates.clear();
     const C = kit(v, kinds, hDiv, BUILD[v.kind] ? SPEC_HINT[v.kind] || {} : {});
     (BUILD[v.kind] || BUILD.car)(C);
-    if (C.side) sideDetails(C);
-    applyTune(C, tune);
-    mergeStatic(C.body);
+    const MP = modelOf.get(v.kind);
+    if (MP) { // echtes 3D-Modell statt der eigenen Form
+      const pm = useModel(C, MP);
+      if (pm) { C.paint = pm.clone(); C.paint.color.set(v.special === 'gold' ? '#ffcf33' : v.color || '#cccccc'); C.group.traverse(o => { if (o.material === pm) o.material = C.paint; }); }
+    } else {
+      if (C.side) sideDetails(C);
+      applyTune(C, tune);
+      mergeStatic(C.body);
+    }
     const sh = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), C.M.shadow); // weicher Schatten am Boden
     sh.rotation.x = -PI / 2;
     sh.scale.set(C.L * 1.12, Math.max(1, C.W) * 1.3, 1);
@@ -1633,15 +1727,20 @@ export function buildCar(v, kinds, hDiv) {
     C.group.add(sh);
     // Augen für die Fahrersitz-Kamera; Fahrzeuge ohne Innenraum: knapp über dem Dach
     const eye = C.eye || [(C.roofX ?? 0) + 0.3, (C.roofY ?? C.H) + 0.3, 0];
-    t = { group: C.group, paint: C.paint, pkey: paintKey(v), radius: Math.max(1.2, Math.min(C.L, 4) / 2), length: C.L, eye };
+    t = { group: C.group, paint: C.paint, pkey: paintKey(v), radius: Math.max(1.2, Math.min(C.L, 4) / 2), length: C.L, eye, model: !!MP };
+    if (MP) t.far = null; // Modelle bleiben immer ganz (keine einfache Fassung)
     templates.set(key, t);
   }
   const g = t.group.clone();
   let paint = t.paint;
   if (t.pkey !== paintKey(v)) { // andere Farbe: nur den Lack tauschen (Form und Teile bleiben geteilt)
     const pk = paintKey(v);
-    paint = paints.get(pk);
-    if (!paint) { paint = paintMaterial(v); paints.set(pk, paint); if (paints.size > 300) paints.delete(paints.keys().next().value); }
+    paint = paints.get(key + '#' + pk);
+    if (!paint) {
+      if (t.model) { paint = t.paint.clone(); paint.color.set(v.special === 'gold' ? '#ffcf33' : v.color || '#cccccc'); } // Modell: Lack mit seinen Details
+      else paint = paintMaterial(v);
+      paints.set(key + '#' + pk, paint); if (paints.size > 300) paints.delete(paints.keys().next().value);
+    }
     g.traverse(o => { if (o.material === t.paint) o.material = paint; });
   }
   g.userData = { wheels: g.getObjectsByProperty('name', 'wheel'), paint, body: g.getObjectByName('body'), shadow: g.getObjectByName('shadow'), radius: t.radius, length: t.length,
@@ -2763,3 +2862,4 @@ export function animateCar(mesh, t, special, flying = false) {
   for (const o of mesh.children) if (o.userData.pulse) o.material.opacity = 0.6 + 0.35 * (1 + Math.sin(t * 3)) / 2;
   if (mesh.userData.shadow) mesh.userData.shadow.visible = !flying && mesh.position.y < 0.3;
 }
+loadCarModels(); // echte Modelle gleich im Hintergrund laden (danach zeigt buildCar sie)

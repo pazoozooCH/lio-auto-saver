@@ -129,6 +129,11 @@ Browser-Spiel ohne Build: `index.html` + `game.js` (Spiellogik, Menüs und 2D-Ze
   (`city.moonOn`: Auto fliegt über Kraterränder, Figur springt hoch), schwarzer Himmel (`stepMoonEnv`).
 - `stunt.js`: 3D-Stuntpark mit eigener Physik in der Höhe (Rampen als Formen in `SHAPES`, Looping, Feuerringe, Salto/Schraube).
   Testen: `startStuntMode()`, dann `window.__stunt()` (`me`, `input`, `score`).
+- `models/`: echte 3D-Automodelle (GLB, 1k-Texturen, möglichst unter ~30'000 Dreiecken). Eintragen in `MODELS` (cars3d.js):
+  Datei, welche Typen (`kinds`), Nase (`forward`), Räder (`wheels`, Namen), weglassen (`drop`), Lack (`paint`, wird grau gemacht
+  und eingefärbt), `credit`. `loadCarModels` lädt sie (auch vor der Stadt in game.js), `useModel` ersetzt das eigene Auto (gleiche
+  Länge, Räder drehen, keine einfache Fassung). Ersteller in der Danke-Zeile im Startbild (game.js, `drawVersion`) nennen (CC BY).
+  Marken sind im Moment erlaubt (Martin: privates Spiel). Neue Datei auch in `APP_FILES`; pages.yml kopiert den ganzen Ordner.
 - `viewer.js`: 3D-Ansicht eines Fahrzeugs zum Drehen (eigener Renderer, wird beim Schliessen freigegeben).
 - `photo.js`: Fotos der 3D-Fahrzeuge für die Menüs (`drawVehiclePreview` in `game.js`); eigener Renderer, Fotos werden
   nach und nach gemacht (`work()` in der Hauptschleife) und die letzten 90 gemerkt. Ohne three.js bleibt die 2D-Zeichnung.
