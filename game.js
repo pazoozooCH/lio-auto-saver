@@ -3482,8 +3482,8 @@ function skinTap(px, py) {
 const COLLECTION_BTN = { x: 172, y: 18, w: 190, h: 44 };
 let collectionPage = 0;
 
-function collectionKinds() { // geheime Fahrzeuge nur, wenn man sie hat
-  return Object.keys(KINDS).filter(kd => !KINDS[kd].secret || fleet.some(v => v.kind === kd)).sort((a, b) =>
+function collectionKinds() { // nur echte Autos (Wunsch Lionel), dazu eigene Eigenbauten vom Schrottplatz
+  return Object.keys(KINDS).filter(kd => MODEL_KINDS.includes(kd) || (KINDS[kd].junk && fleet.some(v => v.kind === kd))).sort((a, b) =>
     TIER_VALUE[KINDS[b].tier] - TIER_VALUE[KINDS[a].tier] || KINDS[a].name.localeCompare(KINDS[b].name));
 }
 
