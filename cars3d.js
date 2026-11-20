@@ -1611,7 +1611,7 @@ for (const [k, base] of Object.entries(JUNK_BASE)) BUILD[k] = C => { BUILD[base]
 // ---------- Echte 3D-Modelle (GLB, aus dem Ordner models/) ----------
 // MODELS: Datei → welche Fahrzeugtypen damit gezeichnet werden, len = echte Länge in Metern. forward = wohin die Nase im Modell zeigt ('+z'/'-z'/'+x'/'-x'),
 // wheels = Namen der Rad-Teile (drehen sich), drop = Teile, die weg können (Innenraum, Motor …: weniger Dreiecke),
-// paint = Name(n) der Lack-Materialien (werden in der Wagenfarbe eingefärbt), hide = Materialien weglassen, credit = Ersteller (Lizenz CC BY verlangt das).
+// paint = Name(n) der Lack-Materialien (werden in der Wagenfarbe eingefärbt), hide = Materialien weglassen, opaque = fälschlich durchsichtige Materialien, credit = Ersteller (Lizenz CC BY verlangt das).
 // Solange ein Modell noch nicht geladen ist (oder fehlt), zeichnet buildCar das eigene Auto.
 export const MODELS = [
   { file: 'models/lowpoly_generic_suv.glb', len: 4.75, kinds: ['offroad'], forward: '+z', wheels: /^Wheel_/i, drop: /^Shadow/i, paint: /^Body$/i,
@@ -1637,6 +1637,11 @@ export const MODELS = [
   { file: 'models/pagani_imola.glb', len: 4.8, kinds: ['musclegt'], forward: '+z', paint: /2021Paint_Material$/, credit: '„2021 Pagani Imola“ von Ddiaz Design, CC BY-NC-SA 4.0' },
   { file: 'models/cayenne.glb', len: 4.93, kinds: ['car'], forward: '+z', paint: /^pMAT_Porsche_Cayenne1$/, credit: '„2020 Porsche Cayenne Turbo Coupe“ von Ddiaz Design, CC BY-NC-SA 4.0' },
   { file: 'models/defender.glb', len: 4.95, kinds: ['safari'], forward: '+z', paint: /^Pintura$/, hide: /^Pintura_\.004$/, credit: '„Land Rover Defender – Edition Grasmere Green“ von PROJECT CAR90, CC BY 4.0' },
+  { file: 'models/suburban.glb', len: 5.58, kinds: ['oldtimer'], forward: '+z', paint: /^Reference4ref002reference4ref002paintmetallic1Mtl$/, opaque: /^Wheelsdually0(04|15|16)/, credit: '„1989 Chevrolet Suburban“ von Randomness, CC BY 4.0' },
+  { file: 'models/express_van.glb', len: 5.69, kinds: ['delivery'], forward: '+z', paint: /^CGphong5SG1$/, credit: '„2003 Chevrolet Express GMC Savana 2500 Cargo Van“ von Ddiaz Design, CC BY 4.0' },
+  { file: 'models/mclaren_765lt.glb', len: 4.6, kinds: ['stockcar'], forward: '+z', paint: /2021(Paint|Coloured)_Material$/, credit: '„2022 McLaren 765LT“ von Ddiaz Design, CC BY-NC-SA 4.0' },
+  { file: 'models/bugatti_tourbillon.glb', len: 4.67, kinds: ['luxlimo'], forward: '+z', paint: /2026Paint_Material1$/, credit: '„2026 Bugatti Tourbillon“ von Ddiaz Design, CC BY-NC-SA 4.0' },
+  { file: 'models/golf_gti.glb', len: 4.27, kinds: ['kompakt'], forward: '+z', paint: /^Carpaint$/, credit: '„VW Golf GTi MK7“ von vecarz, CC BY-NC 4.0' },
 ];
 const modelOf = new Map(); // Typ → fertig vorbereitetes Modell
 let modelsLoading = null;
@@ -1711,10 +1716,13 @@ function prepareModel(scene, M) {
     if (!byMat.has(o.material)) { // Bilder nur mit der ersten UV-Lage (die zweite fällt beim Zusammenfassen weg, sonst bricht der Shader)
       byMat.set(o.material, []);
       for (const v of Object.values(o.material)) if (v && v.isTexture && v.channel) { v.channel = 0; v.needsUpdate = true; }
+      if (M.opaque && M.opaque.test(o.material.name)) { o.material.transparent = false; o.material.opacity = 1; o.material.depthWrite = true; } // fälschlich durchsichtig
+      if (o.material.vertexColors) { o.material.vertexColors = false; o.material.needsUpdate = true; } // Ecken-Farben fallen weg (sonst schwarz)
     }
     byMat.get(o.material).push(g); gone.push(o);
   });
   for (const o of gone) o.parent.remove(o);
+  for (const o of wheelSet) if (o.isMesh) o.geometry = o.geometry.clone(); // eigene Kopie: die ganze Datei (Puffer) muss nicht im Speicher bleiben
   for (const [mat, geos] of byMat) { // nicht 'wheel' heissen (drehte sich sonst)
     let g = geos.length > 1 ? mergeGeometries(geos, false) : geos[0];
     if (g) { const gi = mergeVertices(g, 1e-5); if (gi.index && gi.attributes.position.count < g.attributes.position.count * 0.8) g = gi; } // gleiche Ecken teilen: weniger Speicher (Handy)

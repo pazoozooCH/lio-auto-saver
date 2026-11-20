@@ -131,10 +131,10 @@ Browser-Spiel ohne Build: `index.html` + `game.js` (Spiellogik, Menüs und 2D-Ze
   Testen: `startStuntMode()`, dann `window.__stunt()` (`me`, `input`, `score`).
 - `models/`: echte 3D-Automodelle (GLB, 1k-Texturen, möglichst unter ~30'000 Dreiecken). Eintragen in `MODELS` (cars3d.js):
   Datei, echte Länge (`len`), welche Typen (`kinds`), Nase (`forward`), Räder (`wheels`, Namen), weglassen (`drop`: Teile,
-  `hide`: Materialien), Lack (`paint`, ein oder mehrere Materialien, wird grau gemacht und eingefärbt), `credit`.
+  `hide`: Materialien), `opaque` (fälschlich durchsichtig), Lack (`paint`, ein oder mehrere Materialien, wird grau gemacht und eingefärbt), `credit`.
   Box beim Vorbereiten genau messen (`setFromObject(…, true)`), sonst schweben gedrehte Modelle.
   `prepareModel` fasst je Material zusammen: gespiegelte Teile umdrehen (`flipWinding`), alle Werte als Float32, Bilder nur
-  UV-Lage 0 (`uv1` fällt weg, sonst Shader-Fehler = unsichtbare Teile), danach `mergeVertices` (Speicher). `hide` wirkt vor dem Messen
+  UV-Lage 0 (`uv1` fällt weg, sonst Shader-Fehler = unsichtbare Teile), Ecken-Farben aus (`vertexColors`, sonst schwarz), danach `mergeVertices` (Speicher); Räder als Kopie (Datei-Puffer wird frei). `hide` wirkt vor dem Messen
   (Teile weit weg verkleinern sonst das ganze Auto). `loadCarModels` lädt sie (auch vor der Stadt in game.js), `useModel` ersetzt das eigene Auto (gleiche
   Länge, Räder drehen, keine einfache Fassung). Ersteller in der Danke-Zeile im Startbild (game.js, `drawVersion`) nennen (CC BY).
   Marken sind im Moment erlaubt (Martin: privates Spiel). Neue Datei auch in `APP_FILES`; pages.yml kopiert den ganzen Ordner.
