@@ -312,7 +312,7 @@ export function buildCountry({ scene, group, asphaltMat, grassMat, sign, natural
 
     const firs = [], rocks = [];
     for (let tries = 0; tries < 6000 && firs.length < 520; tries++) {
-      const x = -400 + rnd() * 800, z = -1100 + rnd() * 790;
+      const x = -400 + rnd() * 800, z = -1100 + rnd() * 720; // bis z = −380: dahinter beginnt die Stadt (oberste Strasse bei −320)
       if (passNearest(x, z).d < 12 || Math.hypot(x - SUMMIT.x, z - SUMMIT.z) < SUMMIT.r + 8 || boxDist(x, z, FARM) < 18) continue; // nicht auf Strasse, Gipfel, Piste
       const y = ground(x, z);
       if (y > 118) continue; // ganz oben wächst nichts

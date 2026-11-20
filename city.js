@@ -1184,11 +1184,11 @@ function buildWorld() {
       const free = (x, z) => ![[0, 0], [7, 0], [-7, 0], [0, 7], [0, -7]].some(([a, b]) => suburbRoad(x + a, z + b)) // nicht auf die Strassen der Vororte
         && !SUBURBS.some(S2 => S2.inCity && x > S2.rect.x0 && x < S2.rect.x1 && z > S2.rect.z0 && z < S2.rect.z1); // und nicht zu den Häusern der Quartiere
       for (let k = 0; k < 16; k++) {
-        const tx = cx + (vr() - 0.5) * 48, tz = cz + (vr() - 0.5) * 48, pine = vr() < 0.5, sc = 0.8 + vr() * 0.7;
+        const tx = cx + (vr() - 0.5) * 36, tz = cz + (vr() - 0.5) * 36, pine = vr() < 0.5, sc = 0.8 + vr() * 0.7; // mind. 7 m bis zur Strasse (Äste!)
         if (!free(tx, tz)) continue;
         if (pine) pines.push([tx, 0, tz, sc]); else trees.push([tx, 0, tz, sc]);
       }
-      scatter(tufts, cx - 26, cz - 26, cx + 26, cz + 26, 160, 0, 0.9, 1.6, free); scatter(bushes, cx - 24, cz - 24, cx + 24, cz + 24, 8, 0, 0.8, 1.4, free);
+      scatter(tufts, cx - 22, cz - 22, cx + 22, cz + 22, 140, 0, 0.9, 1.6, free); scatter(bushes, cx - 19, cz - 19, cx + 19, cz + 19, 8, 0, 0.8, 1.4, free);
       continue;
     }
     const slab = new THREE.Mesh(new THREE.BoxGeometry(block, 0.16, block), paveMat);
