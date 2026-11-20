@@ -3935,8 +3935,8 @@ function figMesh(parts) {
   return m;
 }
 const G = { // Formen werden wiederverwendet
-  sph: (r, w = 16, h = 12) => new THREE.SphereGeometry(r, w, h), half: (r, w = 16, h = 8) => new THREE.SphereGeometry(r, w, h, 0, Math.PI * 2, 0, Math.PI / 2),
-  cap: (r, l, s = 12) => new THREE.CapsuleGeometry(r, l, 5, s), box: (x, y, z) => new THREE.BoxGeometry(x, y, z), cyl: (a, b, h, s = 14) => new THREE.CylinderGeometry(a, b, h, s),
+  sph: (r, w = 12, h = 9) => new THREE.SphereGeometry(r, Math.min(w, 14), Math.min(h, 10)), half: (r, w = 12, h = 6) => new THREE.SphereGeometry(r, Math.min(w, 14), Math.min(h, 6), 0, Math.PI * 2, 0, Math.PI / 2), // nicht zu fein: viele Figuren, wenig Speicher
+  cap: (r, l, s = 10) => new THREE.CapsuleGeometry(r, l, 3, Math.min(s, 10)), box: (x, y, z) => new THREE.BoxGeometry(x, y, z), cyl: (a, b, h, s = 10) => new THREE.CylinderGeometry(a, b, h, Math.min(s, 12)),
 };
 const shade = (hex, f) => { _fc.setHex(hex); _fc.multiplyScalar(f); return _fc.getHex(); };
 // Gesicht nach vorne (+x): grosse Augen mit Glanzpunkt, Nase, Lächeln, rote Wangen, Ohren

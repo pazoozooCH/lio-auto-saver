@@ -1579,10 +1579,14 @@ function junkExtras(C, kind) {
 const JUNK_BASE = { junkrod: 'muscle', junkbuggy: 'buggy', junktruck: 'monster', junkbus: 'van', junkcabrio: 'cabrio', junkracer: 'sports' };
 for (const [k, base] of Object.entries(JUNK_BASE)) BUILD[k] = C => { BUILD[base](C); junkExtras(C, k); };
 
-const templates = new Map();
+const templates = new Map(), paints = new Map();
+// Die Farbe steckt nur im Lack: eine Vorlage je Typ (sonst baut jede Farbe ein ganzes Auto neu – viel zu viel Speicher fürs Handy).
+// Ausnahmen: Typen, die die Farbe in Bilder malen (Streifen).
+const COLOR_KINDS = new Set(['cement', 'camper']);
+const paintKey = v => [v.special || '', v.color || '', (v.tune && v.tune.finish) || '', (v.tune && v.tune.neon) || ''].join('|');
 export function buildCar(v, kinds, hDiv) {
   const tune = v.tune || {};
-  const key = [v.kind, v.special || '', v.color || '', hDiv || '', JSON.stringify(tune)].join('|');
+  const key = [v.kind, v.special || '', COLOR_KINDS.has(v.kind) ? v.color || '' : '', hDiv || '', JSON.stringify(tune)].join('|');
   let t = templates.get(key);
   if (!t) {
     if (templates.size > 150) templates.clear();
@@ -1599,21 +1603,35 @@ export function buildCar(v, kinds, hDiv) {
     C.group.add(sh);
     // Augen für die Fahrersitz-Kamera; Fahrzeuge ohne Innenraum: knapp über dem Dach
     const eye = C.eye || [(C.roofX ?? 0) + 0.3, (C.roofY ?? C.H) + 0.3, 0];
-    const far = makeFar(C.group, C.paint); // einfache Fassung für weit weg (3 statt etwa 45 Zeichen-Befehle)
-    if (far) C.group.add(far);
-    t = { group: C.group, paint: C.paint, radius: Math.max(1.2, Math.min(C.L, 4) / 2), length: C.L, eye };
+    t = { group: C.group, paint: C.paint, pkey: paintKey(v), radius: Math.max(1.2, Math.min(C.L, 4) / 2), length: C.L, eye };
     templates.set(key, t);
   }
   const g = t.group.clone();
-  g.userData = { wheels: g.getObjectsByProperty('name', 'wheel'), paint: t.paint, body: g.getObjectByName('body'), shadow: g.getObjectByName('shadow'), radius: t.radius, length: t.length,
+  let paint = t.paint;
+  if (t.pkey !== paintKey(v)) { // andere Farbe: nur den Lack tauschen (Form und Teile bleiben geteilt)
+    const pk = paintKey(v);
+    paint = paints.get(pk);
+    if (!paint) { paint = paintMaterial(v); paints.set(pk, paint); if (paints.size > 300) paints.delete(paints.keys().next().value); }
+    g.traverse(o => { if (o.material === t.paint) o.material = paint; });
+  }
+  g.userData = { wheels: g.getObjectsByProperty('name', 'wheel'), paint, body: g.getObjectByName('body'), shadow: g.getObjectByName('shadow'), radius: t.radius, length: t.length,
     eye: t.eye, driver: g.getObjectByName('driver'),
-    finish: tune.finish || null, far: g.getObjectByName('far'), isFar: false };
+    finish: tune.finish || null, far: null, isFar: false, tpl: t };
   return g;
 }
 // Weit weg: nur die einfache Fassung zeigen (setLod(mesh, true)), nah wieder alle Teile
 export function setLod(g, far) {
   const U = g.userData;
-  if (!U.far || U.isFar === far) return;
+  if (U.isFar === far) return;
+  if (far && !U.far && U.tpl) { // einfache Fassung erst bauen, wenn sie gebraucht wird (spart Speicher), einmal je Vorlage
+    const t = U.tpl;
+    if (t.far === undefined) t.far = makeFar(t.group, t.paint);
+    if (!t.far) return;
+    U.far = t.far.clone();
+    if (U.paint !== t.paint) U.far.traverse(o => { if (o.material === t.paint) o.material = U.paint; });
+    g.add(U.far);
+  }
+  if (!U.far) return;
   U.isFar = far;
   for (const o of g.children) if (o !== U.far && o.name !== 'shadow') o.visible = !far;
   U.far.visible = far;
