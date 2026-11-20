@@ -3263,6 +3263,16 @@ function drawShop() {
   drawParticles();
 }
 
+// Shop nur mit echten Autos (Wunsch Lionel): Typen mit echtem 3D-Modell – gleich halten mit MODELS in cars3d.js.
+// Gibt es in der gezogenen Seltenheit (noch) kein echtes Auto, kommt das echte Auto mit der nächsten Seltenheit.
+const MODEL_KINDS = ['offroad', 'luxsuv'];
+const tierRank = t => (t === 'admin' ? 5 : t === 'eigenbau' ? 3 : TIER_ORDER.indexOf(t));
+function modelKind(tier) {
+  const same = MODEL_KINDS.filter(k => KINDS[k] && KINDS[k].tier === tier);
+  if (same.length) return pick(same);
+  const want = tierRank(tier), dist = k => Math.abs(tierRank(KINDS[k].tier) - want), best = Math.min(...MODEL_KINDS.map(dist));
+  return pick(MODEL_KINDS.filter(k => dist(k) === best));
+}
 function rollGate(g) {
   const possible = TIER_ORDER.filter(t => g.odds[t] > 0);
   let tier = possible[possible.length - 1];
@@ -3271,7 +3281,7 @@ function rollGate(g) {
     roll -= g.odds[t];
     if (roll < 0) { tier = t; break; }
   }
-  const kind = pick(Object.keys(KINDS).filter(kd => KINDS[kd].tier === tier && !KINDS[kd].secret));
+  const kind = modelKind(tier); // nur echte Autos
   let sr = Math.random() * 100, special = null;
   for (const paint of ['obsidian', 'diamond', 'rainbow', 'gold']) {
     sr -= g[paint];
@@ -4047,7 +4057,7 @@ function dailyTap(px, py) {
   wallet += coins;
   let text = '🪙 +' + coins + ' Münzen – bis morgen!';
   if (n === 7) { // Überraschung: ein seltenes oder episches Fahrzeug
-    const pool = Object.keys(KINDS).filter(k => ['rare', 'epic'].includes(KINDS[k].tier) && !KINDS[k].secret), v = makeVehicle(pick(pool));
+    const v = makeVehicle(modelKind(pick(['rare', 'epic']))); // Geschenk: ein echtes Auto
     fleet.push(v); storeJSON('autoRetterFleet', fleet);
     text = '🎁 +' + coins + ' 🪙 und ein neues Fahrzeug: ' + KINDS[v.kind].name + '!';
   }
@@ -4229,8 +4239,7 @@ const cityDealer = {
     return { v, fresh: fresh.includes(kind), name: KINDS[kind].name };
   },
   offers() {
-    const pool = Object.keys(KINDS).filter(k => ['common', 'uncommon', 'rare', 'epic'].includes(KINDS[k].tier) && !KINDS[k].secret);
-    return [0, 1, 2].map(() => { const v = makeVehicle(pick(pool)); v.ps = Math.max(10, v.ps + Math.round(rand(-8, 6))); return { v, price: vehicleValue(v) * 2 }; });
+    return [0, 1, 2].map(() => { const v = makeVehicle(pick(MODEL_KINDS)); v.ps = Math.max(10, v.ps + Math.round(rand(-8, 6))); return { v, price: vehicleValue(v) * 2 }; }); // Autohändler: nur echte Autos
   },
   buy(o) {
     if (wallet < o.price) return false;
