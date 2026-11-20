@@ -2,7 +2,7 @@
 // Jedes Fahrzeug hat eine eigene Bauanleitung (BUILD), angelehnt an seine 2D-Zeichnung in game.js.
 // Koordinaten: Länge entlang +X (vorne), Höhe Y, Breite Z (rechte Seite = +Z), Meter.
 import * as THREE from 'three';
-import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
+import { mergeGeometries, mergeVertices } from 'three/addons/utils/BufferGeometryUtils.js';
 
 const PI = Math.PI;
 
@@ -1630,6 +1630,13 @@ export const MODELS = [
   { file: 'models/bmw_m4.glb', len: 4.67, kinds: ['coupe'], forward: '+z', paint: /^ARm4_main$/, credit: '„BMW M4 f82“ von Black Snow, CC BY 4.0' },
   { file: 'models/corvette_c8.glb', len: 4.63, kinds: ['roadster'], forward: '+z', paint: /_Paint$/, credit: '„2020 Chevrolet Corvette C8 Stingray Convertible“ von Ddiaz Design, CC BY 4.0' },
   { file: 'models/maybach.glb', len: 5.47, kinds: ['limo'], forward: '+z', paint: /^Mphong4SG1$/, credit: '„2021 Mercedes-Benz S-Class Maybach“ von Ddiaz Design, CC BY-NC 4.0' },
+  { file: 'models/audi_rs6.glb', len: 5.0, kinds: ['kombi'], forward: '+z', paint: /2020Paint_Material1$/, credit: '„2020 Audi RS6 Avant“ von Ddiaz Design, CC BY-NC-SA 4.0' },
+  { file: 'models/audi_r8.glb', len: 4.43, kinds: ['racer'], forward: '+z', paint: /2023Paint_Material1$/, credit: '„2023 Audi R8 Coupe V10 GT RWD“ von Ddiaz Design, CC BY-NC-SA 4.0' },
+  { file: 'models/jesko.glb', len: 4.61, kinds: ['lemans'], forward: '+z', paint: /mm_ext1$/, credit: '„2020 Koenigsegg Jesko“ von Ddiaz Design, CC BY 4.0' },
+  { file: 'models/koenigsegg_one1.glb', len: 4.5, kinds: ['gtlegend'], forward: '+z', credit: '„Koenigsegg One1 low poly“ von jkazulyblanco, CC BY 4.0' },
+  { file: 'models/pagani_imola.glb', len: 4.8, kinds: ['musclegt'], forward: '+z', paint: /2021Paint_Material$/, credit: '„2021 Pagani Imola“ von Ddiaz Design, CC BY-NC-SA 4.0' },
+  { file: 'models/cayenne.glb', len: 4.93, kinds: ['car'], forward: '+z', paint: /^pMAT_Porsche_Cayenne1$/, credit: '„2020 Porsche Cayenne Turbo Coupe“ von Ddiaz Design, CC BY-NC-SA 4.0' },
+  { file: 'models/defender.glb', len: 4.95, kinds: ['safari'], forward: '+z', paint: /^Pintura$/, hide: /^Pintura_\.004$/, credit: '„Land Rover Defender – Edition Grasmere Green“ von PROJECT CAR90, CC BY 4.0' },
 ];
 const modelOf = new Map(); // Typ → fertig vorbereitetes Modell
 let modelsLoading = null;
@@ -1664,9 +1671,18 @@ function grayMap(tex) {
   const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; t.flipY = tex.flipY; t.wrapS = tex.wrapS; t.wrapT = tex.wrapT;
   return t;
 }
+// Dreiecke umdrehen (nicht indizierte Geometrie: Ecke 2 und 3 jedes Dreiecks tauschen)
+function flipWinding(g) {
+  for (const [name, a0] of Object.entries(g.attributes)) {
+    const a = a0.isInterleavedBufferAttribute ? a0.clone() : a0; // verschachtelt → eigenes Feld
+    if (a !== a0) g.setAttribute(name, a);
+    const n = a.itemSize, arr = a.array;
+    for (let t = 0; t + 2 < a.count; t += 3) for (let k = 0; k < n; k++) { const i1 = (t + 1) * n + k, i2 = (t + 2) * n + k, v = arr[i1]; arr[i1] = arr[i2]; arr[i2] = v; }
+  }
+}
 function prepareModel(scene, M) {
   const drop = [];
-  scene.traverse(o => { if (M.drop && M.drop.test(o.name)) drop.push(o); });
+  scene.traverse(o => { if ((M.drop && M.drop.test(o.name)) || (M.hide && o.isMesh && !Array.isArray(o.material) && M.hide.test(o.material.name))) drop.push(o); }); // hide: vor dem Messen weg
   for (const o of drop) o.parent && o.parent.remove(o);
   // Nase nach +x drehen (so wie die eigenen Autos), auf den Boden stellen, Mitte auf 0
   const rot = { '+z': Math.PI / 2, '-z': -Math.PI / 2, '+x': 0, '-x': Math.PI }[M.forward || '+z'];
@@ -1678,18 +1694,32 @@ function prepareModel(scene, M) {
   const wheelSet = new Set(); scene.traverse(o => { if (M.wheels && M.wheels.test(o.name)) o.traverse(q => wheelSet.add(q)); });
   const byMat = new Map(), gone = [], inv = new THREE.Matrix4().copy(holder.matrixWorld).invert();
   scene.traverse(o => {
-    if (o.isMesh && M.hide && !Array.isArray(o.material) && M.hide.test(o.material.name)) { gone.push(o); return; } // z. B. dunkle Lackschicht obendrauf
     if (!o.isMesh || wheelSet.has(o) || Array.isArray(o.material) || o.isSkinnedMesh) return;
     let g = o.geometry.index ? o.geometry.toNonIndexed() : o.geometry.clone();
     for (const n of Object.keys(g.attributes)) if (!['position', 'normal', 'uv'].includes(n)) g.deleteAttribute(n);
+    g.morphAttributes = {};
+    for (const [n, a] of Object.entries(g.attributes)) if (!(a.array instanceof Float32Array) || a.normalized || a.isInterleavedBufferAttribute) { // alle gleich: sonst klappt das Zusammenfassen nicht
+      const f = new Float32Array(a.count * a.itemSize);
+      for (let i = 0; i < a.count; i++) for (let k = 0; k < a.itemSize; k++) f[i * a.itemSize + k] = a.getComponent ? a.getComponent(i, k) : [a.getX, a.getY, a.getZ, a.getW][k].call(a, i);
+      g.setAttribute(n, new THREE.Float32BufferAttribute(f, a.itemSize));
+    }
     if (!g.attributes.normal) g.computeVertexNormals();
     if (!g.attributes.uv) g.setAttribute('uv', new THREE.Float32BufferAttribute(new Float32Array(g.attributes.position.count * 2), 2));
-    g.applyMatrix4(new THREE.Matrix4().multiplyMatrices(inv, o.matrixWorld));
-    if (!byMat.has(o.material)) byMat.set(o.material, []);
+    const mw = new THREE.Matrix4().multiplyMatrices(inv, o.matrixWorld);
+    g.applyMatrix4(mw);
+    if (mw.determinant() < 0) flipWinding(g); // gespiegelte Teile: sonst zeigen die Flächen nach innen (Löcher)
+    if (!byMat.has(o.material)) { // Bilder nur mit der ersten UV-Lage (die zweite fällt beim Zusammenfassen weg, sonst bricht der Shader)
+      byMat.set(o.material, []);
+      for (const v of Object.values(o.material)) if (v && v.isTexture && v.channel) { v.channel = 0; v.needsUpdate = true; }
+    }
     byMat.get(o.material).push(g); gone.push(o);
   });
   for (const o of gone) o.parent.remove(o);
-  for (const [mat, geos] of byMat) { const g = mergeGeometries(geos, false); if (g) { const m = new THREE.Mesh(g, mat); m.name = 'part:' + mat.name; holder.add(m); } } // nicht 'wheel' heissen (drehte sich sonst)
+  for (const [mat, geos] of byMat) { // nicht 'wheel' heissen (drehte sich sonst)
+    let g = geos.length > 1 ? mergeGeometries(geos, false) : geos[0];
+    if (g) { const gi = mergeVertices(g, 1e-5); if (gi.index && gi.attributes.position.count < g.attributes.position.count * 0.8) g = gi; } // gleiche Ecken teilen: weniger Speicher (Handy)
+    for (const q of g ? [g] : geos) { const m = new THREE.Mesh(q, mat); m.name = 'part:' + mat.name; holder.add(m); } // klappt es nicht: einzeln
+  }
   let paint = null, tris = 0;
   holder.traverse(o => {
     if (!o.isMesh) return;
