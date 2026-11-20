@@ -2936,6 +2936,8 @@ function stepPeds(dt) {
         let best = 0, bd = 1e9; for (let k = 0; k < 4; k++) { const [cx, cz] = corner(p.bi, p.bj, k), e = Math.hypot(cx - p.x, cz - p.z); if (e < bd) { bd = e; best = k; } }
         p.k = best; }
       nextCorner(p);
+    } else if (city.walk && Math.hypot(city.walk.x - p.x, city.walk.z - p.z) < 1.3 && (city.walk.x - p.x) * dx + (city.walk.z - p.z) * dz > 0) {
+      p.speed = 0; // du stehst im Weg: kurz warten statt hindurchlaufen
     } else if (p.pause > 0 && !C) {
       p.pause -= dt; p.speed = 0;
     } else if (d > 0.01 && !(C && !C.go)) {
@@ -2947,7 +2949,8 @@ function stepPeds(dt) {
     p.onZebra = !!(C && C.go);
     // angefahren?
     const md = Math.hypot(me.pos.x - p.x, me.pos.z - p.z);
-    if (!city.walk && me.alt < 1.5 && md < me.radius * 0.6 + 0.4 && Math.abs(me.speed) > 1.5) {
+    if (p.hitByMe || (!city.walk && me.alt < 1.5 && md < me.radius * 0.6 + 0.4 && Math.abs(me.speed) > 1.5)) {
+      p.hitByMe = false;
       p.down = 3.2; p.speed = 0;
       crash(0.15, 'car');
       if (p.onZebra && !city.ticket && !city.police) { city.reason = { kind: 'zebra', text: '🚸 Fussgänger auf dem Zebrastreifen angefahren' }; giveTicket(); }
@@ -3286,6 +3289,17 @@ function stepMe(dt) {
       const rel = Math.abs(me.speed - c.speed);
       if (rel > 2 && city.crashT <= 0) { crash(0.15 + rel / 18, 'car'); hurt(rel / 18, c.x, c.z); city.crashT = 0.5; c.blocked = 2; c.honkT = 0.4; c.waitMe = 2; }
       me.speed *= 0.6; me.vl *= 0.5;
+    }
+  }
+  // Menschen sind fest: das Auto fährt nicht durch sie hindurch (Fussgänger, bestohlene Fahrer, Polizist zu Fuss)
+  if (me.alt < 1.5) for (const p of people()) {
+    if (Math.abs(p.x - me.pos.x) > 8 || Math.abs(p.z - me.pos.z) > 8) continue;
+    for (let k = 0; k < 3; k++) {
+      const [cx, cz] = CC.p[k], dx = cx - p.x, dz = cz - p.z, dd = Math.hypot(dx, dz), min = rc + 0.42 * ks;
+      if (dd >= min) continue;
+      if (Math.abs(me.speed) > 1.5 && p.down !== undefined && !(p.down > 0)) p.hitByMe = true; // angefahren: fällt um (stepPeds)
+      push(k, dd > 0.001 ? dx : -Math.cos(me.heading), dd > 0.001 ? dz : -Math.sin(me.heading), min - dd);
+      me.speed *= 0.5; me.vl *= 0.5;
     }
   }
   if (hit > 3) {
@@ -4225,6 +4239,7 @@ function stepWalk(dt) {
   }
   for (const o of S.round) push(o.x, o.z, R + o.r);
   for (const c of city.cars) if (!c.off) push(c.x, c.z, R + c.mesh.userData.radius * 0.7); // Autos schieben einen weg
+  for (const p of people()) if (Math.abs(p.x - w.x) < 3 && Math.abs(p.z - w.z) < 3) push(p.x, p.z, R + 0.33); // nicht durch Menschen hindurch
   push(me.pos.x, me.pos.z, R + me.radius * 0.6);
   if (!allowedAt(w.x, w.z, 0.5)) { w.x = w.okX ?? w.x; w.z = w.okZ ?? w.z; } else { w.okX = w.x; w.okZ = w.z; }
   // Laufen: Beine und Arme schwingen
@@ -6086,6 +6101,13 @@ function drawRoute(g, toS, big) {
     R.forEach(([x, z], k) => { const [a, b] = toS(x, z); k ? g.lineTo(a, b) : g.moveTo(a, b); }); g.stroke();
   }
   const [a, b] = toS(D.x, D.z); g.font = (big ? 20 : 22) + 'px system-ui, sans-serif'; g.textAlign = 'center'; g.textBaseline = 'bottom'; g.fillText('📍', a, b + 3);
+}
+// Alle Menschen, mit denen man zusammenstossen kann (Auto und zu Fuss)
+function people() {
+  const out = city.peds ? city.peds.slice() : [];
+  for (const v of city.victims || []) out.push(v);
+  if (city.police && city.police.cop) out.push(city.police.cop);
+  return out;
 }
 // Spielfigur von oben (zu Fuss): Schultern im Pulli, Kopf mit Kappe, gelber Pfeil zeigt, wohin sie schaut
 function mapPerson(g, x, y, h, k = 1) {

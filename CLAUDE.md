@@ -60,6 +60,8 @@ Browser-Spiel ohne Build: `index.html` + `game.js` (Spiellogik, Menüs und 2D-Ze
   Fahrschule (Auftrag `school`, Führerschein in `autoRetterLicense`) und Autohändler (Block 2,4, `cityDealer` in `game.js`).
   Blaue Zone (Block 4,7, `stepBlue`/`stepLot`): Verkehrsautos parkieren dort, mal viel los, mal ruhig; selber parkieren gibt
   Münzen, nach 3 Minuten (Parkscheibe) ein Strafzettel.
+  Menschen sind fest (`people()`: Fussgänger, bestohlene Fahrer, Polizist): Auto stösst an (Kreise in `stepMe`, angefahren →
+  `p.hitByMe`), zu Fuss wird man weggeschoben, Fussgänger warten, wenn du im Weg stehst.
   Fussgänger (`stepPeds`, `PEDS` 64, gezeichnet bis `PED_SEE`): gehen um die Blöcke, überqueren bei Rot auf dem Zebrastreifen, Autos halten an (`followLimit`).
   Charaktere `PED_TYPES` (Jogger, Senior mit Stock, Kind mit Ballon, mit Hund, Handy, Geschäftsmann, Tourist): `makeCharacter`,
   `stepCharacter` (Pausen, Sprüche beim Näherkommen/Hupen/gesucht über `pedSay`). Verkehr: `TRAFFIC` 64.
