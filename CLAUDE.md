@@ -56,7 +56,7 @@ Browser-Spiel ohne Build: `index.html` + `game.js` (Spiellogik, Menüs und 2D-Ze
   Aussteigen geht auch während der Jagd (`exitCar`), dann rennt ein Polizist nach (`P.cop`, `stepCop`, `makeCop`). Erwischt:
   Busse, `giveBack` gibt das Auto zurück und holt dein eigenes (`city.stolenFrom`, ein geparktes Auto); bei ⭐⭐⭐ Gefängnis.
   Weiter in der Stadt: Unfälle der Bots mit Stau (`stepAccidents`), Tank/Akku (`city.fuel`, Tankstelle mit Ladesäule),
-  Schaden mit Kratzern und Werkstatt (`hurt`, pro Unfall nur ein Viertel von früher, Block 7,4, davor Parkplatz für den Auftrag Einparken), Wetter (`stepWeather`),
+  Schaden mit Kratzern, bei echten Modellen echte Beulen (`dentAt`: eigene Kopie der getroffenen Teile, `dropDents` beim Reparieren/Wechseln) und Werkstatt (`hurt`, pro Unfall nur ein Viertel von früher, Block 7,4, davor Parkplatz für den Auftrag Einparken), Wetter (`stepWeather`),
   Fahrschule (Auftrag `school`, Führerschein in `autoRetterLicense`) und Autohändler (Block 2,4, `cityDealer` in `game.js`).
   Blaue Zone (Block 4,7, `stepBlue`/`stepLot`): Verkehrsautos parkieren dort, mal viel los, mal ruhig; selber parkieren gibt
   Münzen, nach 3 Minuten (Parkscheibe) ein Strafzettel.

@@ -2076,6 +2076,7 @@ function modMe(change, price, text) {
   if (typeof res === 'string') { showMsg(res, 1.8); return; }
   const v = { ...res, name: me.v.name }, mesh = buildCar(v, city.kinds);
   mesh.rotation.order = 'YZX';
+  for (const sc of city.scratches) sc.parent && sc.parent.remove(sc); city.scratches = []; dropDents(); // frisch lackiert: ohne Kratzer und Beulen (Schaden bleibt)
   S.scene.remove(me.mesh); S.scene.add(mesh);
   Object.assign(me, carStats(v, mesh, city.kinds, city.topSpeed), { v, mesh });
   S.ui.ps.textContent = '⚡ ' + v.ps + ' PS';
@@ -2093,7 +2094,7 @@ function stationPanel(id) {
     buy: k => { const it = SNACKS.find(x => x[0] === k); if (city.pay(it[2]) < it[2]) return; if (it[4]) city.turbo = Math.max(city.turbo, it[4]); showMsg(it[1] + ' gekauft! ' + (it[4] ? '🚀 Turbo ' + it[4] + ' s' : it[3]), 2); } };
   if (id === 'order') return { title: '🔊 Burger Drive-in – was darf es sein?', rows: () => DRIVE.map(([k, label, price, note]) => ({ id: k, label, price, note, done: !!city.dOrder })),
     buy: k => { const it = DRIVE.find(x => x[0] === k); if (city.dOrder || city.pay(it[2]) < it[2]) return; city.dOrder = it; closePanel(); showMsg('🔊 Danke! Bitte zum Fenster vorfahren 🪟', 2.4); } };
-  if (id === 'paint') return { title: '🎨 Lackieren (' + ((K[me.v.kind] || {}).name || '') + ')', rows: () => PAINT.map(([c, name]) => ({ id: c, label: name, price: 20, color: c, done: (me.v.color || '').toLowerCase() === c })),
+  if (id === 'paint') return { title: '🎨 Lackieren (' + ((K[me.v.kind] || {}).name || '') + ')', rows: () => PAINT.map(([c, name]) => ({ id: c, label: name, price: 20, color: c, done: !!me.v.painted && (me.v.color || '').toLowerCase() === c })), // echte Modelle: Originalfarbe, bis man lackiert
     buy: c => modMe({ color: c }, 20, '🎨 Frisch lackiert: ' + PAINT.find(x => x[0] === c)[1] + '!') };
   if (id === 'tuning') return { title: '🔧 Tuning (' + ((K[me.v.kind] || {}).name || '') + ')', rows: () => {
       const T = city.dealer.tuneInfo(), t = me.v.tune || {}, out = [];
@@ -3571,21 +3572,47 @@ function hurt(intensity, fromX, fromZ) {
   const d = side ? new THREE.Vector3(0, 0, -s) : new THREE.Vector3(-s, 0, 0);
   ray.set(o.applyMatrix4(m.matrixWorld), d.transformDirection(m.matrixWorld));
   ray.camera = S.camera; // schwebende Schilder (Sprites, z.B. „ADMIN“) brauchen die Kamera
-  const hit = ray.intersectObject(m, true).find(h => h.face && !h.object.isSprite && h.object.visible && !h.object.material.transparent && !h.object.material.side
-    && h.object.name !== 'caliper' && !(h.object.parent && h.object.parent.name === 'wheel'));
+  const model = o => o.name.startsWith('part:'); // Teil eines echten Automodells (beidseitig gezeichnet)
+  const inWheel = o => { for (let q = o.parent; q && q !== m; q = q.parent) if (q.name === 'wheel') return true; return false; };
+  const hit = ray.intersectObject(m, true).find(h => h.face && !h.object.isSprite && h.object.visible && !h.object.material.transparent && (!h.object.material.side || model(h.object))
+    && h.object.name !== 'caliper' && !inWheel(h.object));
   if (!hit) return;
   const n = hit.face.normal.clone().transformDirection(hit.object.matrixWorld);
+  const depth = model(hit.object) ? dentAt(hit, Math.min(1, intensity)) : 0; // echte Beule ins Blech drücken
   const sc = new THREE.Mesh(new THREE.PlaneGeometry(0.6 + Math.random() * 0.4, 0.36), scratchMat);
-  sc.position.copy(hit.point).addScaledVector(n, 0.03); // über den Türlinien-Aufklebern
+  sc.position.copy(hit.point).addScaledVector(n, 0.03 - depth); // über den Türlinien-Aufklebern (in der Beule)
   sc.lookAt(hit.point.clone().add(n));
   sc.rotation.z += (Math.random() - 0.5) * 0.5;
   S.scene.add(sc);
   m.attach(sc); // fährt mit
   city.scratches.push(sc);
 }
+// Beule: Ecken des getroffenen Teils um den Aufprall nach innen drücken (nur beim eigenen Auto: eigene Kopie der Form)
+function dentAt(hit, strength) {
+  const h = hit.object, ws = h.getWorldScale(new THREE.Vector3()).x; // alle Modell-Teile liegen gleich (Kinder derselben Gruppe)
+  const c = h.worldToLocal(hit.point.clone()), nl = hit.face.normal, v = new THREE.Vector3();
+  const D = (0.05 + 0.07 * strength) * (0.8 + Math.random() * 0.4), R = (0.28 + 0.2 * strength) / ws, Dl = D / ws;
+  for (const o of h.parent.children) { // auch Zierleisten, Lichter usw. an der Stelle (sonst Lücken)
+    if (!o.isMesh || !o.name.startsWith('part:') || o.material.transparent) continue;
+    const gs = o.geometry; if (!gs.boundingSphere) gs.computeBoundingSphere();
+    if (gs.boundingSphere.center.distanceTo(c) > gs.boundingSphere.radius + R) continue;
+    if (!o.userData.origGeo) { o.userData.origGeo = gs; o.geometry = gs.clone(); city.dented.push(o); }
+    const g = o.geometry, pos = g.attributes.position; let moved = false;
+    for (let i = 0; i < pos.count; i++) {
+      v.fromBufferAttribute(pos, i); const d = v.distanceTo(c); if (d >= R) continue;
+      const f = (1 - d / R) ** 2; pos.setXYZ(i, v.x - nl.x * Dl * f, v.y - nl.y * Dl * f, v.z - nl.z * Dl * f); moved = true;
+    }
+    if (moved) { pos.needsUpdate = true; g.computeVertexNormals(); }
+  }
+  return D * 0.85;
+}
+function dropDents() { // Form wieder wie neu (Werkstatt, anderes Auto)
+  for (const o of city.dented) if (o.userData.origGeo) { o.geometry.dispose(); o.geometry = o.userData.origGeo; delete o.userData.origGeo; }
+  city.dented = [];
+}
 function repairAll() {
   for (const sc of city.scratches) sc.parent && sc.parent.remove(sc);
-  city.scratches = [];
+  city.scratches = []; dropDents();
   city.damage = 0;
 }
 function stepDamage(dt) {
@@ -3914,7 +3941,7 @@ function switchCar(v, force = false) {
   S.scene.add(mesh);
   Object.assign(me, carStats(v, mesh, city.kinds, city.topSpeed), { v: { ...v, name: me.v.name }, mesh, speed: 0, vl: 0, steer: 0, fly: false, landing: false, alt: 0 });
   city.fuel = 1; // aus der Base kommt es vollgetankt und ganz
-  city.damage = 0; city.scratches = [];
+  city.damage = 0; city.scratches = []; dropDents();
   city.gears = gearbox(v.kind);
   city.gripBoost = (city.kinds[v.kind] && city.kinds[v.kind].grip) || 1;
   if (city.cruise) showCruise(); // anderes Auto: höchstens so schnell, wie es kann
@@ -6240,7 +6267,7 @@ export function startCity({ player, kinds, topSpeed, onExit, pay = () => 0, earn
   // online starten alle auf einer anderen Strasse am Stadtrand
   const me = { v: player, mesh, pos: new THREE.Vector3(node(1 + (net ? net.mySlot : 0)) + 20, 0, node(0) + LANE), heading: 0, speed: 0, vl: 0, steer: 0,
     ...carStats(player, mesh, kinds, topSpeed), slip: 0, surface: 'asphalt', alt: 0, fly: false, landing: false };
-  city = { me, cars: spawnTraffic(kinds), input: {}, t: Math.random() * CYCLE, msgT: 0, crashT: 0, hornT: 0, inCross: false, tod: 0.02, turbo: 0, fuelT: 0, washT: 0, mission: null, accT: 25 + Math.random() * 30, fuel: 1, damage: 0, scratches: [], repairT: 0, wx: { kind: 'sun', t: 60 + Math.random() * 60, i: 0 }, wGrip: 1, dealT: 0, dealOpen: false, dealer, customers: [], custT: 4, custMsgT: 0, talk: null, okPos: { x: me.pos.x, z: me.pos.z }, hw: [], hwMsgT: 0, onHw: false, eventT: 50 + Math.random() * 40, gy: 0, see: SEE, perfT: 0, perfN: 0,
+  city = { me, cars: spawnTraffic(kinds), input: {}, t: Math.random() * CYCLE, msgT: 0, crashT: 0, hornT: 0, inCross: false, tod: 0.02, turbo: 0, fuelT: 0, washT: 0, mission: null, accT: 25 + Math.random() * 30, fuel: 1, damage: 0, scratches: [], dented: [], repairT: 0, wx: { kind: 'sun', t: 60 + Math.random() * 60, i: 0 }, wGrip: 1, dealT: 0, dealOpen: false, dealer, customers: [], custT: 4, custMsgT: 0, talk: null, okPos: { x: me.pos.x, z: me.pos.z }, hw: [], hwMsgT: 0, onHw: false, eventT: 50 + Math.random() * 40, gy: 0, see: SEE, perfT: 0, perfN: 0,
     gears: gearbox(player.kind), onExit, last: performance.now(), kinds, pay, gripBoost: (kinds[player.kind] && kinds[player.kind].grip) || 1, canFly: !!(kinds[player.kind] && kinds[player.kind].fly), fines: 0, police: null, pulled: 0, ticket: false,
     earn, net, topSpeed, garage, baseSlot: net ? net.mySlot : 0, baseT: 0, atBase: -1, baseEdit: false, netCars: net ? makeNetCars({ scene: S.scene, kinds, net }) : null, drift: 0, driftT: 0, driftBest: (() => { try { return +localStorage.getItem('autoRetterDriftBest') || 0; } catch (e) { return 0; } })() };
   S.fx.clear();
@@ -6321,7 +6348,7 @@ export function startCity({ player, kinds, topSpeed, onExit, pay = () => 0, earn
   camLook.set(me.pos.x, 1.2, me.pos.z);
   window.__city = () => city; // für Tests im Browser
   window.__cityS = () => S;
-  window.__citySwitch = v => switchCar(v, true); window.__cityCam = m => { camMode = m; }; // Tests: Auto wechseln, Kamera
+  window.__citySwitch = v => switchCar(v, true); window.__cityCam = m => { camMode = m; }; window.__cityHurt = (i, x, z) => hurt(i, x, z); // Tests: Auto wechseln, Kamera, Unfall
   window.__cityTick = n => { for (let k = 0; k < n && city; k++) step(city.last + 1000 / 60); }; // Tests: Bilder rechnen, auch im Hintergrund
   window.__cityWarp = (x, z) => warpXZ(x, z, { x: 0, z: 0 }); // Tests: wo liegt ein Punkt im Bild
   window.__cityMission = type => startMission(type); // Aufträge und Überraschungen direkt starten
