@@ -39,7 +39,7 @@ Browser-Spiel ohne Build: `index.html` + `game.js` (Spiellogik, Menüs und 2D-Ze
   Block-Arten (`layR`, lockerer bauen): four (4 Häuser, dicht in der Mitte), three (+ Plätzchen/Grün), pair (+ Parkplatz und
   Grün, `fillQuad`), court (Haus rundherum mit Innenhof, `buildCourt`); freie Plätze verbrauchen gleich viel `r()` wie ein Haus.
   Drehung: `warpDir` dreht genau in die eigene Blickrichtung (sonst stehen Autos schief zur gebogenen Strasse).
-  Karte: eine Weltkarte für alles (`drawWorldMap` → `S.worldMap` + genaueres Stadtbild `S.worldDet` (`DM`), Rechteck `WM`, Meer bis zum Rand, Stadt verbogen über `wmPt`; neu gemalt, wenn
+  Karte: eine Weltkarte für alles (Bilder im Arbeitsspeicher, `CPU2D` = willReadFrequently: auf der Grafikkarte blieben sie bei knappem Grafikspeicher leer = ganz blau; `mapBlank` prüft alle 2 s; `drawWorldMap` → `S.worldMap` + genaueres Stadtbild `S.worldDet` (`DM`), Rechteck `WM`, Meer bis zum Rand, Stadt verbogen über `wmPt`; neu gemalt, wenn
   sich die Schlüssel ändern). Oben rechts runder Ausschnitt um den Spieler, vorne = oben, in Stadt und Vororten näher
   (`drawMinimap`); antippen = ganze Welt hochkant mit Namen (`city.bigMap`, `mapLabels`); dort zoomen (＋ − Mausrad, zwei
   Finger, bis 10×) und ziehen (`mapView`, `zoomMap`, `panMap`, `mapPoint` beachtet das gedrehte Handy). Kurz antippen (`mapTap`):

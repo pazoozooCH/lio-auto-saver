@@ -5998,21 +5998,24 @@ function paintWorld(g, P, K) {
   for (const key of ROUND) { const [i, j] = key.split(',').map(Number), q = P(node(i), node(j)); g.fillStyle = '#4a9b3f'; g.beginPath(); g.arc(q[0], q[1], 3.5 * K, 0, 7); g.fill(); }
   { const q = P(32, 32); g.fillStyle = '#4aa3ff'; g.beginPath(); g.arc(q[0], q[1], 4 * K, 0, 7); g.fill(); } // Brunnen
 }
+const CPU2D = { willReadFrequently: true };
+const mapBlank = cv => { try { const d = cv.getContext('2d', CPU2D).getImageData(cv.width >> 1, cv.height >> 1, 1, 1).data; return d[3] === 0; } catch (e) { return false; } }; // Mitte ist immer Land (gemalt)
 function drawWorldMap() {
   const c = S.worldMap || (S.worldMap = document.createElement('canvas'));
   c.width = WMW; c.height = WMH;
-  const g = c.getContext('2d');
+  // Karten-Bilder im Arbeitsspeicher malen (nicht auf der Grafikkarte): dort blieben sie bei knappem Grafikspeicher leer (Karte ganz blau)
+  const g = c.getContext('2d', CPU2D);
   if (!S.islandImg) { // Insel und Meer ändern sich nie: einmal rechnen
-    const ic = document.createElement('canvas'); ic.width = WMW; ic.height = WMH; paintIsland(ic.getContext('2d'), WM.x0, WM.z0, WMW, WMH, WM.K); S.islandImg = ic;
+    const ic = document.createElement('canvas'); ic.width = WMW; ic.height = WMH; paintIsland(ic.getContext('2d', CPU2D), WM.x0, WM.z0, WMW, WMH, WM.K); S.islandImg = ic;
     const dc = document.createElement('canvas'); dc.width = Math.round((DM.x1 - DM.x0) * DM.K); dc.height = Math.round((DM.z1 - DM.z0) * DM.K);
-    paintIsland(dc.getContext('2d'), DM.x0, DM.z0, dc.width, dc.height, DM.K); S.islandDet = dc;
+    paintIsland(dc.getContext('2d', CPU2D), DM.x0, DM.z0, dc.width, dc.height, DM.K); S.islandDet = dc;
   }
   g.drawImage(S.islandImg, 0, 0);
   paintWorld(g, wmPt, WM.K);
   // genaueres Bild für Stadt und Vororte (wird beim Zeichnen über die Weltkarte gelegt)
   const d = S.worldDet || (S.worldDet = document.createElement('canvas'));
   d.width = S.islandDet.width; d.height = S.islandDet.height;
-  const dg = d.getContext('2d'); dg.drawImage(S.islandDet, 0, 0);
+  const dg = d.getContext('2d', CPU2D); dg.drawImage(S.islandDet, 0, 0);
   paintWorld(dg, (x, z) => { warpXZ(x, z, _wq); return [(_wq.x - DM.x0) * DM.K, (_wq.z - DM.z0) * DM.K]; }, DM.K);
   S.worldMapKey = city.keys.size;
 }
@@ -6175,6 +6178,9 @@ function drawMinimap() {
     g.drawImage(S.mapFull, (W - sq) / 2, (H - sq) / 2, sq, sq); mapArrow(g, (W - sq) / 2 + p.x * sq / MAP, (H - sq) / 2 + p.y * sq / MAP, p.h, 1.2);
     return;
   }
+  // Kartenbilder können leer werden (Browser wirft bei knappem Grafikspeicher den Inhalt weg: Karte ganz blau) → alle 2 s prüfen, sonst neu malen
+  const nowT = performance.now();
+  if (S.worldMap && !(nowT - S.mapCheckT < 2000)) { S.mapCheckT = nowT; if (mapBlank(S.worldMap) || mapBlank(S.worldDet)) { S.islandImg = null; S.worldMapKey = -1; } }
   if (!S.worldMap || S.worldMapKey !== city.keys.size) drawWorldMap();
   const P = mapWho(), K = WM.K, [pbx, pby] = wmPt(P.x, P.z), [hx, hy] = wmPt(P.x + Math.cos(P.h), P.z + Math.sin(P.h)), hd = Math.atan2(hy - pby, hx - pbx);
   // Abbildung Welt → Bildschirm: gross = ganze Karte eingepasst; klein = um dich herum, gedreht, gezoomt (in der Stadt näher)
