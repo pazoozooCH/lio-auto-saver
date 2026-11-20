@@ -1614,8 +1614,11 @@ for (const [k, base] of Object.entries(JUNK_BASE)) BUILD[k] = C => { BUILD[base]
 // paint = Name des Lack-Materials (wird in der Wagenfarbe eingefärbt), credit = Ersteller (Lizenz CC BY verlangt das).
 // Solange ein Modell noch nicht geladen ist (oder fehlt), zeichnet buildCar das eigene Auto.
 export const MODELS = [
-  { file: 'models/lowpoly_generic_suv.glb', kinds: ['luxsuv', 'offroad'], forward: '+z', wheels: /^Wheel_/i, drop: /^Shadow/i, paint: /^Body$/i,
+  { file: 'models/lowpoly_generic_suv.glb', kinds: ['offroad'], forward: '+z', wheels: /^Wheel_/i, drop: /^Shadow/i, paint: /^Body$/i,
     credit: '„Lowpoly Generic SUV“ von mk2design (sketchfab.com/mk2design), CC BY 4.0' },
+  // verkleinert mit glTF-Transform (Innenraum, Motor, Fahrwerk weg; 167'000 → 33'500 Dreiecke)
+  { file: 'models/mmc_generic_small_suv.glb', kinds: ['luxsuv'], forward: '+z', wheels: /^(wheel|tire-low|brake-disc)-(fl|fr|rl|rr)$/i, paint: /^body$/i,
+    credit: '„MMC Generic Small SUV Car“ von MMC Works (sketchfab.com/mmcworks), CC BY 4.0' },
 ];
 const modelOf = new Map(); // Typ → fertig vorbereitetes Modell
 let modelsLoading = null;
@@ -1660,8 +1663,23 @@ function prepareModel(scene, M) {
   const box = new THREE.Box3().setFromObject(holder), size = box.getSize(new THREE.Vector3());
   scene.position.x -= (box.min.x + box.max.x) / 2; scene.position.z -= (box.min.z + box.max.z) / 2; scene.position.y -= box.min.y;
   holder.updateMatrixWorld(true);
-  let paint = null, tris = 0;
+  // Alles ausser den Rädern je Material zu einem Stück zusammenfassen: wenige Zeichen-Befehle statt eines pro Einzelteil
+  const wheelSet = new Set(); scene.traverse(o => { if (M.wheels && M.wheels.test(o.name)) o.traverse(q => wheelSet.add(q)); });
+  const byMat = new Map(), gone = [], inv = new THREE.Matrix4().copy(holder.matrixWorld).invert();
   scene.traverse(o => {
+    if (!o.isMesh || wheelSet.has(o) || Array.isArray(o.material) || o.isSkinnedMesh) return;
+    let g = o.geometry.index ? o.geometry.toNonIndexed() : o.geometry.clone();
+    for (const n of Object.keys(g.attributes)) if (!['position', 'normal', 'uv'].includes(n)) g.deleteAttribute(n);
+    if (!g.attributes.normal) g.computeVertexNormals();
+    if (!g.attributes.uv) g.setAttribute('uv', new THREE.Float32BufferAttribute(new Float32Array(g.attributes.position.count * 2), 2));
+    g.applyMatrix4(new THREE.Matrix4().multiplyMatrices(inv, o.matrixWorld));
+    if (!byMat.has(o.material)) byMat.set(o.material, []);
+    byMat.get(o.material).push(g); gone.push(o);
+  });
+  for (const o of gone) o.parent.remove(o);
+  for (const [mat, geos] of byMat) { const g = mergeGeometries(geos, false); if (g) { const m = new THREE.Mesh(g, mat); m.name = mat.name; holder.add(m); } }
+  let paint = null, tris = 0;
+  holder.traverse(o => {
     if (!o.isMesh) return;
     o.castShadow = true; o.receiveShadow = true;
     const g = o.geometry; tris += (g.index ? g.index.count : g.attributes.position.count) / 3;

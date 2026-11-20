@@ -2831,7 +2831,7 @@ function drawVersion() {
   ctx.textBaseline = 'bottom';
   ctx.fillText(versionText(), W - 12, H - 8);
   ctx.textAlign = 'left'; ctx.font = '11px system-ui, sans-serif'; ctx.globalAlpha = 0.7; // Danke: echte 3D-Automodelle (CC BY verlangt die Nennung)
-  ctx.fillText('3D-Modelle: „Lowpoly Generic SUV“ von mk2design (Sketchfab, CC BY 4.0)', 12, H - 8); ctx.globalAlpha = 1;
+  ctx.fillText('3D-Modelle (Sketchfab, CC BY 4.0): „Lowpoly Generic SUV“ von mk2design · „MMC Generic Small SUV Car“ von MMC Works', 12, H - 8); ctx.globalAlpha = 1;
   if (appUpdate.info) { // neue Version gefunden: Knopf oben rechts
     const pulse = 1 + 0.04 * Math.sin(time * 5);
     ctx.save();
@@ -2889,7 +2889,7 @@ function drawQuit() {
 // auf dem Startbildschirm ein Update-Knopf; kommt man auf dem Startbildschirm in die App zurück, wird gleich aktualisiert.
 // APP_FILES: alle Dateien des Spiels (beim Hinzufügen einer Datei hier ergänzen).
 const APP_FILES = ['./', 'index.html', 'game.js', 'version.js', 'press3d.js', 'race.js', 'drag.js', 'cars3d.js', 'world3d.js',
-  'online.js', 'sound.js', 'city.js', 'tracks.js', 'stunt.js', 'netcars.js', 'chat.js', 'fx.js', 'viewer.js', 'photo.js', 'outskirts.js', 'country.js', 'moon.js', 'look.js', 'suburbs.js', 'island.js', 'monaco.js', 'junkyard.js', 'models/lowpoly_generic_suv.glb', 'manifest.webmanifest', 'icon-192.png', 'icon-512.png', 'apple-touch-icon.png', 'favicon.png'];
+  'online.js', 'sound.js', 'city.js', 'tracks.js', 'stunt.js', 'netcars.js', 'chat.js', 'fx.js', 'viewer.js', 'photo.js', 'outskirts.js', 'country.js', 'moon.js', 'look.js', 'suburbs.js', 'island.js', 'monaco.js', 'junkyard.js', 'models/lowpoly_generic_suv.glb', 'models/mmc_generic_small_suv.glb', 'manifest.webmanifest', 'icon-192.png', 'icon-512.png', 'apple-touch-icon.png', 'favicon.png'];
 const UPDATE_BTN = { x: W - 262, y: 14, w: 248, h: 46 };
 const appUpdate = { info: null, busy: false, last: 0 };
 
