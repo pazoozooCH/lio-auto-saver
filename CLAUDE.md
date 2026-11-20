@@ -80,7 +80,8 @@ Browser-Spiel ohne Build: `index.html` + `game.js` (Spiellogik, Menüs und 2D-Ze
   Kino (7,5: Film auf der Leinwand, X bei den Sitzen), Stadion (6,7: Spiel 14–22 Uhr, `S.match`).
   Verkehr (`setupTrafficSpecials`/`trafficSpecial`): Postautos an Haltestellen, Schulbus mit Blinklicht (nicht überholen),
   Ambulanz-Einsätze (`city.amb`, Platz machen), nachts keine Lastwagen (`c.off`), dafür Strassenwischer.
-  Grafik-Stil: farbig, leicht cartoonartig (nicht fotorealistisch). Fassaden `facade(wall, frame, r, style)`: classic, ribbon,
+  Grafik-Stil: farbig, leicht cartoonartig (nicht fotorealistisch) – die Autos selbst so echt wie möglich (Wunsch: nur richtige Autos;
+  Lichter am Tag klares Glas, `MAT.head` heisst 'headlight' und wird nachts hell). Fassaden `facade(wall, frame, r, style)`: classic, ribbon,
   curtain, panel (glänzendes Glas mit Lichtstreifen, Rauheit/Metall- und Reliefbild); Glasbalkone, Solarzellen/Dachgärten
   (`roofSpots`). Pflanzen mit Farbverlauf (`shadeGeo`): Laubbäume, Tannen im Wald (`pines`), Büsche, Grasbüschel (4 einseitige
   Bilder, sonst dunkle Rückseite), Blumen – alles Instanzen, eigener Zufall `vr` (der Haupt-Zufall `r` darf sich nicht verschieben).
@@ -174,6 +175,11 @@ Meine Figur (game.js, Shop-Knopf 👕, `drawSkin`/`skinTap`, `SKIN_ITEMS`): Haut
 Hose, Schuhe, Extras kosten Münzen (zweimal tippen = kaufen). Spielstand `autoRetterSkin` = { tone, hair, hairCol, head, headCol,
 top, topCol, legs, legsCol, shoes, shoesCol, extras[], owned[] }; city.js baut daraus die 3D-Figur (`loadSkin`, `makePlayer`).
 Neue Teile: in `SKIN_ITEMS` (game.js), in `drawSkinFigure` (2D) und in `makePlayer` (3D) eintragen.
+
+Keine Fantasie-Fahrzeuge (game.js `RETIRED`): Drachen, Einhorn, Ufo usw. sind `secret` + `retired` (bleiben nur als Daten); eigene
+werden beim Laden zu echten Autos gleicher Seltenheit (`realVehicle`), geparkte/Autohaus-Autos in city.js, `buildCar` zeigt sonst
+immer das Ersatzauto. Episch/Legendär: echte Sportwagen (`supercar`, `hyperev`, `gtlegend`, `lemans`, `formula`, `luxlimo`, `gtcar`,
+`luxsuv`, `musclegt`, `pickupxl`; Formen `REAL.supercar/hyperev/gt` in cars3d.js).
 
 Tägliche Belohnung (game.js, `drawDaily`/`dailyTap`): 7-Tage-Kalender beim Start (Tag 1: 5 Münzen), Tag 7 mit Fahrzeug, verpasst = Tag 1;
 Spielstand `autoRetterDaily` = { last, day }.

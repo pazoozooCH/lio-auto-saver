@@ -543,7 +543,7 @@ const KINDS_OF = {
   slow: ['delivery', 'tanker', 'umzug', 'camper', 'van', 'postauto', 'parcel'],
   normal: ['car', 'kombi', 'kompakt', 'hatch', 'coupe', 'minivan', 'pickup', 'jeep', 'smart', 'taxi', 'ecar'],
   tail: ['car', 'kombi', 'coupe', 'muscle', 'jeep', 'pickup', 'offroad'],
-  racer: ['sports', 'muscle', 'roadster', 'rally', 'hyper', 'nightracer', 'stockcar'],
+  racer: ['sports', 'muscle', 'roadster', 'rally', 'hyper', 'gtcar', 'stockcar'],
 };
 const TYPES = [['slow', 0.2], ['normal', 0.47], ['tail', 0.17], ['racer', 0.16]];
 const COLORS = [0xc0392b, 0x2563eb, 0xf4f4f4, 0x22232b, 0x9aa0aa, 0x16a34a, 0xf59e0b, 0x7c3aed, 0x0e7490, 0xb45309, 0xe5e7eb, 0x1f2937];

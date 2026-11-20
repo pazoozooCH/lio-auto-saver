@@ -251,7 +251,7 @@ export function buildMonaco({ scene, group, asphaltMat, lineMat, paveMat, sign, 
 }
 
 // ---------- Teure Autos auf der Ringstrasse ----------
-const LUX = ['hyper', 'nightracer', 'limo', 'sports', 'cabrio', 'coupe', 'muscle', 'racer'];
+const LUX = ['hyper', 'supercar', 'luxlimo', 'gtcar', 'sports', 'cabrio', 'coupe', 'muscle', 'hyperev'];
 const LUX_COL = ['#f8fafc', '#111827', '#dc2626', '#facc15', '#1d4ed8', '#16a34a', '#f472b6', '#9ca3af'];
 export function makeMonacoTraffic(kinds, buildCar, scene) {
   const list = LUX.filter(k => kinds[k]), cars = [], R = MON_ROADS[0];

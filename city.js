@@ -3896,6 +3896,7 @@ function stepParked(dt) {
     const near = Math.hypot(P.x - me.pos.x, P.z - me.pos.z) < PARK_SEE || Math.hypot(P.x - cam.x, P.z - cam.z) < PARK_SEE;
     if (!P.mesh && near && !built) {
       parkFree(P);
+      if (city.kinds[P.v.kind] && city.kinds[P.v.kind].retired) { P.v.kind = city.kinds[P.v.kind].retired; saveParked(); } // Fantasie-Fahrzeug → echtes Auto
       const v = city.kinds[P.v.kind] ? P.v : { ...P.v, kind: 'car' };
       setParkMesh(P, buildCar(v, city.kinds)); parkCols(P); built = true;
     }
@@ -4440,6 +4441,7 @@ function loadShop() {
   try { sh = JSON.parse(localStorage.getItem(SHOP_KEY)); } catch (err) { /* kaputt oder ohne Speicher */ }
   sh = { on: false, stock: [], orders: [], ...(sh || {}) };
   sh.stock = Array.from({ length: SHOP_SLOTS }, (_, k) => sh.stock[k] || null); // feste Plätze (leer = null)
+  for (const o of sh.stock) { const K = o && o.v && city.kinds[o.v.kind]; if (K && K.retired) o.v.kind = K.retired; } // keine Fantasie-Fahrzeuge mehr
   return sh;
 }
 const stockCount = () => city.shop.stock.filter(Boolean).length;
@@ -6244,7 +6246,7 @@ export function startCity({ player, kinds, topSpeed, onExit, pay = () => 0, earn
   S.fx.clear();
   S.ui.minimap.width = S.ui.minimap.height = MAP; S.ui.minimap.classList.remove('big'); S.ui.mapzoom.hidden = true; // Karte wieder klein
   S.scene.add(mesh);
-  mesh.traverse(o => { const m = o.material; if (m && m.emissive && m.emissiveIntensity === 1.2 && m.color.getHex() === 0xffffff) city.headMat = m; }); // Scheinwerfer (gemeinsam für alle Autos)
+  mesh.traverse(o => { const m = o.material; if (m && m.name === 'headlight') city.headMat = m; }); // Scheinwerfer (gemeinsam für alle Autos)
   for (const c of city.cars) S.scene.add(c.mesh);
   warmUp(S.renderer, S.scene, S.camera);
   if (!S.quality) S.quality = makeQuality(S.renderer, layout);
@@ -6446,7 +6448,7 @@ function stepDayNight(dt) {
   n.pools.visible = night > 0.05; n.pools.material.opacity = 0.75 * night;
   n.stars.material.opacity = night;
   if (S.clouds.material && S.clouds.material.color) S.clouds.material.color.setScalar(0.25 + 0.75 * day);
-  if (city.headMat) city.headMat.emissiveIntensity = 1.2 + 2.5 * night; // Scheinwerfer aller Autos
+  if (city.headMat) city.headMat.emissiveIntensity = 0.35 + 3.3 * night; // Scheinwerfer aller Autos: am Tag klares Glas, nachts hell
   const me = city.me, fx = Math.cos(me.heading), fz = Math.sin(me.heading);
   n.headlight.intensity = 90 * night;
   n.headlight.position.set(me.pos.x + fx * 1.5, 1.1, me.pos.z + fz * 1.5);
@@ -6659,7 +6661,7 @@ function endCity() {
   S.ui.walkbtn.classList.remove('ready');
   S.ui.hint.textContent = HINT;
   for (const car of c.cars) { S.scene.remove(car.mesh); if (car.tri) S.scene.remove(car.tri); } // Formen gehören den Vorlagen in cars3d.js
-  if (c.headMat) c.headMat.emissiveIntensity = 1.2; // Scheinwerfer wieder wie am Tag (gilt auch fürs Rennen)
+  if (c.headMat) c.headMat.emissiveIntensity = 0.35; // Scheinwerfer wieder wie am Tag (gilt auch fürs Rennen)
   if (c.netCars) c.netCars.dispose();
   if (c.chat) c.chat.dispose();
   S.ui.root.hidden = true;

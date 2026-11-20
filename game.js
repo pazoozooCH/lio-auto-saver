@@ -383,6 +383,27 @@ const KINDS = {
                info: '💨 Hypercar: Antippen = TURBO! Fast so schnell wie ein Rennauto.' },
   sleigh:    { name: 'Samichlaus-Schlitten', tier: 'legendary', w: [140, 150], h: [58, 62], color: '#b91c1c', ability: 'rocket', coins: 5, points: 8, look: 'royal', badge: '🎅',
                info: '🎅 Samichlaus-Schlitten: Antippen = fliegt davon! 8 Punkte und 5 Münzen.' },
+  // --- Echte Sportwagen und Luxusautos (statt Fantasie-Fahrzeugen) ---
+  gtcar:     { name: 'GT-Sportwagen', tier: 'epic', w: [110, 120], h: [34, 38], speed: 1.45, color: '#f59e0b', ability: 'turbo', points: 4, look: 'coupe', badge: '💨',
+               info: '💨 GT-Sportwagen: Antippen = TURBO!' },
+  luxsuv:    { name: 'Luxus-SUV', tier: 'epic', w: [112, 122], h: [56, 60], wheel: 14, color: '#1f2937', armor: 2, points: 4, coins: 2, look: 'jeep', badge: '💎',
+               info: '💎 Luxus-SUV: hält ZWEI Pressen-Schläge aus und bringt 2 Münzen.' },
+  musclegt:  { name: 'Muscle-Car GT', tier: 'epic', w: [108, 118], h: [38, 42], speed: 1.45, color: '#7c3aed', ability: 'turbo', points: 4, look: 'muscle', badge: '🔥',
+               info: '🔥 Muscle-Car GT: Antippen = TURBO!' },
+  pickupxl:  { name: 'Offroad-Pickup XL', tier: 'epic', w: [120, 130], h: [54, 58], wheel: 15, color: '#ea580c', armor: 1, points: 4, look: 'pickup', badge: '🛻',
+               info: '🛻 Offroad-Pickup XL: hält einen Schlag aus – 4 Punkte!' },
+  supercar:  { name: 'Supersportwagen', tier: 'legendary', w: [112, 122], h: [30, 34], speed: 1.6, color: '#dc2626', ability: 'turbo', points: 6, coins: 4, look: 'sports', badge: '🏎️',
+               info: '🏎️ Supersportwagen: Antippen = TURBO! 6 Punkte und 4 Münzen.' },
+  hyperev:   { name: 'Elektro-Hypercar', tier: 'legendary', w: [112, 122], h: [30, 34], speed: 1.65, color: '#e5e7eb', ability: 'turbo', points: 6, coins: 4, look: 'sports', badge: '⚡',
+               info: '⚡ Elektro-Hypercar: lautlos und blitzschnell – Antippen = TURBO!' },
+  gtlegend:  { name: 'GT-Legende', tier: 'legendary', w: [116, 126], h: [34, 38], speed: 1.5, color: '#065f46', points: 8, coins: 5, look: 'coupe', badge: '🏆',
+               info: '🏆 GT-Legende: ein Klassiker – 8 Punkte und 5 Münzen!' },
+  lemans:    { name: 'Le-Mans-Rennwagen', tier: 'legendary', w: [118, 128], h: [32, 36], speed: 1.7, color: '#1d4ed8', ability: 'turbo', points: 6, coins: 4, look: 'sports', badge: '🏁',
+               info: '🏁 Le-Mans-Rennwagen: 24 Stunden Vollgas – Antippen = TURBO!' },
+  formula:   { name: 'Formel-Rennwagen', tier: 'legendary', w: [116, 126], h: [28, 32], speed: 1.75, color: '#b91c1c', ability: 'turbo', points: 6, coins: 4, look: 'racer', badge: '🥇',
+               info: '🥇 Formel-Rennwagen: das schnellste Auto – Antippen = TURBO!' },
+  luxlimo:   { name: 'Luxuslimousine', tier: 'legendary', w: [130, 140], h: [42, 46], speed: 1.3, color: '#111827', armor: 2, points: 8, coins: 6, look: 'limo', badge: '👑',
+               info: '👑 Luxuslimousine: hält ZWEI Schläge aus – 8 Punkte und 6 Münzen!' },
   // --- Eigenbau vom Schrottplatz (city.js/junkyard.js): nur aus Teilen zusammengebaut, nicht im Shop, nicht verkaufbar;
   //     jedes Exemplar hat eine eigene Flicken-Lackierung (special 'junk', Muster aus der Farbe) ---
   junkrod:   { name: 'Rost-Rakete', tier: 'eigenbau', secret: true, junk: true, w: [108, 118], h: [38, 42], speed: 1.3, look: 'muscle', badge: '🚀',
@@ -402,6 +423,21 @@ const KINDS = {
                ability: 'turbo', armor: 2, points: 10, coins: 3, look: 'sports', badge: '⚡', fly: true,
                info: '⚡ LIONEL X: das geheime Sonderfahrzeug! Turbo, lenkt super, hält ZWEI Schläge aus und fliegt auf Knopfdruck.' },
 };
+
+// Keine Fantasie-Fahrzeuge mehr (Wunsch: nur richtige Autos): sie bleiben als Daten (alte Spielstände, Online-Mitspieler),
+// sind aber nirgends mehr zu bekommen; wer eines hat, bekommt dafür ein echtes Auto gleicher Seltenheit (RETIRED).
+const RETIRED = { bobbycar: 'smart', mower: 'quad', candy: 'bakery', circus: 'doubledecker', popcorn: 'hotdog',
+  train: 'luxsuv', ghost: 'gtcar', rocketcar: 'dragster', ufo: 'hyper', heli: 'gtcar', hovercraft: 'luxsuv', firework: 'musclegt', treasure: 'pickupxl',
+  sub: 'luxsuv', jet: 'hyper', robot: 'pickupxl', nightracer: 'gtcar', zeppelin: 'musclegt', pirate: 'pickupxl', polar: 'monster', dino: 'monster', snail: 'musclegt',
+  dragon: 'supercar', shuttle: 'formula', timemachine: 'gtlegend', unicorn: 'hyperev', royal: 'luxlimo', phoenix: 'lemans', rover: 'hyperev', shark: 'supercar',
+  pumpkin: 'luxlimo', sleigh: 'gtlegend' };
+for (const [k, to] of Object.entries(RETIRED)) if (KINDS[k]) Object.assign(KINDS[k], { secret: true, retired: to });
+function realVehicle(v) { // altes Fantasie-Fahrzeug → echtes Auto (gleiche Nummer, Lack und PS bleiben)
+  const to = KINDS[v.kind] && KINDS[v.kind].retired;
+  if (!to) return false;
+  v.kind = to; if (!v.special || v.special === 'junk') v.color = KINDS[to].color || v.color;
+  return true;
+}
 
 // Münzen und Fahrzeugpark bleiben gespeichert
 function loadJSON(key, fallback) {
@@ -438,6 +474,7 @@ if (!fleet) {
   try { localStorage.removeItem('autoRetterUnlocked'); } catch (e) { /* egal */ }
 }
 fleet = fleet.filter(v => KINDS[v.kind]);
+if (fleet.filter(realVehicle).length) storeJSON('autoRetterFleet', fleet); // Fantasie-Fahrzeuge → echte Autos (einmal)
 for (const v of fleet) {
   if (typeof v.ps !== 'number') v.ps = basePS(v.kind); // ältere Spielstände ohne PS
   if (!v.paintPS) { v.ps += PAINT_PS[v.special] || 0; v.paintPS = true; } // Lack-Bonus einmal nachrüsten

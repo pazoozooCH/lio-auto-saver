@@ -44,7 +44,7 @@ function lavaTexture() {
 }
 
 function paintMaterial(v) {
-  const base = { clearcoat: 1, clearcoatRoughness: 0.04 };
+  const base = { clearcoat: 1, clearcoatRoughness: 0.04, envMapIntensity: 1.3 }; // Klarlack, spiegelt die Umgebung wie echter Autolack
   const finish = v.tune && v.tune.finish; // Tuning-Lack geht vor
   if (finish === 'chrome') return new THREE.MeshPhysicalMaterial({ ...base, color: 0xf2f4f8, metalness: 0.85, roughness: 0.16, envMapIntensity: 1.6 });
   if (finish === 'neon') {
@@ -105,8 +105,9 @@ function shared() {
   MAT.dark = new THREE.MeshStandardMaterial({ color: 0x1f2026, roughness: 0.6 });
   MAT.steel = new THREE.MeshStandardMaterial({ color: 0x8a919e, metalness: 0.8, roughness: 0.35 });
   MAT.chrome = new THREE.MeshStandardMaterial({ color: 0xe8ecf2, metalness: 1, roughness: 0.12 });
-  MAT.head = new THREE.MeshStandardMaterial({ color: 0xffffff, emissive: 0xfff3c0, emissiveIntensity: 1.2 });
-  MAT.tail = new THREE.MeshStandardMaterial({ color: 0x550000, emissive: 0xff2020, emissiveIntensity: 0.9 });
+  // Lichter wie echt: am Tag klares Glas mit wenig Leuchten (nachts hell, city.js über den Namen 'headlight'), Rücklichter rotes Glas
+  MAT.head = new THREE.MeshStandardMaterial({ name: 'headlight', color: 0xeef2f7, metalness: 0.3, roughness: 0.08, emissive: 0xfff3c0, emissiveIntensity: 0.35 });
+  MAT.tail = new THREE.MeshStandardMaterial({ color: 0x8b0a0a, metalness: 0.2, roughness: 0.15, emissive: 0xff2020, emissiveIntensity: 0.3 });
   MAT.skin = new THREE.MeshStandardMaterial({ color: 0xf2c9a0, roughness: 0.8 });
   MAT.wood = new THREE.MeshStandardMaterial({ color: 0xa0703c, roughness: 0.85 });
   MAT.gold = new THREE.MeshStandardMaterial({ color: 0xffd34d, metalness: 1, roughness: 0.22 });
@@ -412,6 +413,18 @@ const REAL = {
   coupe: { top: [[0, .43], [.02, .53], [.06, .565], [.2, .575], [.72, .56], [.86, .53], [.96, .48], [1, .4]],
     bot: [[0, .24], [.04, .13], [.08, .1], [.92, .1], [.97, .14], [1, .24]], axles: [.19, .8], gh: [.18, .4, .58, .73], roof: .88,
     pf: 4, pr: 5, cp: [.18, .34], posts: [], twoDoor: true, redCaliper: true },
+  // Supersportwagen: Motor in der Mitte, flache Keilform, Kabine weit vorne
+  supercar: { top: [[0, .42], [.02, .5], [.12, .53], [.4, .52], [.66, .48], [.82, .43], [.94, .37], [1, .3]],
+    bot: [[0, .2], [.04, .09], [.95, .09], [1, .18]], axles: [.2, .8], gh: [.3, .5, .64, .78], roof: .76,
+    pf: 2.6, pr: 3.6, cp: [.3, .44], posts: [], twoDoor: true, redCaliper: true },
+  // Elektro-Hypercar: weich und rund, glatte Seiten
+  hyperev: { top: [[0, .4], [.02, .49], [.15, .52], [.5, .51], [.75, .47], [.9, .41], [1, .32]],
+    bot: [[0, .2], [.05, .09], [.95, .09], [1, .19]], axles: [.19, .81], gh: [.26, .48, .64, .8], roof: .78,
+    pf: 2.4, pr: 3.0, cp: [.26, .4], posts: [], twoDoor: true, redCaliper: true },
+  // Gran Turismo: lange Haube, Kabine hinten, Fliessheck
+  gt: { top: [[0, .43], [.02, .52], [.08, .555], [.3, .565], [.6, .56], [.8, .55], [.93, .5], [1, .4]],
+    bot: [[0, .22], [.04, .11], [.94, .11], [1, .21]], axles: [.18, .82], gh: [.14, .36, .5, .62], roof: .84,
+    pf: 3.4, pr: 4.2, cp: [.14, .3], posts: [], twoDoor: true, redCaliper: true },
   suv: { top: [[0, .44], [.012, .6], [.04, .62], [.74, .62], [.88, .6], [.96, .55], [1, .46]],
     bot: [[0, .26], [.04, .18], [.96, .18], [1, .26]], axles: [.18, .81], gh: [.025, .05, .62, .76], roof: .95,
     pf: 5, pr: 7, cp: [.025, .08], posts: [[.28, .035, 'dark'], [.5, .035, 'dark']], clad: true },
@@ -1576,6 +1589,22 @@ function junkExtras(C, kind) {
   if (kind === 'junkcabrio') C.box(0.12, 0.7, 0.12, M.steel, -L * 0.35, (C.side ? C.side.top : C.H * 0.6) + 0.35, 0); // Antenne mit Fähnchen
   if (kind === 'junkracer') C.box(0.35, 0.06, C.W * 0.95, M.dark, -L / 2 + 0.3, (C.side ? C.side.top : C.H * 0.6) + 0.45, 0); // angeschraubter Heckflügel
 }
+// Echte Sportwagen und Luxusautos (ersetzen die Fantasie-Fahrzeuge in Episch und Legendär)
+const wing = (C, x, y, w = 0.42) => { const { M, W } = C; C.box(w, 0.05, W * 1.0, M.dark, x, y, 0); for (const s of [-1, 1]) C.box(0.18, y - C.H * 0.5, 0.06, M.dark, x, (y + C.H * 0.5) / 2, s * W * 0.32); };
+const chromeGrille = (C, x, y) => { C.box(0.06, 0.32, C.W * 0.5, C.M.chrome, x, y, 0); for (let k = -3; k <= 3; k++) C.box(0.07, 0.3, 0.025, C.M.dark, x + 0.01, y, k * C.W * 0.07); };
+Object.assign(BUILD, {
+  supercar: C => { profileBody(C, 'supercar'); for (const s of [-1, 1]) C.box(0.7, 0.16, 0.06, C.M.dark, C.X(0.38), C.H * 0.38, s * C.W * 0.49); /* Lufteinlässe */ },
+  hyperev: C => { profileBody(C, 'hyperev'); C.box(0.05, 0.04, C.W * 0.8, new THREE.MeshStandardMaterial({ color: 0xffffff, emissive: 0xbfe8ff, emissiveIntensity: 1.4 }), C.L / 2 - 0.05, C.H * 0.36, 0); /* Lichtband */ },
+  gtlegend: C => { profileBody(C, 'gt', { wheels: [0.17, 0.8] }); },
+  gtcar: C => { profileBody(C, 'gt'); wing(C, C.X(0.03), C.H * 0.72, 0.3); },
+  lemans: C => { profileBody(C, 'supercar'); wing(C, C.X(0.02), C.H * 0.9, 0.5); C.box(1.6, 0.5, 0.04, C.paint, C.X(0.18), C.H * 0.62, 0); /* Finne */ },
+  formula: C => { BUILD.racer(C); wing(C, C.X(0.98), 0.25, 0.4); },
+  luxlimo: C => { profileBody(C, 'sedan', { tinted: true, wheels: [0.15, 0.85] }); chromeGrille(C, C.L / 2 + 0.02, C.H * 0.32); },
+  luxsuv: C => { profileBody(C, 'suv', { tinted: true }); chromeGrille(C, C.L / 2 + 0.02, C.H * 0.38); for (const s of [-1, 1]) C.box(C.L * 0.4, 0.05, 0.06, C.M.chrome, 0, C.H * 0.32, s * C.W * 0.5); },
+  musclegt: C => { profileBody(C, 'coupe'); C.box(0.6, 0.14, 0.5, C.M.dark, C.X(0.72), C.H * 0.6, 0); /* Hutze */ wing(C, C.X(0.03), C.H * 0.66, 0.25); },
+  pickupxl: C => { profileBody(C, 'pickup', { wheels: [0.17, 0.83] }); C.box(0.12, 0.08, C.W * 0.9, C.M.dark, C.roofX ?? 0, (C.roofY ?? C.H) + 0.05, 0); /* Lichtbalken */ },
+});
+
 const JUNK_BASE = { junkrod: 'muscle', junkbuggy: 'buggy', junktruck: 'monster', junkbus: 'van', junkcabrio: 'cabrio', junkracer: 'sports' };
 for (const [k, base] of Object.entries(JUNK_BASE)) BUILD[k] = C => { BUILD[base](C); junkExtras(C, k); };
 
@@ -1585,6 +1614,7 @@ const templates = new Map(), paints = new Map();
 const COLOR_KINDS = new Set(['cement', 'camper']);
 const paintKey = v => [v.special || '', v.color || '', (v.tune && v.tune.finish) || '', (v.tune && v.tune.neon) || ''].join('|');
 export function buildCar(v, kinds, hDiv) {
+  if (kinds && kinds[v.kind] && kinds[v.kind].retired) v = { ...v, kind: kinds[v.kind].retired }; // altes Fantasie-Fahrzeug: echtes Auto zeigen
   const tune = v.tune || {};
   const key = [v.kind, v.special || '', COLOR_KINDS.has(v.kind) ? v.color || '' : '', hDiv || '', JSON.stringify(tune)].join('|');
   let t = templates.get(key);
