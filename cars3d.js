@@ -2,7 +2,7 @@
 // Jedes Fahrzeug hat eine eigene Bauanleitung (BUILD), angelehnt an seine 2D-Zeichnung in game.js.
 // Koordinaten: Länge entlang +X (vorne), Höhe Y, Breite Z (rechte Seite = +Z), Meter.
 import * as THREE from 'three';
-import { mergeGeometries, mergeVertices } from 'three/addons/utils/BufferGeometryUtils.js';
+import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 
 const PI = Math.PI;
 
@@ -1682,14 +1682,11 @@ function grayMap(tex) {
 // Lichter der echten Modelle (nach Material-Namen): city.js lässt sie nachts leuchten
 export const MODEL_LAMPS = new Set();
 const LAMP_RE = /light|lamp|lanterna|freio|signal/i, NOT_LAMP_RE = /metal|chrom|black|cover|lines|pipe|bump|detail|fog|plate|warning|reflector/i;
-// Dreiecke umdrehen (nicht indizierte Geometrie: Ecke 2 und 3 jedes Dreiecks tauschen)
+// Dreiecke umdrehen (Ecke 2 und 3 jedes Dreiecks im Index tauschen)
 function flipWinding(g) {
-  for (const [name, a0] of Object.entries(g.attributes)) {
-    const a = a0.isInterleavedBufferAttribute ? a0.clone() : a0; // verschachtelt → eigenes Feld
-    if (a !== a0) g.setAttribute(name, a);
-    const n = a.itemSize, arr = a.array;
-    for (let t = 0; t + 2 < a.count; t += 3) for (let k = 0; k < n; k++) { const i1 = (t + 1) * n + k, i2 = (t + 2) * n + k, v = arr[i1]; arr[i1] = arr[i2]; arr[i2] = v; }
-  }
+  const ix = g.index.array.slice(); // eigene Kopie (der Index kann mit dem Original geteilt sein)
+  for (let t = 0; t + 2 < ix.length; t += 3) { const v = ix[t + 1]; ix[t + 1] = ix[t + 2]; ix[t + 2] = v; }
+  g.setIndex(new THREE.BufferAttribute(ix, 1));
 }
 function prepareModel(scene, M) {
   const drop = [];
@@ -1706,7 +1703,8 @@ function prepareModel(scene, M) {
   const byMat = new Map(), gone = [], inv = new THREE.Matrix4().copy(holder.matrixWorld).invert();
   scene.traverse(o => {
     if (!o.isMesh || wheelSet.has(o) || Array.isArray(o.material) || o.isSkinnedMesh) return;
-    let g = o.geometry.index ? o.geometry.toNonIndexed() : o.geometry.clone();
+    let g = o.geometry.clone(); // mit Index lassen (Ecken geteilt: viel weniger Speicher als jede Ecke dreifach)
+    if (!g.index) { const n = g.attributes.position.count, ix = n > 65535 ? new Uint32Array(n) : new Uint16Array(n); for (let i = 0; i < n; i++) ix[i] = i; g.setIndex(new THREE.BufferAttribute(ix, 1)); }
     for (const n of Object.keys(g.attributes)) if (!['position', 'normal', 'uv'].includes(n)) g.deleteAttribute(n);
     g.morphAttributes = {};
     for (const [n, a] of Object.entries(g.attributes)) if (!(a.array instanceof Float32Array) || a.normalized || a.isInterleavedBufferAttribute) { // alle gleich: sonst klappt das Zusammenfassen nicht
@@ -1740,24 +1738,25 @@ function prepareModel(scene, M) {
   for (const [mat, geos] of byMat) { // nicht 'wheel' heissen (drehte sich sonst)
     const blink = M.blink && M.blink.test(mat.name || '') ? 1 : 0;
     let g = geos.length > 1 ? mergeGeometries(geos, false) : geos[0];
-    if (g) { const gi = mergeVertices(g, 1e-5); if (gi.index && gi.attributes.position.count < g.attributes.position.count * 0.8) g = gi; } // gleiche Ecken teilen: weniger Speicher (Handy)
     for (const q of g ? [g] : geos) { const m = new THREE.Mesh(q, mat); m.name = 'part:' + mat.name; if (blink) m.userData.blink = 1; holder.add(m); } // klappt es nicht: einzeln
   }
-  let paint = null, tris = 0;
+  let paint = null, tris = 0; const paints = []; // Lack-Materialien (Originalfarbe; gespritzt = alle in der Wagenfarbe)
   holder.traverse(o => {
     if (!o.isMesh) return;
     o.castShadow = true; o.receiveShadow = true;
     const g = o.geometry; tris += (g.index ? g.index.count : g.attributes.position.count) / 3;
     const mats = Array.isArray(o.material) ? o.material : [o.material];
-    for (const m of mats) if (M.paint && M.paint.test(m.name) && !paint) {
-      paint = m;
-      const gm = grayMap(m.map); if (gm) { m.map = gm; m.color.set(0xffffff); }
-      m.envMapIntensity = 1.3;
+    for (const m of mats) if (M.paint && M.paint.test(m.name) && !paints.includes(m)) {
+      paints.push(m); if (!paint) paint = m;
+      const img = m.map && m.map.image; // Farbe von weitem (einfache Fassung): Mittelwert des Lack-Bildes
+      if (img && img.width) { try { const c = document.createElement('canvas'); c.width = c.height = 1; const x = c.getContext('2d'); x.drawImage(img, 0, 0, 1, 1); const d = x.getImageData(0, 0, 1, 1).data; m.userData.farColor = new THREE.Color().setRGB(d[0] / 255, d[1] / 255, d[2] / 255, THREE.SRGBColorSpace).multiply(m.color).getHex(); } catch (e) { /* ohne */ } }
+      // Glanz wie Autolack: glatt, etwas Metallic, Klarlack obendrauf, Himmel spiegelt sich
+      m.roughness = Math.min(m.roughness, 0.18); m.metalness = 0.35; m.envMapIntensity = 1.6;
+      if (m.isMeshPhysicalMaterial) { m.clearcoat = Math.max(m.clearcoat || 0, 0.8); m.clearcoatRoughness = Math.min(m.clearcoatRoughness ?? 0.05, 0.06); }
+      m.needsUpdate = true;
     }
   });
-  // weitere Lack-Materialien bekommen denselben Lack (eine Wagenfarbe)
-  if (paint) holder.traverse(o => { if (o.isMesh && !Array.isArray(o.material) && o.material !== paint && M.paint.test(o.material.name)) o.material = paint; });
-  return { holder, length: size.x, height: size.y, paint, wheels: M.wheels, tris: Math.round(tris), credit: M.credit, len: M.len, eye: modelEye(holder, size), eyeX: M.eyeX, eyeY: M.eyeY };
+  return { holder, length: size.x, height: size.y, paint, paints, wheels: M.wheels, tris: Math.round(tris), credit: M.credit, len: M.len, eye: modelEye(holder, size), eyeX: M.eyeX, eyeY: M.eyeY };
 }
 // Augen des Fahrers im Modell (Fahrersitz-Kamera): knapp hinter der Oberkante der Frontscheibe, etwas unter dem Dach, links
 function modelEye(holder, size) {
@@ -1805,11 +1804,13 @@ const templates = new Map(), paints = new Map();
 // Die Farbe steckt nur im Lack: eine Vorlage je Typ (sonst baut jede Farbe ein ganzes Auto neu – viel zu viel Speicher fürs Handy).
 // Ausnahmen: Typen, die die Farbe in Bilder malen (Streifen).
 const COLOR_KINDS = new Set(['cement', 'camper']);
+export const isPainted = v => !!(v.painted || v.special); // selbst gespritzt (Lackiererei) oder Spezial-Lack
 const paintKey = v => [v.special || '', v.color || '', (v.tune && v.tune.finish) || '', (v.tune && v.tune.neon) || ''].join('|');
 export function buildCar(v, kinds, hDiv) {
   if (kinds && kinds[v.kind] && kinds[v.kind].retired) v = { ...v, kind: kinds[v.kind].retired }; // altes Fantasie-Fahrzeug: echtes Auto zeigen
   const tune = v.tune || {};
-  const key = [v.kind, v.special || '', COLOR_KINDS.has(v.kind) ? v.color || '' : '', hDiv || '', JSON.stringify(tune)].join('|');
+  const orig = modelOf.has(v.kind) && !isPainted(v); // echtes Modell, nicht gespritzt: Originalfarbe des Modells
+  const key = [v.kind, v.special || '', COLOR_KINDS.has(v.kind) ? v.color || '' : '', hDiv || '', JSON.stringify(tune), orig ? 'orig' : ''].join('|');
   let t = templates.get(key);
   if (!t) {
     if (templates.size > 150) templates.clear();
@@ -1824,7 +1825,13 @@ export function buildCar(v, kinds, hDiv) {
       farPaint = C.paint; farProc = makeFar(C.group, C.paint);
       const pm = useModel(C, MP);
       if (MP.eye) { const sc = C.L / MP.length; C.eye = MP.eye.map(n => n * sc); if (MP.eyeX !== undefined) C.eye[0] = MP.eyeX; if (MP.eyeY !== undefined) C.eye[1] = MP.eyeY; }
-      if (pm) { C.paint = pm.clone(); C.paint.color.set(v.special === 'gold' ? '#ffcf33' : v.color || '#cccccc'); C.group.traverse(o => { if (o.material === pm) o.material = C.paint; }); }
+      if (pm && orig) C.paint = pm; // Originalfarbe: Lack bleibt, wie er ist
+      else if (pm) { // gespritzt: alle Lack-Teile in der Wagenfarbe (Bild grau, damit die Farbe stimmt)
+        C.paint = pm.clone(); delete C.paint.userData.farColor;
+        if (pm.map) { if (MP.grayMap === undefined) MP.grayMap = grayMap(pm.map); if (MP.grayMap) C.paint.map = MP.grayMap; C.paint.color.set(0xffffff); }
+        C.paint.color.set(v.special === 'gold' ? '#ffcf33' : v.color || '#cccccc');
+        C.group.traverse(o => { if (MP.paints.includes(o.material)) o.material = C.paint; });
+      }
     } else {
       if (C.side) sideDetails(C);
       applyTune(C, tune);
@@ -1838,13 +1845,13 @@ export function buildCar(v, kinds, hDiv) {
     C.group.add(sh);
     // Augen für die Fahrersitz-Kamera; Fahrzeuge ohne Innenraum: knapp über dem Dach
     const eye = C.eye || [(C.roofX ?? 0) + 0.3, (C.roofY ?? C.H) + 0.3, 0];
-    t = { group: C.group, paint: C.paint, pkey: paintKey(v), radius: Math.max(1.2, Math.min(C.L, 4) / 2), length: C.L, eye, model: !!MP };
+    t = { group: C.group, paint: C.paint, pkey: orig ? 'orig' : paintKey(v), radius: Math.max(1.2, Math.min(C.L, 4) / 2), length: C.L, eye, model: !!MP };
     if (MP) { t.far = farProc; t.farPaint = farPaint; } // weit weg: einfache Fassung der eigenen Form
     templates.set(key, t);
   }
   const g = t.group.clone();
   let paint = t.paint;
-  if (t.pkey !== paintKey(v)) { // andere Farbe: nur den Lack tauschen (Form und Teile bleiben geteilt)
+  if (!orig && t.pkey !== paintKey(v)) { // andere Farbe: nur den Lack tauschen (Form und Teile bleiben geteilt)
     const pk = paintKey(v);
     paint = paints.get(key + '#' + pk);
     if (!paint) {
@@ -1860,7 +1867,7 @@ export function buildCar(v, kinds, hDiv) {
   return g;
 }
 const farPaints = new Map();
-const farPaintFor = m => { const k = m.color.getHex(); let f = farPaints.get(k); if (!f) { f = new THREE.MeshStandardMaterial({ color: m.color, metalness: 0.5, roughness: 0.3 }); farPaints.set(k, f); } return f; };
+const farPaintFor = m => { const k = m.userData.farColor ?? m.color.getHex(); let f = farPaints.get(k); if (!f) { f = new THREE.MeshStandardMaterial({ color: k, metalness: 0.5, roughness: 0.3 }); farPaints.set(k, f); } return f; };
 // Weit weg: nur die einfache Fassung zeigen (setLod(mesh, true)), nah wieder alle Teile
 export function setLod(g, far) {
   const U = g.userData;

@@ -4285,7 +4285,7 @@ const cityDealer = {
     if (!v) return 'Dieses Auto gehört nicht dir';
     if (wallet < price) return 'Dir fehlen ' + (price - wallet) + ' Münzen';
     wallet -= price;
-    if (change.color) v.color = change.color;
+    if (change.color) { v.color = change.color; v.painted = true; } // echte Modelle zeigen sonst ihre Originalfarbe
     if (change.tune) {
       const t = v.tune || (v.tune = {});
       for (const [k, val] of Object.entries(change.tune)) {
