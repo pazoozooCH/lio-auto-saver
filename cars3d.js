@@ -1609,16 +1609,27 @@ const JUNK_BASE = { junkrod: 'muscle', junkbuggy: 'buggy', junktruck: 'monster',
 for (const [k, base] of Object.entries(JUNK_BASE)) BUILD[k] = C => { BUILD[base](C); junkExtras(C, k); };
 
 // ---------- Echte 3D-Modelle (GLB, aus dem Ordner models/) ----------
-// MODELS: Datei → welche Fahrzeugtypen damit gezeichnet werden. forward = wohin die Nase im Modell zeigt ('+z'/'-z'/'+x'/'-x'),
+// MODELS: Datei → welche Fahrzeugtypen damit gezeichnet werden, len = echte Länge in Metern. forward = wohin die Nase im Modell zeigt ('+z'/'-z'/'+x'/'-x'),
 // wheels = Namen der Rad-Teile (drehen sich), drop = Teile, die weg können (Innenraum, Motor …: weniger Dreiecke),
-// paint = Name des Lack-Materials (wird in der Wagenfarbe eingefärbt), credit = Ersteller (Lizenz CC BY verlangt das).
+// paint = Name(n) der Lack-Materialien (werden in der Wagenfarbe eingefärbt), hide = Materialien weglassen, credit = Ersteller (Lizenz CC BY verlangt das).
 // Solange ein Modell noch nicht geladen ist (oder fehlt), zeichnet buildCar das eigene Auto.
 export const MODELS = [
-  { file: 'models/lowpoly_generic_suv.glb', kinds: ['offroad'], forward: '+z', wheels: /^Wheel_/i, drop: /^Shadow/i, paint: /^Body$/i,
+  { file: 'models/lowpoly_generic_suv.glb', len: 4.75, kinds: ['offroad'], forward: '+z', wheels: /^Wheel_/i, drop: /^Shadow/i, paint: /^Body$/i,
     credit: '„Lowpoly Generic SUV“ von mk2design (sketchfab.com/mk2design), CC BY 4.0' },
   // verkleinert mit glTF-Transform (Innenraum, Motor, Fahrwerk weg; 167'000 → 33'500 Dreiecke)
-  { file: 'models/mmc_generic_small_suv.glb', kinds: ['luxsuv'], forward: '+z', wheels: /^(wheel|tire-low|brake-disc)-(fl|fr|rl|rr)$/i, paint: /^body$/i,
+  { file: 'models/mmc_generic_small_suv.glb', len: 4.4, kinds: ['minivan'], forward: '+z', wheels: /^(wheel|tire-low|brake-disc)-(fl|fr|rl|rr)$/i, paint: /^body$/i,
     credit: '„MMC Generic Small SUV Car“ von MMC Works (sketchfab.com/mmcworks), CC BY 4.0' },
+  // von Lionel heruntergeladen, verkleinert mit glTF-Transform auf ~25'000–40'000 Dreiecke (Bilder 512 px);
+  { file: 'models/cullinan.glb', len: 5.34, kinds: ['luxsuv'], forward: '+z', wheels: /^wheel_(fl|fr|rl|rr)$/i, paint: /^colou?red$/i, credit: '„Rolls Royce Cullinan“ von NewViStudios, CC BY 4.0' },
+  { file: 'models/g_class.glb', len: 4.66, kinds: ['jeep'], forward: '+z', paint: /carpaint/i, credit: '„2013 Mercedes-Benz G-Class G 550“ von Ddiaz Design, CC BY-NC-SA 4.0' },
+  { file: 'models/ferrari_488.glb', len: 4.6, kinds: ['supercar'], forward: '+z', wheels: /wheel(fl|fr|rl|rr)_setpt_mesh_lod0/i, paint: /carpaint/i, credit: '„Ferrari 488 Pista“ von Tiaan Pretorius, CC BY 4.0' },
+  { file: 'models/lambo_revuelto.glb', len: 4.95, kinds: ['hyperev'], forward: '-x', paint: /^(MAT_CarpaintMain|CarPaintBlack)$/, credit: '„Lamborghini Revuelto“ von Outlaw Games, CC BY-NC 4.0' },
+  { file: 'models/laferrari.glb', len: 4.7, kinds: ['hyper'], forward: '+z', paint: /^(Body|Material\.14[67])$/, credit: '„Ferrari Laferrari“ von vecarz, CC BY-NC-SA 4.0' },
+  { file: 'models/porsche_gt2rs.glb', len: 4.55, kinds: ['gtcar'], forward: '+z', paint: /^colou?red$/i, credit: '„2018 Porsche 911 GT2 RS Weissach Package“ von Ddiaz Design, CC BY-NC-SA 4.0' },
+  { file: 'models/porsche_911_4s.glb', len: 4.5, kinds: ['sports'], forward: '+z', paint: /^paint$/i, hide: /^coat$/, credit: '„(FREE) Porsche 911 Carrera 4S“ von Karol Miklas, CC BY-SA 4.0' },
+  { file: 'models/bmw_m4.glb', len: 4.67, kinds: ['coupe'], forward: '+z', paint: /^ARm4_main$/, credit: '„BMW M4 f82“ von Black Snow, CC BY 4.0' },
+  { file: 'models/corvette_c8.glb', len: 4.63, kinds: ['roadster'], forward: '+z', paint: /_Paint$/, credit: '„2020 Chevrolet Corvette C8 Stingray Convertible“ von Ddiaz Design, CC BY 4.0' },
+  { file: 'models/maybach.glb', len: 5.47, kinds: ['limo'], forward: '+z', paint: /^Mphong4SG1$/, credit: '„2021 Mercedes-Benz S-Class Maybach“ von Ddiaz Design, CC BY-NC 4.0' },
 ];
 const modelOf = new Map(); // Typ → fertig vorbereitetes Modell
 let modelsLoading = null;
@@ -1660,13 +1671,14 @@ function prepareModel(scene, M) {
   // Nase nach +x drehen (so wie die eigenen Autos), auf den Boden stellen, Mitte auf 0
   const rot = { '+z': Math.PI / 2, '-z': -Math.PI / 2, '+x': 0, '-x': Math.PI }[M.forward || '+z'];
   const holder = new THREE.Group(); holder.add(scene); scene.rotation.y += rot; holder.updateMatrixWorld(true);
-  const box = new THREE.Box3().setFromObject(holder), size = box.getSize(new THREE.Vector3());
+  const box = new THREE.Box3().setFromObject(holder, true), size = box.getSize(new THREE.Vector3()); // genau (gedrehte Teile machen die Box sonst zu gross: Auto schwebt)
   scene.position.x -= (box.min.x + box.max.x) / 2; scene.position.z -= (box.min.z + box.max.z) / 2; scene.position.y -= box.min.y;
   holder.updateMatrixWorld(true);
   // Alles ausser den Rädern je Material zu einem Stück zusammenfassen: wenige Zeichen-Befehle statt eines pro Einzelteil
   const wheelSet = new Set(); scene.traverse(o => { if (M.wheels && M.wheels.test(o.name)) o.traverse(q => wheelSet.add(q)); });
   const byMat = new Map(), gone = [], inv = new THREE.Matrix4().copy(holder.matrixWorld).invert();
   scene.traverse(o => {
+    if (o.isMesh && M.hide && !Array.isArray(o.material) && M.hide.test(o.material.name)) { gone.push(o); return; } // z. B. dunkle Lackschicht obendrauf
     if (!o.isMesh || wheelSet.has(o) || Array.isArray(o.material) || o.isSkinnedMesh) return;
     let g = o.geometry.index ? o.geometry.toNonIndexed() : o.geometry.clone();
     for (const n of Object.keys(g.attributes)) if (!['position', 'normal', 'uv'].includes(n)) g.deleteAttribute(n);
@@ -1677,7 +1689,7 @@ function prepareModel(scene, M) {
     byMat.get(o.material).push(g); gone.push(o);
   });
   for (const o of gone) o.parent.remove(o);
-  for (const [mat, geos] of byMat) { const g = mergeGeometries(geos, false); if (g) { const m = new THREE.Mesh(g, mat); m.name = mat.name; holder.add(m); } }
+  for (const [mat, geos] of byMat) { const g = mergeGeometries(geos, false); if (g) { const m = new THREE.Mesh(g, mat); m.name = 'part:' + mat.name; holder.add(m); } } // nicht 'wheel' heissen (drehte sich sonst)
   let paint = null, tris = 0;
   holder.traverse(o => {
     if (!o.isMesh) return;
@@ -1690,7 +1702,9 @@ function prepareModel(scene, M) {
       m.envMapIntensity = 1.3;
     }
   });
-  return { holder, length: size.x, height: size.y, paint, wheels: M.wheels, tris: Math.round(tris), credit: M.credit };
+  // weitere Lack-Materialien bekommen denselben Lack (eine Wagenfarbe)
+  if (paint) holder.traverse(o => { if (o.isMesh && !Array.isArray(o.material) && o.material !== paint && M.paint.test(o.material.name)) o.material = paint; });
+  return { holder, length: size.x, height: size.y, paint, wheels: M.wheels, tris: Math.round(tris), credit: M.credit, len: M.len };
 }
 // Das eigene Auto (für Masse, Augen, Schatten) durch das Modell ersetzen: gleiche Länge, Räder drehen sich
 function useModel(C, P) {
@@ -1729,7 +1743,12 @@ export function buildCar(v, kinds, hDiv) {
     const C = kit(v, kinds, hDiv, BUILD[v.kind] ? SPEC_HINT[v.kind] || {} : {});
     (BUILD[v.kind] || BUILD.car)(C);
     const MP = modelOf.get(v.kind);
-    if (MP) { // echtes 3D-Modell statt der eigenen Form
+    let farProc = null, farPaint = null;
+    if (MP && MP.len) C.L = MP.len; // echte Länge des Autos (auch für Zusammenstösse)
+    if (MP) { // echtes 3D-Modell statt der eigenen Form; weit weg genügt die einfache Fassung der eigenen Form
+      if (C.side) sideDetails(C);
+      mergeStatic(C.body);
+      farPaint = C.paint; farProc = makeFar(C.group, C.paint);
       const pm = useModel(C, MP);
       if (pm) { C.paint = pm.clone(); C.paint.color.set(v.special === 'gold' ? '#ffcf33' : v.color || '#cccccc'); C.group.traverse(o => { if (o.material === pm) o.material = C.paint; }); }
     } else {
@@ -1746,7 +1765,7 @@ export function buildCar(v, kinds, hDiv) {
     // Augen für die Fahrersitz-Kamera; Fahrzeuge ohne Innenraum: knapp über dem Dach
     const eye = C.eye || [(C.roofX ?? 0) + 0.3, (C.roofY ?? C.H) + 0.3, 0];
     t = { group: C.group, paint: C.paint, pkey: paintKey(v), radius: Math.max(1.2, Math.min(C.L, 4) / 2), length: C.L, eye, model: !!MP };
-    if (MP) t.far = null; // Modelle bleiben immer ganz (keine einfache Fassung)
+    if (MP) { t.far = farProc; t.farPaint = farPaint; } // weit weg: einfache Fassung der eigenen Form
     templates.set(key, t);
   }
   const g = t.group.clone();
@@ -1766,6 +1785,8 @@ export function buildCar(v, kinds, hDiv) {
     finish: tune.finish || null, far: null, isFar: false, tpl: t };
   return g;
 }
+const farPaints = new Map();
+const farPaintFor = m => { const k = m.color.getHex(); let f = farPaints.get(k); if (!f) { f = new THREE.MeshStandardMaterial({ color: m.color, metalness: 0.5, roughness: 0.3 }); farPaints.set(k, f); } return f; };
 // Weit weg: nur die einfache Fassung zeigen (setLod(mesh, true)), nah wieder alle Teile
 export function setLod(g, far) {
   const U = g.userData;
@@ -1775,7 +1796,8 @@ export function setLod(g, far) {
     if (t.far === undefined) t.far = makeFar(t.group, t.paint);
     if (!t.far) return;
     U.far = t.far.clone();
-    if (U.paint !== t.paint) U.far.traverse(o => { if (o.material === t.paint) o.material = U.paint; });
+    if (t.farPaint) { const fp = farPaintFor(U.paint || t.farPaint); U.far.traverse(o => { if (o.material === t.farPaint) o.material = fp; }); }
+    else if (U.paint !== t.paint) U.far.traverse(o => { if (o.material === t.paint) o.material = U.paint; });
     g.add(U.far);
   }
   if (!U.far) return;

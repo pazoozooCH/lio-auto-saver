@@ -2831,7 +2831,8 @@ function drawVersion() {
   ctx.textBaseline = 'bottom';
   ctx.fillText(versionText(), W - 12, H - 8);
   ctx.textAlign = 'left'; ctx.font = '11px system-ui, sans-serif'; ctx.globalAlpha = 0.7; // Danke: echte 3D-Automodelle (CC BY verlangt die Nennung)
-  ctx.fillText('3D-Modelle (Sketchfab, CC BY 4.0): „Lowpoly Generic SUV“ von mk2design · „MMC Generic Small SUV Car“ von MMC Works', 12, H - 8); ctx.globalAlpha = 1;
+  ctx.fillText('3D-Automodelle von Sketchfab (Creative Commons): mk2design · MMC Works · NewViStudios · Ddiaz Design · Tiaan Pretorius ·', 12, H - 34);
+  ctx.fillText('Outlaw Games · vecarz · Karol Miklas · Black Snow – danke! (Liste in cars3d.js, MODELS)', 12, H - 21); ctx.globalAlpha = 1;
   if (appUpdate.info) { // neue Version gefunden: Knopf oben rechts
     const pulse = 1 + 0.04 * Math.sin(time * 5);
     ctx.save();
@@ -2889,7 +2890,7 @@ function drawQuit() {
 // auf dem Startbildschirm ein Update-Knopf; kommt man auf dem Startbildschirm in die App zurück, wird gleich aktualisiert.
 // APP_FILES: alle Dateien des Spiels (beim Hinzufügen einer Datei hier ergänzen).
 const APP_FILES = ['./', 'index.html', 'game.js', 'version.js', 'press3d.js', 'race.js', 'drag.js', 'cars3d.js', 'world3d.js',
-  'online.js', 'sound.js', 'city.js', 'tracks.js', 'stunt.js', 'netcars.js', 'chat.js', 'fx.js', 'viewer.js', 'photo.js', 'outskirts.js', 'country.js', 'moon.js', 'look.js', 'suburbs.js', 'island.js', 'monaco.js', 'junkyard.js', 'models/lowpoly_generic_suv.glb', 'models/mmc_generic_small_suv.glb', 'manifest.webmanifest', 'icon-192.png', 'icon-512.png', 'apple-touch-icon.png', 'favicon.png'];
+  'online.js', 'sound.js', 'city.js', 'tracks.js', 'stunt.js', 'netcars.js', 'chat.js', 'fx.js', 'viewer.js', 'photo.js', 'outskirts.js', 'country.js', 'moon.js', 'look.js', 'suburbs.js', 'island.js', 'monaco.js', 'junkyard.js', 'models/lowpoly_generic_suv.glb', 'models/mmc_generic_small_suv.glb', 'models/cullinan.glb', 'models/g_class.glb', 'models/ferrari_488.glb', 'models/lambo_revuelto.glb', 'models/laferrari.glb', 'models/porsche_gt2rs.glb', 'models/porsche_911_4s.glb', 'models/bmw_m4.glb', 'models/corvette_c8.glb', 'models/maybach.glb', 'manifest.webmanifest', 'icon-192.png', 'icon-512.png', 'apple-touch-icon.png', 'favicon.png'];
 const UPDATE_BTN = { x: W - 262, y: 14, w: 248, h: 46 };
 const appUpdate = { info: null, busy: false, last: 0 };
 
@@ -3175,7 +3176,10 @@ function selectTap(px, py) {
 }
 
 // --- Shop mit Garagentoren ---
+// Garagentore im Moment weg (Wunsch Lionel); true = wieder da
+const GATES_OPEN = false;
 function gateCards() {
+  if (!GATES_OPEN) return [];
   const gw = 176, gap = 10, left = (W - (GATES.length * gw + (GATES.length - 1) * gap)) / 2;
   return GATES.map((gate, i) => ({ gate, x: left + i * (gw + gap), y: 72, w: gw, h: 400 }));
 }
@@ -3258,14 +3262,24 @@ function drawShop() {
     ctx.fillText(String(g.price), card.x + card.w / 2 - 12, card.y + card.h - 24);
   }
 
-  drawMenuMsg('Tippe ein Tor an – dahinter wartet ein neues Fahrzeug!  Du hast ' + fleet.length + ' Fahrzeuge.', 490);
+  if (!GATES_OPEN) {
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.06)';
+    rr(W / 2 - 300, 150, 600, 200, 16); ctx.fill();
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillStyle = '#fff';
+    ctx.font = 'bold 26px system-ui, sans-serif';
+    ctx.fillText('🚧 Die Garagentore sind zurzeit zu', W / 2, 205);
+    ctx.font = '18px system-ui, sans-serif'; ctx.fillStyle = 'rgba(255,255,255,0.8)';
+    ctx.fillText('Neue Autos gibt es beim Autohändler in der Stadt,', W / 2, 260);
+    ctx.fillText('beim Tagesgeschenk und auf dem Schrottplatz.', W / 2, 288);
+  }
+  drawMenuMsg(GATES_OPEN ? 'Tippe ein Tor an – dahinter wartet ein neues Fahrzeug!  Du hast ' + fleet.length + ' Fahrzeuge.' : 'Du hast ' + fleet.length + ' Fahrzeuge.', 490);
   drawButton(SKIN_BTN, '👕 MEINE FIGUR', '#0d9488', 18);
   drawParticles();
 }
 
 // Shop nur mit echten Autos (Wunsch Lionel): Typen mit echtem 3D-Modell – gleich halten mit MODELS in cars3d.js.
 // Gibt es in der gezogenen Seltenheit (noch) kein echtes Auto, kommt das echte Auto mit der nächsten Seltenheit.
-const MODEL_KINDS = ['offroad', 'luxsuv'];
+const MODEL_KINDS = ['offroad', 'minivan', 'luxsuv', 'jeep', 'supercar', 'hyperev', 'hyper', 'gtcar', 'sports', 'coupe', 'roadster', 'limo'];
 const tierRank = t => (t === 'admin' ? 5 : t === 'eigenbau' ? 3 : TIER_ORDER.indexOf(t));
 function modelKind(tier) {
   const same = MODEL_KINDS.filter(k => KINDS[k] && KINDS[k].tier === tier);

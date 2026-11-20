@@ -130,11 +130,12 @@ Browser-Spiel ohne Build: `index.html` + `game.js` (Spiellogik, Menüs und 2D-Ze
 - `stunt.js`: 3D-Stuntpark mit eigener Physik in der Höhe (Rampen als Formen in `SHAPES`, Looping, Feuerringe, Salto/Schraube).
   Testen: `startStuntMode()`, dann `window.__stunt()` (`me`, `input`, `score`).
 - `models/`: echte 3D-Automodelle (GLB, 1k-Texturen, möglichst unter ~30'000 Dreiecken). Eintragen in `MODELS` (cars3d.js):
-  Datei, welche Typen (`kinds`), Nase (`forward`), Räder (`wheels`, Namen), weglassen (`drop`), Lack (`paint`, wird grau gemacht
-  und eingefärbt), `credit`. `loadCarModels` lädt sie (auch vor der Stadt in game.js), `useModel` ersetzt das eigene Auto (gleiche
+  Datei, echte Länge (`len`), welche Typen (`kinds`), Nase (`forward`), Räder (`wheels`, Namen), weglassen (`drop`: Teile,
+  `hide`: Materialien), Lack (`paint`, ein oder mehrere Materialien, wird grau gemacht und eingefärbt), `credit`.
+  Box beim Vorbereiten genau messen (`setFromObject(…, true)`), sonst schweben gedrehte Modelle. `loadCarModels` lädt sie (auch vor der Stadt in game.js), `useModel` ersetzt das eigene Auto (gleiche
   Länge, Räder drehen, keine einfache Fassung). Ersteller in der Danke-Zeile im Startbild (game.js, `drawVersion`) nennen (CC BY).
   Marken sind im Moment erlaubt (Martin: privates Spiel). Neue Datei auch in `APP_FILES`; pages.yml kopiert den ganzen Ordner.
-  Shop (Tore), Autohändler und Tagesgeschenk geben nur echte Autos: `MODEL_KINDS` in game.js (gleich halten mit `MODELS`);
+  Shop-Tore zurzeit zu (`GATES_OPEN` in game.js, Wunsch Lionel). Shop (Tore), Autohändler und Tagesgeschenk geben nur echte Autos: `MODEL_KINDS` in game.js (gleich halten mit `MODELS`);
   fehlt eine Seltenheit, kommt das echte Auto mit der nächsten (`modelKind`). Sammlung und Stadtverkehr bleiben wie sie sind.
   Zu schwere Modelle verkleinern mit glTF-Transform (npm, nur in einem temporären Ordner): Innenraum/Motor weg, `simplify`
   (meshoptimizer), Bilder als JPG; Ziel ~30'000 Dreiecke, wenige MB. Beim Laden fasst `prepareModel` alle Nicht-Rad-Teile je Material zusammen.
