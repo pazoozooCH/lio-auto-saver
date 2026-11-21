@@ -1656,6 +1656,9 @@ export const MODELS = [
   { file: 'models/jeep_renegade.glb', len: 4.26, kinds: ['mini'], forward: '+z', credit: '„Jeep Renegade 2016“ von Jose Bronze, CC BY 4.0' },
   { file: 'models/mclaren_p1.glb', len: 4.59, kinds: ['formula'], forward: '+z', paint: /^Carpaint$/, credit: '„McLaren P1“ von vecarz, CC BY 4.0' },
   { file: 'models/ambulance.glb', len: 6.0, kinds: ['ambulance'], forward: '-x', beacons: true, eyeX: 1.2, eyeY: 1.65, credit: '„Rettungswagen (Krankenwagen / Ambulance)“ von GRIP420, CC BY 4.0' }, // Blaulichter aufs Dach
+  { file: 'models/bentley_gt.glb', len: 4.81, kinds: ['limo'], forward: '+z', paint: /^CarPaint$/, credit: '„2014 Bentley Continental GT V8 S“ von Ddiaz Design, CC BY-NC-SA 4.0' },
+  { file: 'models/skoda_kodiaq.glb', len: 4.7, kinds: ['minivan'], forward: '+z', paint: /^default1$/, credit: '„2020 Skoda Kodiaq TSI 380 4x4“ von Ddiaz Design, CC BY-NC-SA 4.0' },
+  { file: 'models/audi_q5.glb', len: 4.68, kinds: ['offroad'], forward: '+z', paint: /^Audidummy_material_1_166$/, credit: '„2023 Audi Q5 quattro S line“ von Ddiaz Design, CC BY-NC-SA 4.0' },
   { file: 'models/golf_gti.glb', len: 4.27, kinds: ['kompakt'], forward: '+z', paint: /^Carpaint$/, credit: '„VW Golf GTi MK7“ von vecarz, CC BY-NC 4.0' },
 ];
 const modelOf = new Map(); // Typ → fertig vorbereitete Modelle (mehrere = Varianten, je Fahrzeug fest gewählt)
