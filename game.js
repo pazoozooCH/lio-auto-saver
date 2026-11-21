@@ -481,6 +481,12 @@ if (!fleet) {
 }
 fleet = fleet.filter(v => KINDS[v.kind]);
 if (fleet.filter(realVehicle).length) storeJSON('autoRetterFleet', fleet); // Fantasie-Fahrzeuge → echte Autos (einmal)
+// Geschenk-Zettel (autoRetterGift = Liste von Typen, nur in einem Spielstand gesetzt): diese Fahrzeuge einmal dazulegen, dann Zettel weg
+{ const gift = loadJSON('autoRetterGift', null);
+  if (Array.isArray(gift)) {
+    for (const k of gift) if (KINDS[k] && !fleet.some(v => v.kind === k)) fleet.push(makeVehicle(k));
+    storeJSON('autoRetterFleet', fleet); try { localStorage.removeItem('autoRetterGift'); } catch (e) { /* egal */ }
+  } }
 // Lacke weg (Wunsch Lionel, einmal): Spezial-Lacke (Gold, Regenbogen, Diamant, Obsidian) und selbst lackierte Farben entfernen,
 // echte Autos zeigen wieder ihre Originalfarbe. PS bleiben. Auch geparkte Autos und das Autohaus (Kopien der Fahrzeuge).
 if (!loadJSON('autoRetterNoPaint', false)) {
