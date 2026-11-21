@@ -537,7 +537,7 @@ function revive(n) {
   while (n-- > 0 && crushedOrder.length) {
     const r = crushedOrder.pop();
     r.state = 'pool';
-    names.push(KINDS[r.entry.kind].name);
+    names.push(vehicleName(r.entry));
   }
   return names;
 }
@@ -3091,7 +3091,7 @@ function drawSelect() {
     ctx.textAlign = 'center';
     ctx.fillStyle = '#fff';
     ctx.font = 'bold 16px system-ui, sans-serif';
-    ctx.fillText(armed ? 'Verkaufen?' : k.name, card.x + card.w / 2, card.y + 94);
+    fitText(armed ? 'Verkaufen?' : vehicleName(v), card.x + card.w / 2, card.y + 94, card.w - 8);
     ctx.fillStyle = armed ? '#ff9c8f' : TIERS[k.tier].color;
     ctx.font = 'bold 13px system-ui, sans-serif';
     ctx.fillText(armed ? 'Nochmal tippen = +' + vehicleValue(v) + ' 🪙'
@@ -3119,7 +3119,7 @@ function drawSelect() {
 }
 
 function sellVehicle(v, card) {
-  if (KINDS[v.kind].secret) { showMenuMsg(KINDS[v.kind].name + ' ist einmalig – das kann man nicht verkaufen! ⚡'); beep(200, 0.15, 'square', 0.05); return; }
+  if (KINDS[v.kind].secret) { showMenuMsg(vehicleName(v) + ' ist einmalig – das kann man nicht verkaufen! ⚡'); beep(200, 0.15, 'square', 0.05); return; }
   if (fleet.length <= 1) {
     showMenuMsg('Dein letztes Fahrzeug kannst du nicht verkaufen!');
     beep(200, 0.15, 'square', 0.05);
@@ -3133,7 +3133,7 @@ function sellVehicle(v, card) {
   storeJSON('autoRetterCoins', wallet);
   saveSelection();
   pendingSell = null;
-  showMenuMsg(KINDS[v.kind].name + ' verkauft: +' + value + ' Münzen');
+  showMenuMsg(vehicleName(v) + ' verkauft: +' + value + ' Münzen');
   for (let i = 0; i < 18; i++) {
     particles.push({
       x: card.x + card.w / 2, y: card.y + card.h / 2, vx: rand(-200, 200), vy: rand(-300, -60),
@@ -3292,6 +3292,32 @@ function drawShop() {
   drawParticles();
 }
 
+// Lustige Namen der echten Autos (Wunsch Lionel, wie „Lambini Oros“). Reihenfolge je Typ wie in MODELS (cars3d.js):
+// mehrere Namen = Varianten, gewählt wie modelFor in cars3d.js (fest je Fahrzeug-Nummer).
+const MODEL_NAMES = {
+  offroad: ['BeEmVau Iks-Vier'], minivan: ['Famili Minivano'], luxsuv: ['Rolz-Roiz Kulinan', 'Mansori Rench Rover'],
+  jeep: ['Merzedes Gä-Wagen', 'Jiip Grand Tschiroki'], supercar: ['Ferrori 488 Pisto'], hyperev: ['Lambini Revolto'],
+  hyper: ['LaFerrori'], gtcar: ['Porsch 911 Gee-Te-Zwei'], sports: ['Porsch Karrera 4S', 'Porsch Gee-Te-Drei'],
+  coupe: ['BeEmVau Em-Vier'], roadster: ['Korvetti Stingrei'], limo: ['Maibach Es-Klasse'],
+  kombi: ['Audo RS-Sechs Avanti', 'Merzedes E-63 Kombi'], racer: ['Audo R-Acht'], lemans: ['Kenigsek Jeschko'],
+  gtlegend: ['Kenigsek Wan-Wan'], musclegt: ['Pagoni Imolo'], car: ['Porsch Kajenne', 'Fau-We Tigwan X'],
+  safari: ['Lend Rover Defänder'], oldtimer: ['Tschewi Suburbän'], delivery: ['Tschewi Ekspress'],
+  stockcar: ['MekLären 765'], luxlimo: ['Bugotti Turbijon'], kompakt: ['Fau-We Golfo GTI'],
+  ecar: ['Kadilak XT-Sechs', 'Fau-We Tigwan 24'], police: ['Dodsch Schardscher Polizei'], pickupxl: ['Lambini Oros'],
+  muscle: ['Merzedes Es-El-Es'], hatch: ['BeEmVau Iks-Zwei'], smart: ['Lotos Exitsch'], mini: ['Jiip Renegeit'],
+  formula: ['MekLären P-Eins'], ambulance: ['Merzedes Sprinta Krankenwagen'],
+};
+const nameSeed = v => { const s = String(v.id || v.seed || ''); let h = 7; for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) >>> 0; return h; };
+function vehicleName(v) { // Name dieses Fahrzeugs (echtes Auto: sein lustiger Name)
+  const L = MODEL_NAMES[v.kind];
+  return L ? L[nameSeed(v) % L.length] : (KINDS[v.kind] || {}).name || v.kind;
+}
+function fitText(t, x, y, maxW) { // Text kleiner machen, bis er passt
+  const f = ctx.font, m = f.match(/(\d+)px/); let px = m ? +m[1] : 16;
+  while (px > 9 && ctx.measureText(t).width > maxW) { px--; ctx.font = f.replace(/\d+px/, px + 'px'); }
+  ctx.fillText(t, x, y); ctx.font = f;
+}
+const kindName = kind => (MODEL_NAMES[kind] ? MODEL_NAMES[kind].join(' / ') : (KINDS[kind] || {}).name || kind); // alle Namen eines Typs (Sammlung)
 // Shop nur mit echten Autos (Wunsch Lionel): Typen mit echtem 3D-Modell – gleich halten mit MODELS in cars3d.js.
 // Gibt es in der gezogenen Seltenheit (noch) kein echtes Auto, kommt das echte Auto mit der nächsten Seltenheit.
 const MODEL_KINDS = ['offroad', 'minivan', 'luxsuv', 'jeep', 'supercar', 'hyperev', 'hyper', 'gtcar', 'sports', 'coupe', 'roadster', 'limo', 'kombi', 'racer', 'lemans', 'gtlegend', 'musclegt', 'car', 'safari', 'oldtimer', 'delivery', 'stockcar', 'luxlimo', 'kompakt', 'ecar', 'police', 'pickupxl', 'muscle', 'hatch', 'smart', 'mini', 'formula', 'ambulance'];
@@ -3542,8 +3568,9 @@ function drawCollection() {
 
     ctx.textAlign = 'center';
     ctx.fillStyle = got ? '#fff' : '#8a8f99';
-    ctx.font = 'bold 16px system-ui, sans-serif';
-    ctx.fillText(k.name, card.x + card.w / 2, card.y + 94);
+    const nm = MODEL_NAMES[kind] || [kindName(kind)]; // zwei Modelle: zwei Zeilen
+    if (nm.length > 1) { ctx.font = 'bold 12px system-ui, sans-serif'; nm.slice(0, 2).forEach((t, i) => fitText(t, card.x + card.w / 2, card.y + 87 + i * 13, card.w - 8)); }
+    else { ctx.font = 'bold 16px system-ui, sans-serif'; fitText(nm[0], card.x + card.w / 2, card.y + 94, card.w - 8); }
     // Seltenheit und welche Spezial-Lacke man davon schon hat
     const paints = ['gold', 'rainbow', 'diamond', 'obsidian'].filter(p => mine.some(v => v.special === p))
       .map(p => ({ gold: '★', rainbow: '🌈', diamond: '💎', obsidian: '🖤' })[p]).join(' ');
@@ -3673,7 +3700,7 @@ function drawPaints() {
     ctx.restore();
     ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
     ctx.fillStyle = '#fff'; ctx.font = 'bold 15px system-ui, sans-serif';
-    ctx.fillText(k.name, card.x + card.w / 2, card.y + 96);
+    fitText(vehicleName(v), card.x + card.w / 2, card.y + 96, card.w - 8);
     ctx.fillStyle = v.special ? '#ffe066' : 'rgba(255,255,255,0.55)'; ctx.font = '13px system-ui, sans-serif';
     ctx.fillText(v.special ? PAINT_NAME[v.special] + '-Lack' : 'normaler Lack', card.x + card.w / 2, card.y + 115);
     ctx.fillStyle = '#7dd3fc'; ctx.font = 'bold 13px system-ui, sans-serif';
@@ -3744,7 +3771,7 @@ function paintsTap(px, py) {
 }
 
 function applyPaint(v, paint, card) {
-  const name = KINDS[v.kind].name;
+  const name = vehicleName(v);
   if (v.special === paint) { showMenuMsg(name + ' hat schon ' + PAINT_NAME[paint] + '-Lack.'); return; }
   const old = v.special;
   v.ps = Math.max(5, v.ps + (PAINT_PS[paint] || 0) - (PAINT_PS[old] || 0));
@@ -3804,7 +3831,7 @@ function drawTuning() {
   drawVehiclePreview(v, 220, 330, 300, 2.2);
   ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
   ctx.fillStyle = '#fff'; ctx.font = 'bold 24px system-ui, sans-serif';
-  ctx.fillText(k.name, 220, 110);
+  ctx.fillText(vehicleName(v), 220, 110);
   ctx.fillStyle = '#7dd3fc'; ctx.font = 'bold 20px system-ui, sans-serif';
   ctx.fillText('⚡ ' + v.ps + ' PS', 220, 142);
   const parts = [t.wheels && '🛞', t.spoiler && '🪽', t.neon && '💡', t.sticker && STICKER_ICON[t.sticker], t.plate && '🔤 ' + t.plate, t.finish && '✨ ' + FINISH[t.finish].name].filter(Boolean);
@@ -3851,7 +3878,7 @@ function drawTuning() {
 function show3D(v) {
   const k = KINDS[v.kind];
   import('./viewer.js')
-    .then(m => m.openViewer({ v, kinds: KINDS, title: k.name + (v.special ? '  ' + specialLabel(v) : ''), sub: TIERS[k.tier].label + ' · ⚡ ' + v.ps + ' PS' }))
+    .then(m => m.openViewer({ v, kinds: KINDS, title: vehicleName(v) + (v.special ? '  ' + specialLabel(v) : ''), sub: TIERS[k.tier].label + ' · ⚡ ' + v.ps + ' PS' }))
     .catch(() => showMenuMsg('Die 3D-Ansicht braucht Internet.'));
 }
 const TUNE_3D_BTN = { x: 150, y: 418, w: 140, h: 34 }, RACE_3D_BTN = { x: 786, y: 390, w: 150, h: 40 };
@@ -4002,7 +4029,7 @@ function drawReveal() {
       + '  ·  ' + v.ps + ' PS  ·  WERT ' + vehicleValue(v) + ' 🪙', W / 2, 374);
     ctx.fillStyle = '#fff';
     ctx.font = 'bold 38px system-ui, sans-serif';
-    ctx.fillText(k.name, W / 2, 410);
+    ctx.fillText(vehicleName(v), W / 2, 410);
     ctx.fillStyle = 'rgba(255,255,255,0.8)';
     ctx.font = '18px system-ui, sans-serif';
     ctx.fillText(k.info || 'Ein treues Fahrzeug ohne Spezialkraft.', W / 2, 446);
@@ -4089,7 +4116,7 @@ function dailyTap(px, py) {
   if (n === 7) { // Überraschung: ein seltenes oder episches Fahrzeug
     const v = makeVehicle(modelKind(pick(['rare', 'epic']))); // Geschenk: ein echtes Auto
     fleet.push(v); storeJSON('autoRetterFleet', fleet);
-    text = '🎁 +' + coins + ' 🪙 und ein neues Fahrzeug: ' + KINDS[v.kind].name + '!';
+    text = '🎁 +' + coins + ' 🪙 und ein neues Fahrzeug: ' + vehicleName(v) + '!';
   }
   storeJSON('autoRetterCoins', wallet);
   storeJSON('autoRetterDaily', { last: dayKey(Date.now()), day: n });
@@ -4200,7 +4227,7 @@ function drawRaceMenu() {
   ctx.font = 'bold 20px system-ui, sans-serif';
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
-  ctx.fillText('Dein Rennwagen: ' + k.name + (v.special ? '  ' + specialLabel(v) : ''), vx, 278);
+  ctx.fillText('Dein Rennwagen: ' + vehicleName(v) + (v.special ? '  ' + specialLabel(v) : ''), vx, 278);
   drawVehiclePreview(v, vx, 392, 260, 1.15);
   ctx.fillStyle = '#7dd3fc';
   ctx.font = 'bold 18px system-ui, sans-serif';
@@ -4266,7 +4293,7 @@ const cityDealer = {
     v.junkNo = fleet.filter(f => KINDS[f.kind] && KINDS[f.kind].junk).length + 1;
     fleet.push(v);
     storeJSON('autoRetterFleet', fleet);
-    return { v, fresh: fresh.includes(kind), name: KINDS[kind].name };
+    return { v, fresh: fresh.includes(kind), name: vehicleName(v) };
   },
   offers() {
     return [0, 1, 2].map(() => { const v = makeVehicle(pick(MODEL_KINDS)); v.ps = Math.max(10, v.ps + Math.round(rand(-8, 6))); return { v, price: vehicleValue(v) * 2 }; }); // Autohändler: nur echte Autos
@@ -4282,7 +4309,7 @@ const cityDealer = {
   sell(id) { // gibt den Erlös zurück oder einen Grund, warum es nicht geht
     const v = fleet.find(f => f.id === id);
     if (!v) return 'Dieses Auto gehört nicht dir';
-    if (KINDS[v.kind].secret) return KINDS[v.kind].name + ' ist einmalig – das kann man nicht verkaufen! ⚡';
+    if (KINDS[v.kind].secret) return vehicleName(v) + ' ist einmalig – das kann man nicht verkaufen! ⚡';
     if (fleet.length <= 1) return 'Dein letztes Fahrzeug kannst du nicht verkaufen!';
     const value = vehicleValue(v);
     fleet = fleet.filter(f => f !== v);
@@ -4442,7 +4469,7 @@ function drawRaceResult() {
     ctx.fillText((i + 1) + '.  ' + car.name, W / 2 - 280, y);
     ctx.textAlign = 'right';
     ctx.fillStyle = 'rgba(255,255,255,0.75)';
-    ctx.fillText(KINDS[car.kind].name + '  ·  ' + car.ps + ' PS' + (car.time ? '  ·  ' + car.time.toFixed(1) + ' s' : ''), W / 2 + 280, y);
+    ctx.fillText(vehicleName(car) + '  ·  ' + car.ps + ' PS' + (car.time ? '  ·  ' + car.time.toFixed(1) + ' s' : ''), W / 2 + 280, y);
   });
 
   if (r.newCup) {
@@ -4558,7 +4585,7 @@ function dragCarInfo(v, cx, y) {
   ctx.textBaseline = 'middle';
   ctx.fillStyle = '#fff';
   ctx.font = 'bold 18px system-ui, sans-serif';
-  ctx.fillText(k.name, cx, y);
+  ctx.fillText(vehicleName(v), cx, y);
   ctx.fillStyle = TIERS[k.tier].color;
   ctx.font = 'bold 14px system-ui, sans-serif';
   ctx.fillText(TIERS[k.tier].label + (v.special ? '  ' + specialLabel(v) : ''), cx, y + 22);
@@ -4654,7 +4681,7 @@ function drawDragResult() {
   ctx.textBaseline = 'middle';
   ctx.fillStyle = '#fff';
   ctx.font = 'bold 22px system-ui, sans-serif';
-  ctx.fillText(r.win ? 'Der ' + k.name + ' von ' + r.opp.name + ' gehört jetzt dir!' : r.kept ? 'Dein ' + k.name + ' ist geschützt – du behältst es! ⚡' : 'Dein ' + k.name + ' gehört jetzt ' + r.opp.name + '.', W / 2, 92);
+  ctx.fillText(r.win ? 'Der ' + vehicleName(r.car) + ' von ' + r.opp.name + ' gehört jetzt dir!' : r.kept ? 'Dein ' + vehicleName(r.car) + ' ist geschützt – du behältst es! ⚡' : 'Dein ' + vehicleName(r.car) + ' gehört jetzt ' + r.opp.name + '.', W / 2, 92);
   drawVehiclePreview(r.car, W / 2, 300, 340, 1.8);
   ctx.globalAlpha = 1;
   dragCarInfo(r.car, W / 2, 330);
@@ -4738,7 +4765,7 @@ function drawAdmin() {
   ctx.fillStyle = '#fff';
   ctx.font = 'bold 19px system-ui, sans-serif';
   ctx.textAlign = 'center';
-  ctx.fillText(car ? KINDS[car.kind].name + (car.special ? ' ' + specialLabel(car) : '') + '  ·  ⚡ ' + car.ps + ' PS' : '–', 314, 240);
+  ctx.fillText(car ? vehicleName(car) + (car.special ? ' ' + specialLabel(car) : '') + '  ·  ⚡ ' + car.ps + ' PS' : '–', 314, 240);
   for (const b of ADMIN_PS_BTNS) drawButton(b, '+' + b.n + ' PS', '#b45309', 19);
   drawButton(ADMIN_ALL_PS_BTN, '⚡ Alle Fahrzeuge +10 PS', '#7c2d12', 19);
   for (const b of ADMIN_KEY_BTNS) drawButton(b, '🔑 ' + b.t, '#a16207', 19);
@@ -4782,7 +4809,7 @@ function adminTap(px, py) {
     car.ps = Math.min(MAX_PS, car.ps + b.n);
     storeJSON('autoRetterFleet', fleet);
     adminConfirm = false;
-    showMenuMsg(KINDS[car.kind].name + ': jetzt ' + car.ps + ' PS ⚡');
+    showMenuMsg(vehicleName(car) + ': jetzt ' + car.ps + ' PS ⚡');
     beep(880, 0.08, 'square', 0.04);
     beep(1320, 0.12, 'square', 0.04, 0.08);
     return;

@@ -2101,9 +2101,9 @@ function stationPanel(id) {
     buy: k => { const it = SNACKS.find(x => x[0] === k); if (city.pay(it[2]) < it[2]) return; if (it[4]) city.turbo = Math.max(city.turbo, it[4]); showMsg(it[1] + ' gekauft! ' + (it[4] ? '🚀 Turbo ' + it[4] + ' s' : it[3]), 2); } };
   if (id === 'order') return { title: '🔊 Burger Drive-in – was darf es sein?', rows: () => DRIVE.map(([k, label, price, note]) => ({ id: k, label, price, note, done: !!city.dOrder })),
     buy: k => { const it = DRIVE.find(x => x[0] === k); if (city.dOrder || city.pay(it[2]) < it[2]) return; city.dOrder = it; closePanel(); showMsg('🔊 Danke! Bitte zum Fenster vorfahren 🪟', 2.4); } };
-  if (id === 'paint') return { title: '🎨 Lackieren (' + ((K[me.v.kind] || {}).name || '') + ')', rows: () => PAINT.map(([c, name]) => ({ id: c, label: name, price: 20, color: c, done: !!me.v.painted && (me.v.color || '').toLowerCase() === c })), // echte Modelle: Originalfarbe, bis man lackiert
+  if (id === 'paint') return { title: '🎨 Lackieren (' + vname(me.v) + ')', rows: () => PAINT.map(([c, name]) => ({ id: c, label: name, price: 20, color: c, done: !!me.v.painted && (me.v.color || '').toLowerCase() === c })), // echte Modelle: Originalfarbe, bis man lackiert
     buy: c => modMe({ color: c }, 20, '🎨 Frisch lackiert: ' + PAINT.find(x => x[0] === c)[1] + '!') };
-  if (id === 'tuning') return { title: '🔧 Tuning (' + ((K[me.v.kind] || {}).name || '') + ')', rows: () => {
+  if (id === 'tuning') return { title: '🔧 Tuning (' + vname(me.v) + ')', rows: () => {
       const T = city.dealer.tuneInfo(), t = me.v.tune || {}, out = [];
       for (const r of T.rows) {
         if (r.id === 'plate') continue; // Nummernschild: im Tuning-Menü (dort kann man schreiben)
@@ -3561,6 +3561,8 @@ function scratchTexture() {
   const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace;
   return t;
 }
+// Name eines Fahrzeugs: echte Autos haben lustige Namen (vehicleName in game.js), sonst der Typ-Name
+const vname = v => (typeof window.vehicleName === 'function' ? window.vehicleName(v) : ((city && city.kinds[v.kind]) || {}).name || v.kind);
 const UNBREAKABLE = ['lionelx']; // geht nie kaputt (muss nie in die Werkstatt)
 function hurt(intensity, fromX, fromZ) {
   if (city.mission && city.mission.type === 'school') failSchool('💥 Unfall gebaut');
@@ -3752,7 +3754,7 @@ function drawBase() {
     b.dataset.id = v.id;
     b.classList.toggle('sel', edit ? chosen.has(v.id) : v.id === city.me.v.id);
     dot.style.background = v.color || '#888';
-    name.textContent = (K[v.kind] || {}).name || v.kind;
+    name.textContent = vname(v);
     ps.textContent = '⚡ ' + v.ps;
     b.append(dot, name, ps);
     grid.append(b);
@@ -3961,7 +3963,7 @@ function switchCar(v, force = false) {
   S.ui.ps.textContent = '⚡ ' + v.ps + ' PS';
   if (S.snd) { S.snd.stop(); S.snd = createCarSound({ kind: v.kind }); }
   if (city.net) city.net.setCar(v);
-  showMsg('🔑 ' + ((city.kinds[v.kind] || {}).name || v.kind), 1.6);
+  showMsg('🔑 ' + vname(v), 1.6);
 }
 
 // ---------- Aussteigen und zu Fuss gehen ----------
@@ -4321,7 +4323,7 @@ function stepWalk(dt) {
   const HB = S.places.house && S.places.house.bed;
   if (HB && city.house.owned && Math.hypot(w.x - HB.x, w.z - HB.z) < 3) { best = { bed: true }; bd = 0; } // Bett im eigenen Haus
   if (best && (!w.target || w.target.v !== best.v || !!w.target.boat !== !!best.boat || !!w.target.lift !== !!best.lift || !!w.target.bed !== !!best.bed || !!w.target.plane !== !!best.plane || !!w.target.movie !== !!best.movie || !!w.target.rocket !== !!best.rocket))
-    showMsg(best.lift ? best.lift.name + ' – X: einsteigen' : best.rocket ? (city.moonOn ? '🚀 Zurück zur Erde – X' : '🚀 Zum Mond fliegen – X') : best.movie ? '🍿 Film schauen – X' : best.plane ? '✈️ Flugzeug – X: einsteigen und fliegen' : best.bed ? '🛏️ Bett – X: schlafen' : best.lift ? '🚡 Sessellift – X: einsteigen und hinauffahren' : best.boat ? '🚤 Boot – einsteigen' : best.steal ? '😈 ' + ((city.kinds[best.v.kind] || {}).name || 'Auto') + ' – X: klauen (gibt Alarm!)' : best.v ? '🔑 ' + ((city.kinds[best.v.kind] || {}).name || '') + ' – 🚗 einsteigen' : '🚗 Einsteigen?', 1.2);
+    showMsg(best.lift ? best.lift.name + ' – X: einsteigen' : best.rocket ? (city.moonOn ? '🚀 Zurück zur Erde – X' : '🚀 Zum Mond fliegen – X') : best.movie ? '🍿 Film schauen – X' : best.plane ? '✈️ Flugzeug – X: einsteigen und fliegen' : best.bed ? '🛏️ Bett – X: schlafen' : best.lift ? '🚡 Sessellift – X: einsteigen und hinauffahren' : best.boat ? '🚤 Boot – einsteigen' : best.steal ? '😈 ' + ((city.kinds[best.v.kind] || {}).name || 'Auto') + ' – X: klauen (gibt Alarm!)' : best.v ? '🔑 ' + vname(best.v) + ' – 🚗 einsteigen' : '🚗 Einsteigen?', 1.2);
   w.target = best;
   S.ui.walkbtn.classList.toggle('ready', !!best);
 }
@@ -4403,14 +4405,14 @@ function drawDealer() {
     const b = document.createElement('button'), dot = document.createElement('i'), name = document.createElement('span'), ps = document.createElement('small');
     b.dataset.buy = k; b.disabled = !!o.sold || coins < o.price;
     dot.style.background = o.v.color;
-    name.textContent = (K[o.v.kind] || {}).name + ' · ⚡ ' + o.v.ps;
+    name.textContent = vname(o.v) + ' · ⚡ ' + o.v.ps;
     ps.textContent = o.sold ? 'verkauft' : o.price + ' 🪙';
     b.append(dot, name, ps); grid.append(b);
   });
   const row = document.createElement('div'); row.className = 'row';
   const value = D.value(city.me.v.id), sell = document.createElement('button'), close = document.createElement('button');
   sell.dataset.act = 'sell'; sell.disabled = !value;
-  sell.textContent = value ? '💰 ' + ((K[city.me.v.kind] || {}).name || '') + ' verkaufen: +' + value + ' 🪙' : '💰 Dieses Auto kann man nicht verkaufen';
+  sell.textContent = value ? '💰 ' + vname(city.me.v) + ' verkaufen: +' + value + ' 🪙' : '💰 Dieses Auto kann man nicht verkaufen';
   close.dataset.act = 'close'; close.textContent = '✕ Schliessen';
   const own = document.createElement('button');
   own.dataset.act = 'shopon'; own.textContent = '🧑‍💼 Selber Autohändler sein';
@@ -4434,7 +4436,7 @@ function onDealerClick(e) {
     const next = city.base[0] || city.garage.all()[0];
     closeDealer();
     if (next) { switchCar(next); out(); }
-    showMsg('💰 ' + ((city.kinds[old.kind] || {}).name || '') + ' verkauft: +' + res + ' 🪙', 2.4);
+    showMsg('💰 ' + vname(old) + ' verkauft: +' + res + ' 🪙', 2.4);
     return;
   }
   const o = city.offers[+b.dataset.buy];
@@ -4443,7 +4445,7 @@ function onDealerClick(e) {
   if (o.mesh) o.mesh.parent.remove(o.mesh);
   closeDealer();
   switchCar(o.v); out();
-  showMsg('🔑 Gekauft! Dein neuer ' + ((city.kinds[o.v.kind] || {}).name || '') + ' gehört dir.', 2.6);
+  showMsg('🔑 Gekauft! Dein neuer ' + vname(o.v) + ' gehört dir.', 2.6);
   window.beep && window.beep(784, 0.12, 'triangle', 0.07); window.beep && window.beep(1175, 0.25, 'triangle', 0.07, 0.12);
 }
 
@@ -4510,13 +4512,13 @@ function drawShop() {
   const el = (tag, cls, text) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text) e.textContent = text; return e; };
   p.append(el('h3', '', '🧑‍💼 Dein Autohaus · ' + coins + ' 🪙'));
   p.append(el('p', 'note', 'Ausgestellt (' + stockCount() + ' / ' + SHOP_SLOTS + ': 3 draussen, 3 drinnen) – Kunden kommen vorbei und wollen beraten werden. Verkaufspreis normal: das Doppelte vom Einkauf.'));
-  if (sh.orders.length) p.append(el('p', 'note', '🚚 Bestellt, der Lieferant bringt sie bald: ' + sh.orders.map(o => (K[o.v.kind] || {}).name).join(', ')));
+  if (sh.orders.length) p.append(el('p', 'note', '🚚 Bestellt, der Lieferant bringt sie bald: ' + sh.orders.map(o => vname(o.v)).join(', ')));
   const mine = el('div', 'cars');
   sh.stock.forEach((o, k) => {
     if (!o) return;
     const b = el('button'), dot = el('i');
     b.dataset.back = k; dot.style.background = o.v.color;
-    b.append(dot, el('span', '', (K[o.v.kind] || {}).name + ' · ⚡ ' + o.v.ps), el('small', '', '↩ ' + o.cost + ' 🪙'));
+    b.append(dot, el('span', '', vname(o.v) + ' · ⚡ ' + o.v.ps), el('small', '', '↩ ' + o.cost + ' 🪙'));
     mine.append(b);
   });
   if (!stockCount()) mine.append(el('p', 'note', 'Noch nichts ausgestellt – bestell unten etwas!'));
@@ -4528,7 +4530,7 @@ function drawShop() {
     const b = el('button'), dot = el('i');
     b.dataset.whole = k; b.disabled = o.sold || coins < o.cost || stockCount() + sh.orders.length >= SHOP_SLOTS;
     dot.style.background = o.v.color;
-    b.append(dot, el('span', '', (K[o.v.kind] || {}).name + ' · ⚡ ' + o.v.ps), el('small', '', o.sold ? 'gekauft' : o.cost + ' 🪙'));
+    b.append(dot, el('span', '', vname(o.v) + ' · ⚡ ' + o.v.ps), el('small', '', o.sold ? 'gekauft' : o.cost + ' 🪙'));
     buy.append(b);
   });
   const row = el('div', 'row'), off = el('button', '', '🚗 Normaler Händler'), close = el('button', '', '✕ Schliessen');
@@ -4704,7 +4706,7 @@ function drawTalk() {
       if (!o) return;
       const b = el('button'), dot = el('i');
       b.dataset.show = k; dot.style.background = o.v.color;
-      b.append(dot, el('span', '', (K[o.v.kind] || {}).name + ' · ⚡ ' + o.v.ps), el('small', '', colorName(o.v.color)));
+      b.append(dot, el('span', '', vname(o.v) + ' · ⚡ ' + o.v.ps), el('small', '', colorName(o.v.color)));
       grid.append(b);
     });
   } else {
