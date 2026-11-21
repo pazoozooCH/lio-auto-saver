@@ -475,6 +475,20 @@ if (!fleet) {
 }
 fleet = fleet.filter(v => KINDS[v.kind]);
 if (fleet.filter(realVehicle).length) storeJSON('autoRetterFleet', fleet); // Fantasie-Fahrzeuge → echte Autos (einmal)
+// Lacke weg (Wunsch Lionel, einmal): Spezial-Lacke (Gold, Regenbogen, Diamant, Obsidian) und selbst lackierte Farben entfernen,
+// echte Autos zeigen wieder ihre Originalfarbe. PS bleiben. Auch geparkte Autos und das Autohaus (Kopien der Fahrzeuge).
+if (!loadJSON('autoRetterNoPaint', false)) {
+  const strip = o => {
+    if (!o || typeof o !== 'object') return;
+    if (Array.isArray(o)) { o.forEach(strip); return; }
+    if (o.kind && ['gold', 'rainbow', 'diamond', 'obsidian'].includes(o.special)) o.special = null;
+    if (o.kind && o.painted) delete o.painted;
+    for (const val of Object.values(o)) if (val && typeof val === 'object') strip(val);
+  };
+  strip(fleet); storeJSON('autoRetterFleet', fleet);
+  for (const key of ['autoRetterParked', 'autoRetterShop']) { const d = loadJSON(key, null); if (d) { strip(d); storeJSON(key, d); } }
+  storeJSON('autoRetterNoPaint', true);
+}
 for (const v of fleet) {
   if (typeof v.ps !== 'number') v.ps = basePS(v.kind); // ältere Spielstände ohne PS
   if (!v.paintPS) { v.ps += PAINT_PS[v.special] || 0; v.paintPS = true; } // Lack-Bonus einmal nachrüsten
@@ -3207,7 +3221,7 @@ function drawShop() {
   drawMenuBackdrop('SHOP', true);
   drawButton(BACK_BTN, '← Zurück', '#444b5c');
   drawButton(COLLECTION_BTN, '📖 SAMMLUNG', '#7c3aed', 20);
-  drawButton(PAINT_SHOP_BTN, '🎨 LACK-GARAGE', '#c026d3', 20);
+  if (PAINTS_OPEN) drawButton(PAINT_SHOP_BTN, '🎨 LACK-GARAGE', '#c026d3', 20);
 
   for (const card of gateCards()) {
     const g = card.gate, can = wallet >= g.price;
@@ -3307,7 +3321,7 @@ function rollGate(g) {
 function shopTap(px, py) {
   if (inRect(px, py, BACK_BTN)) { openMenu('title'); return; }
   if (inRect(px, py, COLLECTION_BTN)) { collectionPage = 0; openMenu('collection'); return; }
-  if (inRect(px, py, PAINT_SHOP_BTN)) { paintPage = 0; paintPull = null; openMenu('paints'); return; }
+  if (PAINTS_OPEN && inRect(px, py, PAINT_SHOP_BTN)) { paintPage = 0; paintPull = null; openMenu('paints'); return; }
   if (inRect(px, py, SKIN_BTN)) { skinPending = null; openMenu('skin'); return; }
   for (const card of gateCards()) {
     if (!inRect(px, py, card)) continue;
@@ -3558,6 +3572,7 @@ function collectionTap(px, py) {
 // --- Lack-Garage: Lack-Dosen ziehen und auf eigene Fahrzeuge sprühen ---
 // Der alte Lack eines Autos kommt beim Umlackieren zurück in die Dose, es geht also nichts verloren.
 const PAINT_SHOP_BTN = { x: 580, y: 18, w: 220, h: 44 };
+const PAINTS_OPEN = false; // Lack-Garage im Moment zu (Wunsch Lionel); true = wieder da
 const PAINT_GATE = { name: 'Lack-Tor', price: 180, color: '#c026d3', odds: { gold: 60, rainbow: 27, diamond: 10, obsidian: 3 } };
 const PAINT_ORDER = ['gold', 'rainbow', 'diamond', 'obsidian'];
 const PAINT_NAME = { gold: '★ Gold', rainbow: '🌈 Regenbogen', diamond: '💎 Diamant', obsidian: '🖤 Obsidian' };
@@ -4602,7 +4617,7 @@ function finishDrag(res) {
   const mine = dragVehicle(), opp = dragOpponents[dragPick];
   if (res.win) {
     // Das Gegnerauto gehört jetzt dir (mit seinen PS und seinem Lack)
-    const won = { id: makeVehicle(opp.kind).id, kind: opp.kind, special: opp.special, ps: opp.ps, color: opp.color, paintPS: true };
+    const won = { id: makeVehicle(opp.kind).id, kind: opp.kind, special: null /* Lacke zurzeit weg */, ps: opp.ps, color: opp.color, paintPS: true };
     fleet.push(won);
     if (selectedIds.size < MAX_SELECTED) selectedIds.add(won.id);
     dragResult = { win: true, car: won, opp, res };
