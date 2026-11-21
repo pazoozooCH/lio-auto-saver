@@ -424,6 +424,12 @@ const KINDS = {
                info: '⚡ LIONEL X: das geheime Sonderfahrzeug! Turbo, lenkt super, hält ZWEI Schläge aus und fliegt auf Knopfdruck.' },
 };
 
+// Jedes echte Auto ein eigener Typ (Wunsch Lionel: sonst teilten sich z. B. Cayenne/Tiguan oder Maybach/Continental einen Platz).
+// Diese Typen übernehmen alles vom Grundtyp (Seltenheit, Fähigkeit, 2D-Bild über look), nur der Name ist eigen.
+for (const [kind, base, name] of [['tiguanx', 'car', 'Kompakt-SUV'], ['tiguan24', 'ecar', 'Familien-SUV'], ['e63', 'kombi', 'Sport-Kombi'],
+  ['gt3rs', 'sports', 'Renn-Porsche'], ['trackhawk', 'jeep', 'Power-SUV'], ['mansory', 'luxsuv', 'Tuning-SUV'], ['bentley', 'limo', 'Grand Tourer'],
+  ['kodiaq', 'minivan', 'Grosser Familien-SUV'], ['q5', 'offroad', 'Premium-SUV']]) KINDS[kind] = { ...KINDS[base], name, look: KINDS[base].look || base };
+
 // Keine Fantasie-Fahrzeuge mehr (Wunsch: nur richtige Autos): sie bleiben als Daten (alte Spielstände, Online-Mitspieler),
 // sind aber nirgends mehr zu bekommen; wer eines hat, bekommt dafür ein echtes Auto gleicher Seltenheit (RETIRED).
 const RETIRED = { bobbycar: 'smart', mower: 'quad', candy: 'bakery', circus: 'doubledecker', popcorn: 'hotdog',
@@ -2926,7 +2932,9 @@ async function checkUpdate(auto = false) {
 async function applyUpdate() {
   if (appUpdate.busy) return;
   appUpdate.busy = true;
-  await Promise.all(APP_FILES.map(f => fetch(f, { cache: 'reload' }).catch(() => {})));
+  // Handy: nur die leichten Automodelle (models/m/) holen, nicht alle grossen (über 150 MB)
+  const mobile = matchMedia('(pointer: coarse)').matches || /iPhone|iPad|iPod|Android/.test(navigator.userAgent);
+  await Promise.all(APP_FILES.map(f => mobile && f.startsWith('models/') ? 'models/m/' + f.slice(7) : f).map(f => fetch(f, { cache: 'reload' }).catch(() => {})));
   location.reload();
 }
 
@@ -3295,17 +3303,19 @@ function drawShop() {
 // Lustige Namen der echten Autos (Wunsch Lionel, wie „Lambini Oros“). Reihenfolge je Typ wie in MODELS (cars3d.js):
 // mehrere Namen = Varianten, gewählt wie modelFor in cars3d.js (fest je Fahrzeug-Nummer).
 const MODEL_NAMES = {
-  offroad: ['BeEmVau Iks-Vier', 'Audo Ku-Fünf'], minivan: ['Famili Minivano', 'Schkoda Kodiak'], luxsuv: ['Rolz-Roiz Kulinan', 'Mansori Rench Rover'],
-  jeep: ['Merzedes Gä-Wagen', 'Jiip Grand Tschiroki'], supercar: ['Ferrori 488 Pisto'], hyperev: ['Lambini Revolto'],
-  hyper: ['LaFerrori'], gtcar: ['Porsch 911 Gee-Te-Zwei'], sports: ['Porsch Karrera 4S', 'Porsch Gee-Te-Drei'],
-  coupe: ['BeEmVau Em-Vier'], roadster: ['Korvetti Stingrei'], limo: ['Maibach Es-Klasse', 'Bentlei Kontinental GT'],
-  kombi: ['Audo RS-Sechs Avanti', 'Merzedes E-63 Kombi'], racer: ['Audo R-Acht'], lemans: ['Kenigsek Jeschko'],
-  gtlegend: ['Kenigsek Wan-Wan'], musclegt: ['Pagoni Imolo'], car: ['Porsch Kajenne', 'Fau-We Tigwan X'],
+  offroad: ['BeEmVau Iks-Vier'], minivan: ['Famili Minivano'], luxsuv: ['Rolz-Roiz Kulinan'],
+  jeep: ['Merzedes Gä-Wagen'], supercar: ['Ferrori 488 Pisto'], hyperev: ['Lambini Revolto'],
+  hyper: ['LaFerrori'], gtcar: ['Porsch 911 Gee-Te-Zwei'], sports: ['Porsch Karrera 4S'],
+  coupe: ['BeEmVau Em-Vier'], roadster: ['Korvetti Stingrei'], limo: ['Maibach Es-Klasse'],
+  kombi: ['Audo RS-Sechs Avanti'], racer: ['Audo R-Acht'], lemans: ['Kenigsek Jeschko'],
+  gtlegend: ['Kenigsek Wan-Wan'], musclegt: ['Pagoni Imolo'], car: ['Porsch Kajenne'],
   safari: ['Lend Rover Defänder'], oldtimer: ['Tschewi Suburbän'], delivery: ['Tschewi Ekspress'],
   stockcar: ['MekLären 765'], luxlimo: ['Bugotti Turbijon'], kompakt: ['Fau-We Golfo GTI'],
-  ecar: ['Kadilak XT-Sechs', 'Fau-We Tigwan 24'], police: ['Dodsch Schardscher Polizei'], pickupxl: ['Lambini Oros'],
+  ecar: ['Kadilak XT-Sechs'], police: ['Dodsch Schardscher Polizei'], pickupxl: ['Lambini Oros'],
   muscle: ['Merzedes Es-El-Es'], hatch: ['BeEmVau Iks-Zwei'], smart: ['Lotos Exitsch'], mini: ['Jiip Renegeit'],
   formula: ['MekLären P-Eins'], ambulance: ['Merzedes Sprinta Krankenwagen'],
+  tiguanx: ['Fau-We Tigwan X'], tiguan24: ['Fau-We Tigwan 24'], e63: ['Merzedes E-63 Kombi'], gt3rs: ['Porsch Gee-Te-Drei'],
+  trackhawk: ['Jiip Grand Tschiroki'], mansory: ['Mansori Rench Rover'], bentley: ['Bentlei Kontinental GT'], kodiaq: ['Schkoda Kodiak'], q5: ['Audo Ku-Fünf'],
 };
 const nameSeed = v => { const s = String(v.id || v.seed || ''); let h = 7; for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) >>> 0; return h; };
 function vehicleName(v) { // Name dieses Fahrzeugs (echtes Auto: sein lustiger Name)
@@ -3320,7 +3330,8 @@ function fitText(t, x, y, maxW) { // Text kleiner machen, bis er passt
 const kindName = kind => (MODEL_NAMES[kind] ? MODEL_NAMES[kind].join(' / ') : (KINDS[kind] || {}).name || kind); // alle Namen eines Typs (Sammlung)
 // Shop nur mit echten Autos (Wunsch Lionel): Typen mit echtem 3D-Modell – gleich halten mit MODELS in cars3d.js.
 // Gibt es in der gezogenen Seltenheit (noch) kein echtes Auto, kommt das echte Auto mit der nächsten Seltenheit.
-const MODEL_KINDS = ['offroad', 'minivan', 'luxsuv', 'jeep', 'supercar', 'hyperev', 'hyper', 'gtcar', 'sports', 'coupe', 'roadster', 'limo', 'kombi', 'racer', 'lemans', 'gtlegend', 'musclegt', 'car', 'safari', 'oldtimer', 'delivery', 'stockcar', 'luxlimo', 'kompakt', 'ecar', 'police', 'pickupxl', 'muscle', 'hatch', 'smart', 'mini', 'formula', 'ambulance'];
+const MODEL_KINDS = ['offroad', 'minivan', 'luxsuv', 'jeep', 'supercar', 'hyperev', 'hyper', 'gtcar', 'sports', 'coupe', 'roadster', 'limo', 'kombi', 'racer', 'lemans', 'gtlegend', 'musclegt', 'car', 'safari', 'oldtimer', 'delivery', 'stockcar', 'luxlimo', 'kompakt', 'ecar', 'police', 'pickupxl', 'muscle', 'hatch', 'smart', 'mini', 'formula', 'ambulance',
+  'tiguanx', 'tiguan24', 'e63', 'gt3rs', 'trackhawk', 'mansory', 'bentley', 'kodiaq', 'q5'];
 const tierRank = t => (t === 'admin' ? 5 : t === 'eigenbau' ? 3 : TIER_ORDER.indexOf(t));
 function modelKind(tier) {
   const same = MODEL_KINDS.filter(k => KINDS[k] && KINDS[k].tier === tier);

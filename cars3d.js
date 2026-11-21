@@ -1644,23 +1644,25 @@ export const MODELS = [
   { file: 'models/cadillac_xt6.glb', len: 5.05, kinds: ['ecar'], forward: '+z', paint: /^Paint_Color$/, credit: '„Cadillac XT6 Luxury 2023 (free)“ von 3dShowroom, CC BY 4.0' },
   { file: 'models/police_charger.glb', len: 5.1, kinds: ['police'], forward: '+z', blink: /^emergrx$/, credit: '„Dodge Charger SRT (Police)“ von temich, CC BY-NC 4.0' }, // eigene Polizei-Bemalung, Blaulicht blinkt
   { file: 'models/urus.glb', len: 5.11, kinds: ['pickupxl'], forward: '+z', paint: /2018Paint_Material$/, credit: '„2019 Lamborghini Urus“ von Ddiaz Design, CC BY-NC-SA 4.0' },
-  { file: 'models/mansory_rr.glb', len: 4.9, kinds: ['luxsuv'], forward: '+z', paint: /^CarPaint_1$/, credit: '„2016 Mansory Range Rover Sport SVR“ von Ddiaz Design, CC BY-NC-SA 4.0' },
-  { file: 'models/trackhawk.glb', len: 4.89, kinds: ['jeep'], forward: '+z', paint: /2018Paint_Material$/, credit: '„2018 Jeep Grand Cherokee Trackhawk“ von Ddiaz Design, CC BY-NC-SA 4.0' },
-  { file: 'models/e63_wagon.glb', len: 4.99, kinds: ['kombi'], forward: '+z', paint: /^CAR_PAINT$/, credit: '„2018 Mercedes-Benz E63 AMG S Wagon“ von SINNIK, CC BY 4.0' },
-  { file: 'models/porsche_gt3rs.glb', len: 4.57, kinds: ['sports'], forward: '+z', paint: /carPaint\.003$/, credit: '„Porsche GT3 RS“ von Black Snow, CC BY 4.0' },
-  { file: 'models/tiguan_x.glb', len: 4.7, kinds: ['car'], forward: '+z', paint: /^carpaint_[12]$/, credit: '„2021 Volkswagen Tiguan X 380 TSI“ von Ddiaz Design, CC BY-NC-SA 4.0' },
-  { file: 'models/tiguan_2024.glb', len: 4.54, kinds: ['ecar'], forward: '+z', paint: /^body$/, credit: '„2024 Volkswagen Tiguan“ von BloxBloger, CC BY-NC 4.0' },
+  { file: 'models/mansory_rr.glb', len: 4.9, kinds: ['mansory'], forward: '+z', paint: /^CarPaint_1$/, credit: '„2016 Mansory Range Rover Sport SVR“ von Ddiaz Design, CC BY-NC-SA 4.0' },
+  { file: 'models/trackhawk.glb', len: 4.89, kinds: ['trackhawk'], forward: '+z', paint: /2018Paint_Material$/, credit: '„2018 Jeep Grand Cherokee Trackhawk“ von Ddiaz Design, CC BY-NC-SA 4.0' },
+  { file: 'models/e63_wagon.glb', len: 4.99, kinds: ['e63'], forward: '+z', paint: /^CAR_PAINT$/, credit: '„2018 Mercedes-Benz E63 AMG S Wagon“ von SINNIK, CC BY 4.0' },
+  { file: 'models/porsche_gt3rs.glb', len: 4.57, kinds: ['gt3rs'], forward: '+z', paint: /carPaint\.003$/, credit: '„Porsche GT3 RS“ von Black Snow, CC BY 4.0' },
+  { file: 'models/tiguan_x.glb', len: 4.7, kinds: ['tiguanx'], forward: '+z', paint: /^carpaint_[12]$/, credit: '„2021 Volkswagen Tiguan X 380 TSI“ von Ddiaz Design, CC BY-NC-SA 4.0' },
+  { file: 'models/tiguan_2024.glb', len: 4.54, kinds: ['tiguan24'], forward: '+z', paint: /^body$/, credit: '„2024 Volkswagen Tiguan“ von BloxBloger, CC BY-NC 4.0' },
   { file: 'models/sls_amg.glb', len: 4.64, kinds: ['muscle'], forward: '+z', paint: /^Carpaint\.007$/, credit: '„2010 Mercedes SLS AMG“ von Dave Love, CC BY 4.0' },
   { file: 'models/bmw_x2.glb', len: 4.36, kinds: ['hatch'], forward: '+z', paint: /^carPaint$/, credit: '„2019 BMW X2 xDrive20d M Sport X“ von Ddiaz Design, CC BY-NC-SA 4.0' },
   { file: 'models/lotus_exige.glb', len: 4.08, kinds: ['smart'], forward: '+z', paint: /^CAR_chassis\.5$/, credit: '„AC – Lotus Exige 240 (free)“ von David & 3D (Sketchfab Standard)' },
   { file: 'models/jeep_renegade.glb', len: 4.26, kinds: ['mini'], forward: '+z', credit: '„Jeep Renegade 2016“ von Jose Bronze, CC BY 4.0' },
   { file: 'models/mclaren_p1.glb', len: 4.59, kinds: ['formula'], forward: '+z', paint: /^Carpaint$/, credit: '„McLaren P1“ von vecarz, CC BY 4.0' },
   { file: 'models/ambulance.glb', len: 6.0, kinds: ['ambulance'], forward: '-x', beacons: true, eyeX: 1.2, eyeY: 1.65, credit: '„Rettungswagen (Krankenwagen / Ambulance)“ von GRIP420, CC BY 4.0' }, // Blaulichter aufs Dach
-  { file: 'models/bentley_gt.glb', len: 4.81, kinds: ['limo'], forward: '+z', paint: /^CarPaint$/, credit: '„2014 Bentley Continental GT V8 S“ von Ddiaz Design, CC BY-NC-SA 4.0' },
-  { file: 'models/skoda_kodiaq.glb', len: 4.7, kinds: ['minivan'], forward: '+z', paint: /^default1$/, credit: '„2020 Skoda Kodiaq TSI 380 4x4“ von Ddiaz Design, CC BY-NC-SA 4.0' },
-  { file: 'models/audi_q5.glb', len: 4.68, kinds: ['offroad'], forward: '+z', paint: /^Audidummy_material_1_166$/, credit: '„2023 Audi Q5 quattro S line“ von Ddiaz Design, CC BY-NC-SA 4.0' },
+  { file: 'models/bentley_gt.glb', len: 4.81, kinds: ['bentley'], forward: '+z', paint: /^CarPaint$/, credit: '„2014 Bentley Continental GT V8 S“ von Ddiaz Design, CC BY-NC-SA 4.0' },
+  { file: 'models/skoda_kodiaq.glb', len: 4.7, kinds: ['kodiaq'], forward: '+z', paint: /^default1$/, credit: '„2020 Skoda Kodiaq TSI 380 4x4“ von Ddiaz Design, CC BY-NC-SA 4.0' },
+  { file: 'models/audi_q5.glb', len: 4.68, kinds: ['q5'], forward: '+z', paint: /^Audidummy_material_1_166$/, credit: '„2023 Audi Q5 quattro S line“ von Ddiaz Design, CC BY-NC-SA 4.0' },
   { file: 'models/golf_gti.glb', len: 4.27, kinds: ['kompakt'], forward: '+z', paint: /^Carpaint$/, credit: '„VW Golf GTi MK7“ von vecarz, CC BY-NC 4.0' },
 ];
+// Handy (Touch, iPhone, Android): leichtere Modell-Dateien aus models/m/ (weniger Dreiecke, kleinere Bilder), sonst reicht der Speicher nicht
+export const MOBILE = (typeof matchMedia === 'function' && matchMedia('(pointer: coarse)').matches) || /iPhone|iPad|iPod|Android/.test(navigator.userAgent);
 const modelOf = new Map(); // Typ → fertig vorbereitete Modelle (mehrere = Varianten, je Fahrzeug fest gewählt)
 export const hasModel = kind => modelOf.has(kind);
 const seedOf = v => { const s = String(v.id || v.seed || ''); let h = 7; for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) >>> 0; return h; };
@@ -1674,7 +1676,8 @@ export function loadCarModels() {
     try { ({ GLTFLoader } = await import('three/examples/jsm/loaders/GLTFLoader.js')); } catch (e) { return false; }
     const loader = new GLTFLoader();
     const preps = await Promise.all(MODELS.map(async M => {
-      try { return prepareModel((await loader.loadAsync(M.file)).scene, M); } catch (e) { console.warn('Automodell fehlt:', M.file, e); return null; }
+      const file = MOBILE ? M.file.replace('models/', 'models/m/') : M.file;
+      try { return prepareModel((await loader.loadAsync(file).catch(() => loader.loadAsync(M.file))).scene, M); } catch (e) { console.warn('Automodell fehlt:', M.file, e); return null; }
     }));
     MODELS.forEach((M, i) => { if (preps[i]) for (const k of M.kinds) { if (!modelOf.has(k)) modelOf.set(k, []); modelOf.get(k).push(preps[i]); } }); // Reihenfolge wie in MODELS
     for (const k of modelOf.keys()) for (const key of [...templates.keys()]) if (key.startsWith(k + '|')) templates.delete(key);
@@ -2027,7 +2030,8 @@ export function warmUp(renderer, scene, camera) {
 }
 
 // Wird das Gerät zu langsam, rechnet es mit weniger Pixeln (onChange setzt dann die Grösse neu)
-export function makeQuality(renderer, onChange) {
+export function makeQuality(renderer, onChange, opt = {}) {
+  const minRatio = opt.min ?? 0.6, slow = opt.slow ?? 1 / 45; // Handy: nicht unter 1 (sonst sehr verpixelt), erst unter 30 Bildern/s
   let acc = 0, n = 0;
   return dt => {
     if (dt > 0.1) return; // Tab im Hintergrund o. ä.: nicht mitzählen
@@ -2036,8 +2040,8 @@ export function makeQuality(renderer, onChange) {
     const avg = acc / n;
     acc = 0; n = 0;
     const ratio = renderer.getPixelRatio();
-    if (avg > 1 / 45 && ratio > 0.6) {
-      renderer.setPixelRatio(Math.max(0.6, ratio - 0.2));
+    if (avg > slow && ratio > minRatio) {
+      renderer.setPixelRatio(Math.max(minRatio, ratio - 0.2));
       onChange();
     }
   };

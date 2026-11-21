@@ -2,7 +2,7 @@
 // Wird von game.js erst geladen, wenn man in die Stadt fährt.
 import * as THREE from 'three';
 import { Sky } from 'three/addons/objects/Sky.js';
-import { buildCar, animateCar, warmUp, makeQuality, mergeStatic, setLod, MODEL_LAMPS, hasModel, modelVariants } from './cars3d.js';
+import { buildCar, animateCar, warmUp, makeQuality, mergeStatic, setLod, MODEL_LAMPS, hasModel, modelVariants, MOBILE } from './cars3d.js';
 import { buildJunkyard, JUNK, BENCH, BUILT, PARTS, inJunk, loadJunk, saveJunk, missingParts } from './junkyard.js';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { makeNoise, rng, smoothstep, surface, terrain, cloudDome } from './world3d.js';
@@ -38,7 +38,8 @@ const SPECIAL = { '3,6': 'gas', '6,3': 'wash', '6,6': 'pizza', '3,3': 'jail', '7
 const BASES = 6, BASE_CARS = 10, BASE_COLORS = ['#ef4444', '#3b82f6', '#22c55e', '#f59e0b', '#a855f7', '#ec4899'];
 const baseOf = key => { const [i, j] = key.split(',').map(Number); return j === 0 && i >= 1 && i <= BASES ? i - 1 : -1; };
 const POOL = ('car mini kombi kompakt taxi police van delivery pickup hatch coupe smart ecar minivan jeep postauto ' +
-  'schoolbus ambulance garbage beetle cabrio sports muscle offroad parcel bakery icecream oldtimer limo firetruck').split(' ');
+  'schoolbus ambulance garbage beetle cabrio sports muscle offroad parcel bakery icecream oldtimer limo firetruck ' +
+  'tiguanx tiguan24 e63 trackhawk kodiaq q5').split(' '); // eigene Typen der echten Autos
 // Normale Autos ohne echtes 3D-Modell: im Verkehr durch echte Autos ersetzt (Spezialfahrzeuge wie Feuerwehr, Müllauto, Postauto bleiben)
 const SWAP = new Set(['taxi', 'van', 'pickup', 'beetle', 'cabrio']);
 const COLORS = ['#c0392b', '#2563eb', '#f4f4f4', '#22232b', '#9aa0aa', '#16a34a', '#f59e0b', '#7c3aed', '#0e7490', '#b45309'];
@@ -520,7 +521,7 @@ function prism(pts, h, material, tile = 12, cap = false) {
 // ---------- Stadt bauen ----------
 function buildWorld() {
   const renderer = new THREE.WebGLRenderer({ antialias: true });
-  renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.5));
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, MOBILE ? 2 : 1.5)); // Handy: schärfer (hohe Pixeldichte, sonst verpixelt)
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
   renderer.toneMappingExposure = 0.95;
   renderer.shadowMap.enabled = true;
@@ -1701,7 +1702,7 @@ function prewarm() {
 const noShadow = m => m.traverse(o => { o.castShadow = false; });
 function makeCar(kinds, i, j, d, s, given = null) {
   // Stadt: vor allem günstige Autos; teure (selten, episch, legendär) fahren auf der Diamantinsel (monaco.js), hier nur ab und zu eines
-  const cheap = k => !hasModel(k) || (!['rare', 'epic', 'legendary'].includes((kinds[k] || {}).tier) && !['sports', 'muscle'].includes(k)); // Porsche, SLS: teuer
+  const cheap = k => !hasModel(k) || (!['rare', 'epic', 'legendary'].includes((kinds[k] || {}).tier) && !['sports', 'muscle', 'gt3rs'].includes(k)); // Porsche, SLS: teuer
   let kind = POOL[Math.floor(Math.random() * POOL.length)];
   if (!cheap(kind) && Math.random() > 0.06) kind = 'car';
   if (SWAP.has(kind) && !hasModel(kind)) { const real = POOL.filter(k => hasModel(k) && cheap(k)); if (real.length) kind = real[Math.floor(Math.random() * real.length)]; } // normale Autos: nur echte Modelle
@@ -6306,7 +6307,7 @@ export function startCity({ player, kinds, topSpeed, onExit, pay = () => 0, earn
   mesh.traverse(o => { const m = o.material; if (m && m.name === 'headlight') city.headMat = m; }); // Scheinwerfer (gemeinsam für alle Autos)
   for (const c of city.cars) S.scene.add(c.mesh);
   warmUp(S.renderer, S.scene, S.camera);
-  if (!S.quality) S.quality = makeQuality(S.renderer, layout);
+  if (!S.quality) S.quality = makeQuality(S.renderer, layout, MOBILE ? { min: 1, slow: 1 / 30 } : {});
   S.ui.tagbtn.hidden = !net; S.ui.tagbar.hidden = true;
   S.ui.flybtn.hidden = !city.canFly;
   S.ui.basepanel.hidden = S.ui.basebtn.hidden = true;
@@ -6403,7 +6404,7 @@ function saveGpu(frame) {
   const slow = city.perfT / city.perfN > 1 / 40;
   city.perfT = city.perfN = 0;
   if (slow && S.look && S.look.on) { S.look.on = false; showGfx(); showMsg('⚡ Grafik auf schnell gestellt (✨ = wieder schön)', 2.2); return; }
-  if (!slow || S.renderer.getPixelRatio() > 0.61) return;
+  if (!slow || S.renderer.getPixelRatio() > (MOBILE ? 1.01 : 0.61)) return; // Bild schon am kleinsten: dann Schatten aus, weniger weit sehen
   if (S.sun.castShadow) { S.sun.castShadow = false; return; }
   city.see = Math.max(80, city.see - 30);
 }

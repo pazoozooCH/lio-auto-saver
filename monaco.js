@@ -254,7 +254,7 @@ export function buildMonaco({ scene, group, asphaltMat, lineMat, paveMat, sign, 
 // ---------- Teure Autos auf der Ringstrasse ----------
 // Alle teuren echten Autos (selten, episch, legendär); die günstigen fahren in der Stadt (city.js, makeCar)
 const LUX_TIERS = new Set(['rare', 'epic', 'legendary']);
-const LUX_EXTRA = ['sports', 'muscle']; // Porsche 911 / GT3 RS, Mercedes SLS: passen auch hierher
+const LUX_EXTRA = ['sports', 'muscle', 'gt3rs']; // Porsche 911 / GT3 RS, Mercedes SLS: passen auch hierher
 const LUX_COL = ['#f8fafc', '#111827', '#dc2626', '#facc15', '#1d4ed8', '#16a34a', '#f472b6', '#9ca3af'];
 export function makeMonacoTraffic(kinds, buildCar, scene) {
   const list = Object.keys(kinds).filter(k => hasModel(k) && !kinds[k].secret && (LUX_TIERS.has(kinds[k].tier) || LUX_EXTRA.includes(k)) && !['police', 'ambulance'].includes(k));

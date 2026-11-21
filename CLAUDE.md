@@ -129,11 +129,15 @@ Browser-Spiel ohne Build: `index.html` + `game.js` (Spiellogik, Menüs und 2D-Ze
   (`city.moonOn`: Auto fliegt über Kraterränder, Figur springt hoch), schwarzer Himmel (`stepMoonEnv`).
 - `stunt.js`: 3D-Stuntpark mit eigener Physik in der Höhe (Rampen als Formen in `SHAPES`, Looping, Feuerringe, Salto/Schraube).
   Testen: `startStuntMode()`, dann `window.__stunt()` (`me`, `input`, `score`).
+- Handy (`MOBILE` in cars3d.js: Touch/iPhone/Android): leichte Modelle aus `models/m/` (gleicher Name, ~30–60k Dreiecke, Bilder 256 px;
+  neues Modell = auch dort eine leichte Fassung ablegen), Update-Knopf holt dort nur `models/m/`; Stadt mit Pixeldichte bis 2,
+  `makeQuality` nicht unter 1 (sonst verpixelt), erst unter 30 Bildern/s.
 - `models/`: echte 3D-Automodelle (GLB, 1k-Texturen, möglichst unter ~30'000 Dreiecken). Eintragen in `MODELS` (cars3d.js):
   Datei, echte Länge (`len`), welche Typen (`kinds`), Nase (`forward`), Räder (`wheels`, Namen), weglassen (`drop`: Teile,
   `hide`: Materialien), `opaque` (fälschlich durchsichtig), Lack (`paint`, ein oder mehrere Materialien, wird grau gemacht und eingefärbt), `credit`.
   Box beim Vorbereiten genau messen (`setFromObject(…, true)`), sonst schweben gedrehte Modelle.
-  Mehrere Modelle je Typ = Varianten (`modelOf` Liste, `modelFor`: fest je `v.id`/`v.seed`, Verkehr würfelt `seed`); im Verkehr werden
+  Jedes echte Auto hat seinen eigenen Typ (Wunsch Lionel; zusätzliche Typen wie `tiguanx`, `bentley` … in game.js nach KINDS, Kopie
+  des Grundtyps mit eigenem Namen). Technisch gingen auch mehrere Modelle je Typ (`modelOf` Liste, `modelFor`), wird aber nicht genutzt. Im Verkehr werden
   normale Autos ohne Modell (`SWAP` in city.js) durch echte ersetzt. In der Stadt fahren vor allem günstige Autos (Seltenheit gewöhnlich/ungewöhnlich, `cheap` in makeCar, selten ein teures);
   die teuren (selten/episch/legendär + Sportwagen, SLS) auf der Diamantinsel (`makeMonacoTraffic`, ohne Spezial-Lacke). `beacons` = Blaulichter aufs Dach (Krankenwagen).
   `prepareModel` wirft die leeren Knoten der Modell-Datei weg (sonst >1000 Objekte je Auto: updateMatrixWorld frass das ganze Bild), beim Stadtstart
