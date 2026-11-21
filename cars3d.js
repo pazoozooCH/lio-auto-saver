@@ -1664,7 +1664,8 @@ export const MODELS = [
 const modelOf = new Map(); // Typ → fertig vorbereitete Modelle (mehrere = Varianten, je Fahrzeug fest gewählt)
 export const hasModel = kind => modelOf.has(kind);
 const seedOf = v => { const s = String(v.id || v.seed || ''); let h = 7; for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) >>> 0; return h; };
-const modelFor = v => { const L = modelOf.get(v.kind); return L ? L[seedOf(v) % L.length] : null; };
+const modelFor = v => { const L = modelOf.get(v.kind); return L ? L[(v.variant ?? seedOf(v)) % L.length] : null; };
+export const modelVariants = () => [...modelOf.entries()].map(([kind, L]) => [kind, L.length]); // für das Vorwärmen (alle Varianten einmal bauen)
 let modelsLoading = null;
 export function loadCarModels() {
   if (modelsLoading) return modelsLoading;
@@ -1758,6 +1759,16 @@ function prepareModel(scene, M) {
   });
   for (const o of gone) o.parent.remove(o);
   for (const o of wheelSet) if (o.isMesh) o.geometry = o.geometry.clone(); // eigene Kopie: die ganze Datei (Puffer) muss nicht im Speicher bleiben
+  // Leere Knoten aus der Modell-Datei wegwerfen (oft über 1000 je Auto!): nur Räder und übrige Teile bleiben, direkt am holder.
+  // Sonst rechnet three.js jedes Bild für jedes Auto alle diese Knoten neu (die Stadt ruckelte).
+  const keepTop = []; scene.traverse(o => {
+    if (o === scene) return;
+    const wheelRoot = M.wheels && M.wheels.test(o.name) && !(o.parent && wheelSet.has(o.parent) && M.wheels.test(o.parent.name));
+    if (wheelRoot || (o.isMesh && !wheelSet.has(o))) keepTop.push(o);
+  });
+  holder.updateMatrixWorld(true);
+  for (const o of keepTop) holder.attach(o); // Lage bleibt gleich
+  holder.remove(scene);
   for (const [mat, geos] of byMat) { // nicht 'wheel' heissen (drehte sich sonst)
     const blink = M.blink && M.blink.test(mat.name || '') ? 1 : 0;
     const hasTex = Object.values(mat).some(x => x && x.isTexture); // ohne Bilder braucht das Teil keine Bild-Koordinaten (Speicher)

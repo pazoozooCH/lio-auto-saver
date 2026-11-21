@@ -85,7 +85,7 @@ Browser-Spiel ohne Build: `index.html` + `game.js` (Spiellogik, Menüs und 2D-Ze
   curtain, panel (glänzendes Glas mit Lichtstreifen, Rauheit/Metall- und Reliefbild); Glasbalkone, Solarzellen/Dachgärten
   (`roofSpots`). Pflanzen mit Farbverlauf (`shadeGeo`): Laubbäume, Tannen im Wald (`pines`), Büsche, Grasbüschel (4 einseitige
   Bilder, sonst dunkle Rückseite), Blumen – alles Instanzen, eigener Zufall `vr` (der Haupt-Zufall `r` darf sich nicht verschieben).
-  Dichtes Gras um den Spieler (`stepGrass`, `GRASS`): wandert mit, nur wo `surfaceAt` = 'grass', fester Zufall je Feld (`gHash`);
+  Dichtes Gras um den Spieler (`stepGrass`, `GRASS`): wandert mit, nur wo `surfaceAt` = 'grass', fester Zufall je Feld (`gHash`), jedes Feld nur einmal geprüft (`city.grassCache`, sonst Ruckler alle 5 m);
   nicht auf der Raststätte (`inRest`), der Diamantinsel und in Senken am Wasser (`landRaw` < 0,15).
   Tempo: grosse InstancedMesh werden nach dem Bauen in Kacheln geteilt (`chunkInstances`, `CHUNK` 300 m, kleines weit weg aus:
   `stepChunks`); Schatten nur jedes zweite Bild (`render`); Autos bis `SEE` 115 m gezeichnet; Verkehrs- und geparkte Autos
@@ -136,6 +136,9 @@ Browser-Spiel ohne Build: `index.html` + `game.js` (Spiellogik, Menüs und 2D-Ze
   Mehrere Modelle je Typ = Varianten (`modelOf` Liste, `modelFor`: fest je `v.id`/`v.seed`, Verkehr würfelt `seed`); im Verkehr werden
   normale Autos ohne Modell (`SWAP` in city.js) durch echte ersetzt. In der Stadt fahren vor allem günstige Autos (Seltenheit gewöhnlich/ungewöhnlich, `cheap` in makeCar, selten ein teures);
   die teuren (selten/episch/legendär + Sportwagen, SLS) auf der Diamantinsel (`makeMonacoTraffic`, ohne Spezial-Lacke). `beacons` = Blaulichter aufs Dach (Krankenwagen).
+  `prepareModel` wirft die leeren Knoten der Modell-Datei weg (sonst >1000 Objekte je Auto: updateMatrixWorld frass das ganze Bild), beim Stadtstart
+  werden alle Varianten einmal gebaut und mitgezeichnet (`modelVariants`, `v.variant`: keine Shader-Ruckler später). Messen: Objekte zählen
+  (`__cityS().scene.traverse`), Bildzeiten per requestAnimationFrame (Tab vorne).
   `prepareModel` fasst je Material zusammen: gespiegelte Teile umdrehen (`flipWinding`), alle Werte als Float32, Bilder nur
   UV-Lage 0 (`uv1` fällt weg, sonst Shader-Fehler = unsichtbare Teile), Ecken-Farben aus (`vertexColors`, sonst schwarz), mit Index zusammengefasst (Ecken geteilt, viel weniger Speicher als ohne Index), Teile ohne Bilder ohne UV, Normalen als Int8 (`packNormals`; `dentAt` macht sie vor dem Neu-Rechnen wieder genau); Räder als Kopie (Datei-Puffer wird frei).
   Fehlt metalness im Modell (glTF = 1), wird sie auf 0,25 gesetzt (sonst schwarz). Fahrersitz-Kamera: `modelEye` (hinter der

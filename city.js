@@ -2,7 +2,7 @@
 // Wird von game.js erst geladen, wenn man in die Stadt fährt.
 import * as THREE from 'three';
 import { Sky } from 'three/addons/objects/Sky.js';
-import { buildCar, animateCar, warmUp, makeQuality, mergeStatic, setLod, MODEL_LAMPS, hasModel } from './cars3d.js';
+import { buildCar, animateCar, warmUp, makeQuality, mergeStatic, setLod, MODEL_LAMPS, hasModel, modelVariants } from './cars3d.js';
 import { buildJunkyard, JUNK, BENCH, BUILT, PARTS, inJunk, loadJunk, saveJunk, missingParts } from './junkyard.js';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { makeNoise, rng, smoothstep, surface, terrain, cloudDome } from './world3d.js';
@@ -3907,15 +3907,26 @@ function stepGrass() {
   city.grassAt = { x: P.x, z: P.z };
   const m = new THREE.Matrix4(), q = new THREE.Quaternion(), sc = new THREE.Vector3(), p = new THREE.Vector3(), w = { x: 0, z: 0 }, C = GRASS.cell;
   const i0 = Math.floor((P.x - GRASS.r) / C), i1 = Math.ceil((P.x + GRASS.r) / C), j0 = Math.floor((P.z - GRASS.r) / C), j1 = Math.ceil((P.z + GRASS.r) / C);
+  // Jedes Feld nur einmal prüfen und merken (die Prüfungen sind teuer: sonst ruckelte es alle 5 m); null = kein Gras
+  const cache = city.grassCache || (city.grassCache = new Map());
+  if (cache.size > 80000) cache.clear();
   let n = 0;
   for (let i = i0; i <= i1 && n < GRASS.n; i++) for (let j = j0; j <= j1 && n < GRASS.n; j++) {
     const x = (i + gHash(i, j, 0)) * C, z = (j + gHash(i, j, 9)) * C;
-    if ((x - P.x) ** 2 + (z - P.z) ** 2 > GRASS.r * GRASS.r || surfaceAt(x, z) !== 'grass' || landDist(x, z) < 12) continue;
-    if ((inPassRegion(x, z) && passNearest(x, z).d < 9) || [[1.5, 0], [-1.5, 0], [0, 1.5], [0, -1.5]].some(([a, b]) => surfaceAt(x + a, z + b) !== 'grass')) continue; // nicht auf Strassen und ihren Rändern
-    if (inRest(x, z) || inMonaco(x, z) || (Math.max(Math.abs(x), Math.abs(z)) > HALF + 20 && !inPassRegion(x, z) && landRaw(x, z) < 0.15)) continue; // nicht auf der Raststätte, der Diamantinsel und am/im Wasser (tiefes Gelände)
-    const s = 0.8 + gHash(i, j, 4) * 0.8;
-    warpXZ(x, z, w); // wie alles andere: in der Stadt verbogen
-    im.setMatrixAt(n++, m.compose(p.set(w.x, groundAt(x, z), w.z), q.setFromAxisAngle(UP, gHash(i, j, 7) * 6.28), sc.set(s, s * (0.8 + gHash(i, j, 2) * 0.5), s)));
+    if ((x - P.x) ** 2 + (z - P.z) ** 2 > GRASS.r * GRASS.r) continue;
+    const key = (i + 30000) * 60000 + (j + 30000);
+    let e = cache.get(key);
+    if (e === undefined) {
+      e = null;
+      const ok = surfaceAt(x, z) === 'grass' && landDist(x, z) >= 12
+        && !((inPassRegion(x, z) && passNearest(x, z).d < 9) || [[1.5, 0], [-1.5, 0], [0, 1.5], [0, -1.5]].some(([a, b]) => surfaceAt(x + a, z + b) !== 'grass')) // nicht auf Strassen und ihren Rändern
+        && !(inRest(x, z) || inMonaco(x, z) || (Math.max(Math.abs(x), Math.abs(z)) > HALF + 20 && !inPassRegion(x, z) && landRaw(x, z) < 0.15)); // nicht Raststätte, Diamantinsel, Wasser
+      if (ok) { warpXZ(x, z, w); e = [w.x, groundAt(x, z), w.z, 0.8 + gHash(i, j, 4) * 0.8]; } // wie alles andere: in der Stadt verbogen
+      cache.set(key, e);
+    }
+    if (!e) continue;
+    const s = e[3];
+    im.setMatrixAt(n++, m.compose(p.set(e[0], e[1], e[2]), q.setFromAxisAngle(UP, gHash(i, j, 7) * 6.28), sc.set(s, s * (0.8 + gHash(i, j, 2) * 0.5), s)));
   }
   im.count = n; im.instanceMatrix.needsUpdate = true;
 }
@@ -6359,7 +6370,12 @@ export function startCity({ player, kinds, topSpeed, onExit, pay = () => 0, earn
   // Fahrzeuge, die erst später auftauchen, schon jetzt einmal bauen (danach nur noch kopieren – sonst ruckelt es dann)
   for (const v of [...city.base, { kind: 'police', color: kinds.police.color }, { kind: 'sports', color: '#18181b' }, { kind: 'muscle', color: '#18181b' },
     { kind: 'carrier', color: '#f59e0b' }]) if (kinds[v.kind]) buildCar({ special: null, ...v }, kinds);
+  // Alle echten Autos (jede Variante) einmal bauen und mitzeichnen: Shader und Bilder sind dann fertig (sonst Ruckler von 1–2 s, wenn eines zum ersten Mal auftaucht)
+  const warmCars = new THREE.Group(); warmCars.position.set(me.pos.x, -50, me.pos.z); warmCars.userData.noWarp = true;
+  for (const [kind, n] of modelVariants()) for (let i = 0; i < n; i++) if (kinds[kind]) { const m = buildCar({ kind, variant: i, special: null }, kinds); setLod(m, false); warmCars.add(m); }
+  S.scene.add(warmCars);
   prewarm();
+  S.scene.remove(warmCars);
   window.addEventListener('keydown', onKey);
   window.addEventListener('keyup', onKey);
   S.snd = createCarSound({ kind: player.kind });
