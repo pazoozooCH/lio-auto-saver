@@ -3528,20 +3528,17 @@ function collectionKinds() { // nur echte Autos (Wunsch Lionel), dazu eigene Eig
     TIER_VALUE[KINDS[b].tier] - TIER_VALUE[KINDS[a].tier] || KINDS[a].name.localeCompare(KINDS[b].name));
 }
 
-// Geheimnis (Wunsch Lionel): „Ersteller: LIONEL“ im Startbild antippen = 5 Minuten lang alle Autos in der Sammlung frei (nur anschauen)
-let allOpenUntil = 0;
-const allOpen = () => Date.now() < allOpenUntil;
 function drawCollection() {
-  const kinds = collectionKinds(), open = allOpen();
+  const kinds = collectionKinds();
   const owned = kind => fleet.filter(v => v.kind === kind);
   const have = kinds.filter(kind => owned(kind).length).length;
-  drawMenuBackdrop('📖 SAMMLUNG  ' + (open ? kinds.length : have) + ' / ' + kinds.length, true); // geheim: sieht ganz normal aus
+  drawMenuBackdrop('📖 SAMMLUNG  ' + have + ' / ' + kinds.length, true);
   drawButton(BACK_BTN, '← Shop', '#444b5c');
   const pages = pageCount(kinds.length);
   collectionPage = Math.min(collectionPage, pages - 1);
 
   for (const card of gridCards(kinds, collectionPage)) {
-    const kind = card.item, k = KINDS[kind], mine = owned(kind), got = mine.length > 0 || open;
+    const kind = card.item, k = KINDS[kind], mine = owned(kind), got = mine.length > 0;
     ctx.fillStyle = got ? 'rgba(46, 204, 113, 0.12)' : 'rgba(255, 255, 255, 0.04)';
     rr(card.x, card.y, card.w, card.h, 12); ctx.fill();
     ctx.strokeStyle = got ? '#2ecc71' : '#3a3f4b';
@@ -3567,7 +3564,7 @@ function drawCollection() {
     ctx.textAlign = 'right';
     ctx.fillStyle = got ? '#7dffb0' : '#9aa0aa';
     ctx.font = (got ? 'bold 16px' : '15px') + ' system-ui, sans-serif';
-    ctx.fillText(mine.length ? '×' + mine.length : open ? '' : '🔒', card.x + card.w - 10, card.y + 17);
+    ctx.fillText(got ? '×' + mine.length : '🔒', card.x + card.w - 10, card.y + 17);
 
     ctx.textAlign = 'center';
     ctx.fillStyle = got ? '#fff' : '#8a8f99';
@@ -3592,7 +3589,7 @@ function collectionTap(px, py) {
   for (const card of gridCards(collectionKinds(), collectionPage)) { // eigenes Fahrzeug antippen = 3D-Ansicht
     if (!inRect(px, py, card)) continue;
     const mine = fleet.filter(v => v.kind === card.item).sort((a, b) => vehicleValue(b) - vehicleValue(a));
-    if (mine.length) show3D(mine[0]); else if (allOpen()) show3D(makeVehicle(card.item)); else showMenuMsg('Das hast du noch nicht – zieh es im Shop! 🔒');
+    if (mine.length) show3D(mine[0]); else showMenuMsg('Das hast du noch nicht – zieh es im Shop! 🔒');
     return;
   }
   if (inRect(px, py, BACK_BTN)) openMenu('shop');
@@ -4875,9 +4872,6 @@ canvas.addEventListener('pointerdown', e => {
       if (inRect(px, py, QUIT_BTN)) quitApp();
       else if (appUpdate.info && inRect(px, py, UPDATE_BTN)) applyUpdate();
       else if (inRect(px, py, VERSION_AREA)) secretTap();
-      else if (inRect(px, py, { x: W - 160, y: creditsY() - 4, w: 156, h: 20 })) { // „Ersteller: LIONEL“
-        allOpenUntil = Date.now() + 5 * 60 * 1000; // geheim: nichts anzeigen
-      }
       else if (inRect(px, py, RACE_BTN)) openMenu('racemenu');
       else if (inRect(px, py, DRAG_BTN)) openDragMenu();
       else if (inRect(px, py, ONLINE_BTN)) openOnline();
