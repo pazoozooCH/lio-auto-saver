@@ -1695,6 +1695,13 @@ function grayMap(tex) {
 // Lichter der echten Modelle (nach Material-Namen): city.js lässt sie nachts leuchten
 export const MODEL_LAMPS = new Set();
 const LAMP_RE = /light|lamp|lanterna|freio|signal/i, NOT_LAMP_RE = /metal|chrom|black|cover|lines|pipe|bump|detail|fog|plate|warning|reflector/i;
+// Richtungen (Normalen) als kleine ganze Zahlen speichern: 3 statt 12 Bytes je Ecke, sieht gleich aus (Speicher fürs Handy)
+function packNormals(g) {
+  const a = g.attributes.normal; if (!a || !(a.array instanceof Float32Array)) return;
+  const n = new Int8Array(a.count * 3);
+  for (let i = 0; i < a.count * 3; i++) n[i] = Math.max(-127, Math.min(127, Math.round(a.array[i] * 127)));
+  g.setAttribute('normal', new THREE.BufferAttribute(n, 3, true));
+}
 // Dreiecke umdrehen (Ecke 2 und 3 jedes Dreiecks im Index tauschen)
 function flipWinding(g) {
   const ix = g.index.array.slice(); // eigene Kopie (der Index kann mit dem Original geteilt sein)
@@ -1750,7 +1757,10 @@ function prepareModel(scene, M) {
   for (const o of wheelSet) if (o.isMesh) o.geometry = o.geometry.clone(); // eigene Kopie: die ganze Datei (Puffer) muss nicht im Speicher bleiben
   for (const [mat, geos] of byMat) { // nicht 'wheel' heissen (drehte sich sonst)
     const blink = M.blink && M.blink.test(mat.name || '') ? 1 : 0;
+    const hasTex = Object.values(mat).some(x => x && x.isTexture); // ohne Bilder braucht das Teil keine Bild-Koordinaten (Speicher)
+    if (!hasTex) for (const q of geos) q.deleteAttribute('uv');
     let g = geos.length > 1 ? mergeGeometries(geos, false) : geos[0];
+    if (g) packNormals(g);
     for (const q of g ? [g] : geos) { const m = new THREE.Mesh(q, mat); m.name = 'part:' + mat.name; if (blink) m.userData.blink = 1; holder.add(m); } // klappt es nicht: einzeln
   }
   let paint = null, tris = 0; const paints = []; // Lack-Materialien (Originalfarbe; gespritzt = alle in der Wagenfarbe)

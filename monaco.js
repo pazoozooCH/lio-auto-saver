@@ -2,6 +2,7 @@
 // Palmen, Ringstrasse mit teuren Autos (eigener kleiner Verkehr), Strasse in Kehren zum Palast, Jachthafen mit Fähr- und
 // Bootssteg, flache Landzunge mit Piste fürs Flugzeug. Die Fähre pendelt zwischen Frachthafen (A) und Jachthafen (B).
 import * as THREE from 'three';
+import { hasModel } from './cars3d.js';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { MONACO, MON_HARBOR, MON_STRIP, MON_PIER, MON_BOAT, monacoDist, monRadius, SEA_Y, inBox } from './island.js';
 
@@ -251,17 +252,20 @@ export function buildMonaco({ scene, group, asphaltMat, lineMat, paveMat, sign, 
 }
 
 // ---------- Teure Autos auf der Ringstrasse ----------
-const LUX = ['hyper', 'supercar', 'luxlimo', 'gtcar', 'sports', 'cabrio', 'coupe', 'muscle', 'hyperev'];
+// Alle teuren echten Autos (selten, episch, legendär); die günstigen fahren in der Stadt (city.js, makeCar)
+const LUX_TIERS = new Set(['rare', 'epic', 'legendary']);
+const LUX_EXTRA = ['sports', 'muscle']; // Porsche 911 / GT3 RS, Mercedes SLS: passen auch hierher
 const LUX_COL = ['#f8fafc', '#111827', '#dc2626', '#facc15', '#1d4ed8', '#16a34a', '#f472b6', '#9ca3af'];
 export function makeMonacoTraffic(kinds, buildCar, scene) {
-  const list = LUX.filter(k => kinds[k]), cars = [], R = MON_ROADS[0];
+  const list = Object.keys(kinds).filter(k => hasModel(k) && !kinds[k].secret && (LUX_TIERS.has(kinds[k].tier) || LUX_EXTRA.includes(k)) && !['police', 'ambulance'].includes(k));
+  const cars = [], R = MON_ROADS[0], n = 14;
   if (!list.length) return cars;
-  for (let k = 0; k < 10; k++) {
-    const kind = list[k % list.length], special = k % 5 === 2 ? 'gold' : k % 7 === 3 ? 'chrome' : null;
-    const v = { kind, color: LUX_COL[(k * 3) % LUX_COL.length], special: special === 'gold' ? 'gold' : null, tune: special === 'chrome' ? { finish: 'chrome' } : undefined };
+  for (let k = 0; k < n; k++) {
+    const kind = list[Math.floor(Math.random() * list.length)];
+    const v = { kind, color: LUX_COL[(k * 3) % LUX_COL.length], special: null, seed: Math.floor(Math.random() * 1e6) }; // Originalfarbe, keine Spezial-Lacke
     const mesh = buildCar(v, kinds); mesh.traverse(o => { o.castShadow = false; }); if (mesh.userData.driver) mesh.userData.driver.visible = true;
     scene.add(mesh);
-    cars.push({ v, mesh, s: k * R.len / 10, speed: 0, cruise: 11 + (k % 4) * 2.2, x: 0, z: 0, h: 0, len: mesh.userData.length || 4.5, wait: 0 });
+    cars.push({ v, mesh, s: k * R.len / n, speed: 0, cruise: 11 + (k % 4) * 2.2, x: 0, z: 0, h: 0, len: mesh.userData.length || 4.5, wait: 0 });
   }
   return cars;
 }

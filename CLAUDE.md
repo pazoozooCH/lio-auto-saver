@@ -134,9 +134,10 @@ Browser-Spiel ohne Build: `index.html` + `game.js` (Spiellogik, Menüs und 2D-Ze
   `hide`: Materialien), `opaque` (fälschlich durchsichtig), Lack (`paint`, ein oder mehrere Materialien, wird grau gemacht und eingefärbt), `credit`.
   Box beim Vorbereiten genau messen (`setFromObject(…, true)`), sonst schweben gedrehte Modelle.
   Mehrere Modelle je Typ = Varianten (`modelOf` Liste, `modelFor`: fest je `v.id`/`v.seed`, Verkehr würfelt `seed`); im Verkehr werden
-  normale Autos ohne Modell (`SWAP` in city.js) durch echte ersetzt. `beacons` = Blaulichter aufs Dach (Krankenwagen).
+  normale Autos ohne Modell (`SWAP` in city.js) durch echte ersetzt. In der Stadt fahren vor allem günstige Autos (Seltenheit gewöhnlich/ungewöhnlich, `cheap` in makeCar, selten ein teures);
+  die teuren (selten/episch/legendär + Sportwagen, SLS) auf der Diamantinsel (`makeMonacoTraffic`, ohne Spezial-Lacke). `beacons` = Blaulichter aufs Dach (Krankenwagen).
   `prepareModel` fasst je Material zusammen: gespiegelte Teile umdrehen (`flipWinding`), alle Werte als Float32, Bilder nur
-  UV-Lage 0 (`uv1` fällt weg, sonst Shader-Fehler = unsichtbare Teile), Ecken-Farben aus (`vertexColors`, sonst schwarz), mit Index zusammengefasst (Ecken geteilt, viel weniger Speicher als ohne Index); Räder als Kopie (Datei-Puffer wird frei).
+  UV-Lage 0 (`uv1` fällt weg, sonst Shader-Fehler = unsichtbare Teile), Ecken-Farben aus (`vertexColors`, sonst schwarz), mit Index zusammengefasst (Ecken geteilt, viel weniger Speicher als ohne Index), Teile ohne Bilder ohne UV, Normalen als Int8 (`packNormals`; `dentAt` macht sie vor dem Neu-Rechnen wieder genau); Räder als Kopie (Datei-Puffer wird frei).
   Fehlt metalness im Modell (glTF = 1), wird sie auf 0,25 gesetzt (sonst schwarz). Fahrersitz-Kamera: `modelEye` (hinter der
   Oberkante der Frontscheibe, Dach nur in der Mitte gesucht), sonst `eyeX`/`eyeY` in MODELS. Lichter nach Material-Namen
   (`LAMP_RE`) in `MODEL_LAMPS`, leuchten nachts (city.js); `blink` = Blaulicht (Polizei: Dodge Charger mit eigener Bemalung).
@@ -146,7 +147,7 @@ Browser-Spiel ohne Build: `index.html` + `game.js` (Spiellogik, Menüs und 2D-Ze
   Marken sind im Moment erlaubt (Martin: privates Spiel). Neue Datei auch in `APP_FILES`; pages.yml kopiert den ganzen Ordner.
   Shop-Tore zurzeit zu (`GATES_OPEN` in game.js, Wunsch Lionel), Lack-Garage auch (`PAINTS_OPEN`); Spezial-Lacke und selbst lackierte Farben einmal von allen Autos entfernt (`autoRetterNoPaint`, auch geparkte/Autohaus). Shop (Tore), Autohändler und Tagesgeschenk geben nur echte Autos: `MODEL_KINDS` in game.js (gleich halten mit `MODELS`);
   fehlt eine Seltenheit, kommt das echte Auto mit der nächsten (`modelKind`). Die Sammlung zeigt nur echte Autos (`collectionKinds`: `MODEL_KINDS` + eigene Eigenbauten); alte eigene Fahrzeuge bleiben in der Garage, Stadtverkehr bleibt wie er ist.
-  Zu schwere Modelle verkleinern mit glTF-Transform (npm, nur in einem temporären Ordner): Innenraum/Motor weg, `simplify`
+  Verkleinern ohne `simplifySloppy` (macht Dellen: Ecken nur nach Lage verbunden), lieber 90–150k Dreiecke und Bilder 512 px. Zu schwere Modelle verkleinern mit glTF-Transform (npm, nur in einem temporären Ordner): Innenraum/Motor weg, `simplify`
   (meshoptimizer), Bilder als JPG; Ziel ~30'000 Dreiecke, wenige MB. Beim Laden fasst `prepareModel` alle Nicht-Rad-Teile je Material zusammen.
 - `viewer.js`: 3D-Ansicht eines Fahrzeugs zum Drehen (eigener Renderer, wird beim Schliessen freigegeben).
 - `photo.js`: Fotos der 3D-Fahrzeuge für die Menüs (`drawVehiclePreview` in `game.js`); eigener Renderer, Fotos werden

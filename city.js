@@ -1700,8 +1700,12 @@ function prewarm() {
 // Bot-Autos werfen keinen echten Schatten (der weiche Schatten darunter reicht): spart viel Arbeit pro Bild
 const noShadow = m => m.traverse(o => { o.castShadow = false; });
 function makeCar(kinds, i, j, d, s, given = null) {
+  // Stadt: vor allem günstige Autos; teure (selten, episch, legendär) fahren auf der Diamantinsel (monaco.js), hier nur ab und zu eines
+  const cheap = k => !hasModel(k) || (!['rare', 'epic', 'legendary'].includes((kinds[k] || {}).tier) && !['sports', 'muscle'].includes(k)); // Porsche, SLS: teuer
   let kind = POOL[Math.floor(Math.random() * POOL.length)];
-  if (SWAP.has(kind) && !hasModel(kind)) { const real = POOL.filter(hasModel); if (real.length) kind = real[Math.floor(Math.random() * real.length)]; } // normale Autos: nur echte Modelle
+  if (!cheap(kind) && Math.random() > 0.06) kind = 'car';
+  if (SWAP.has(kind) && !hasModel(kind)) { const real = POOL.filter(k => hasModel(k) && cheap(k)); if (real.length) kind = real[Math.floor(Math.random() * real.length)]; } // normale Autos: nur echte Modelle
+  if (kind === 'car' && Math.random() < 0.06) { const lux = Object.keys(kinds).filter(k => hasModel(k) && !cheap(k) && !kinds[k].secret); if (lux.length) kind = lux[Math.floor(Math.random() * lux.length)]; } // selten ein teures
   const v = given || { kind, color: kinds[kind].color || COLORS[Math.floor(Math.random() * COLORS.length)], special: null, seed: Math.floor(Math.random() * 1e6) };
   const mesh = buildCar(v, kinds);
   noShadow(mesh);
@@ -3599,7 +3603,11 @@ function dentAt(hit, strength) {
     if (!o.isMesh || !o.name.startsWith('part:') || o.material.transparent) continue;
     const gs = o.geometry; if (!gs.boundingSphere) gs.computeBoundingSphere();
     if (gs.boundingSphere.center.distanceTo(c) > gs.boundingSphere.radius + R) continue;
-    if (!o.userData.origGeo) { o.userData.origGeo = gs; o.geometry = gs.clone(); city.dented.push(o); }
+    if (!o.userData.origGeo) {
+      o.userData.origGeo = gs; o.geometry = gs.clone(); city.dented.push(o);
+      const na = o.geometry.attributes.normal; // gepackte Richtungen (cars3d.js) zum Neu-Rechnen wieder genau machen
+      if (na && na.normalized) { const f = new Float32Array(na.count * 3); for (let i = 0; i < na.count; i++) { f[i * 3] = na.getX(i); f[i * 3 + 1] = na.getY(i); f[i * 3 + 2] = na.getZ(i); } o.geometry.setAttribute('normal', new THREE.BufferAttribute(f, 3)); }
+    }
     const g = o.geometry, pos = g.attributes.position; let moved = false;
     for (let i = 0; i < pos.count; i++) {
       v.fromBufferAttribute(pos, i); const d = v.distanceTo(c); if (d >= R) continue;
