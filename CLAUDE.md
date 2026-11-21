@@ -202,6 +202,9 @@ werden beim Laden zu echten Autos gleicher Seltenheit (`realVehicle`), geparkte/
 immer das Ersatzauto. Episch/Legendär: echte Sportwagen (`supercar`, `hyperev`, `gtlegend`, `lemans`, `formula`, `luxlimo`, `gtcar`,
 `luxsuv`, `musclegt`, `pickupxl`; Formen `REAL.supercar/hyperev/gt` in cars3d.js).
 
+Geheimnis (game.js, `allOpenUntil`): „Ersteller: LIONEL“ im Startbild antippen = 5 Minuten alle Autos in der Sammlung frei (nur anschauen/3D),
+ohne sichtbaren Hinweis (Wunsch Lionel).
+
 Tägliche Belohnung (game.js, `drawDaily`/`dailyTap`): 7-Tage-Kalender beim Start (Tag 1: 5 Münzen), Tag 7 mit Fahrzeug, verpasst = Tag 1;
 Spielstand `autoRetterDaily` = { last, day }.
 
