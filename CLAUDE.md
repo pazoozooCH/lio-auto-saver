@@ -107,7 +107,8 @@ Browser-Spiel ohne Build: `index.html` + `game.js` (Spiellogik, Menüs und 2D-Ze
   12,2 km, vier Spuren je Richtung) mit Tempolimit 140; im Westen Schrägseilbrücke über die Hafenbucht (`BRIDGE`, Fahrbahnhöhe `hwY(s)`,
   `hwGround`; Fähre fährt darunter durch, `FERRY_GAP` ohne Pfeiler). Ausfahrten innen (`EXITS`, `exitGap`) zu den Zubringern `ROADS`
   (Flughafenstrasse z = 462 mit Zufahrt `RAMP` vom Südrand der Stadt, Flughafen und Skistrasse; Strasse zum Raumbahnhof;
-  Nordstrasse durchs Tal zum Strand, Südstrasse am Flughafen vorbei, Strasse zum Skidorf; sechs Anschlüsse, Baustelle `RW` dazwischen); an jedem Anschluss geschwungene Aus- und Einfahrt
+  Nordstrasse durchs Tal zum Strand, Südstrasse am Flughafen vorbei, Strasse zum Skidorf, Bergpass-Zubringer (Ausfahrt Nord bei x = 450,
+  östlich am Berg vorbei nach Süden und bei z = −360 nach Westen zum Anfang der Passstrasse); sieben Anschlüsse, Baustelle `RW` dazwischen); an jedem Anschluss geschwungene Aus- und Einfahrt
   für Richtung +s (`SLIPS`, Bézier-Kurven, `slipDist`, innere Leitplanke offen über `slipGap`), Raststätte an der Südgeraden (`REST`, Tanken über `REST_ZONES`; Autos fahren hinein, parkieren und wieder weg:
   `stepRestCar`, Wege mit `makePath`/`pathAt`), lange Staus
   (`startJam`, Zusatzautos verschwinden wieder). Viele Autos: nur die nächsten bekommen ein echtes 3D-Auto aus einem Vorrat

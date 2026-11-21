@@ -38,6 +38,8 @@ export const ROADS = [RAMP,
   { x0: -457, x1: -443, z0: 455, z1: 2452 }, // Südstrasse: westlich am Flughafen vorbei zur Flughafenstrasse
   { x0: 570, x1: 1243, z0: 1243, z1: 1257 }, // zum Skidorf (von Osten)
   { x0: -937, x1: -923, z0: 462, z1: 501 }, // zum Schrottplatz (junkyard.js)
+  // Bergpass (Wunsch Lionel): von der Ausfahrt im Norden östlich am Berg vorbei nach Süden, dann nach Westen zum Anfang der Passstrasse
+  { x0: 443, x1: 457, z0: -1302, z1: -353 }, { x0: -7, x1: 457, z0: -367, z1: -353 },
 ];
 // Anschlüsse: innen. Für Richtung +s je eine geschwungene Ausfahrt (zweigt 140 m vorher rechts ab, Kurve in den Zubringer)
 // und Einfahrt (aus dem Zubringer in einer Kurve auf die rechte Spur, SLIPS); in der Mitte fehlen innere Leitplanke und
@@ -49,6 +51,7 @@ export const EXITS = [
   { s: sEast(1250), name: '⛷️ Skidorf Schneeberg' },
   { s: sTop(-600), name: '🏖️ Strand · ⚓ Hafen · 🏙️ Stadt' },
   { s: sSouth(-450), name: '✈️ Flughafen · 🏙️ Stadt' },
+  { s: sTop(450), name: '⛰️ Bergpass · 🐄 Alp' },
 ];
 const exitGap = s => EXITS.some(e => Math.abs(((s - e.s) % HW_LEN + HW_LEN * 1.5) % HW_LEN - HW_LEN / 2) < 16);
 // Brücke über die Hafenbucht (Westseite, Wasser zwischen z = −700 und 380): Rampen hinauf, oben 13 m über dem Wasser
