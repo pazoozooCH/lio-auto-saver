@@ -2,7 +2,7 @@
 // Wird von game.js erst geladen, wenn man in die Stadt fährt.
 import * as THREE from 'three';
 import { Sky } from 'three/addons/objects/Sky.js';
-import { buildCar, animateCar, warmUp, makeQuality, mergeStatic, setLod, MODEL_LAMPS } from './cars3d.js';
+import { buildCar, animateCar, warmUp, makeQuality, mergeStatic, setLod, MODEL_LAMPS, hasModel } from './cars3d.js';
 import { buildJunkyard, JUNK, BENCH, BUILT, PARTS, inJunk, loadJunk, saveJunk, missingParts } from './junkyard.js';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { makeNoise, rng, smoothstep, surface, terrain, cloudDome } from './world3d.js';
@@ -39,6 +39,8 @@ const BASES = 6, BASE_CARS = 10, BASE_COLORS = ['#ef4444', '#3b82f6', '#22c55e',
 const baseOf = key => { const [i, j] = key.split(',').map(Number); return j === 0 && i >= 1 && i <= BASES ? i - 1 : -1; };
 const POOL = ('car mini kombi kompakt taxi police van delivery pickup hatch coupe smart ecar minivan jeep postauto ' +
   'schoolbus ambulance garbage beetle cabrio sports muscle offroad parcel bakery icecream oldtimer limo firetruck').split(' ');
+// Normale Autos ohne echtes 3D-Modell: im Verkehr durch echte Autos ersetzt (Spezialfahrzeuge wie Feuerwehr, Müllauto, Postauto bleiben)
+const SWAP = new Set(['taxi', 'van', 'pickup', 'beetle', 'cabrio']);
 const COLORS = ['#c0392b', '#2563eb', '#f4f4f4', '#22232b', '#9aa0aa', '#16a34a', '#f59e0b', '#7c3aed', '#0e7490', '#b45309'];
 
 const node = i => (i - N / 2) * BLOCK;
@@ -1698,8 +1700,9 @@ function prewarm() {
 // Bot-Autos werfen keinen echten Schatten (der weiche Schatten darunter reicht): spart viel Arbeit pro Bild
 const noShadow = m => m.traverse(o => { o.castShadow = false; });
 function makeCar(kinds, i, j, d, s, given = null) {
-  const kind = POOL[Math.floor(Math.random() * POOL.length)];
-  const v = given || { kind, color: kinds[kind].color || COLORS[Math.floor(Math.random() * COLORS.length)], special: null };
+  let kind = POOL[Math.floor(Math.random() * POOL.length)];
+  if (SWAP.has(kind) && !hasModel(kind)) { const real = POOL.filter(hasModel); if (real.length) kind = real[Math.floor(Math.random() * real.length)]; } // normale Autos: nur echte Modelle
+  const v = given || { kind, color: kinds[kind].color || COLORS[Math.floor(Math.random() * COLORS.length)], special: null, seed: Math.floor(Math.random() * 1e6) };
   const mesh = buildCar(v, kinds);
   noShadow(mesh);
   return { v, mesh, i, j, d, s, speed: 6 + Math.random() * 4, cruise: 10 + Math.random() * 4, turn: null,

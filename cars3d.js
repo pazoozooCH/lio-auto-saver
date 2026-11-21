@@ -1644,9 +1644,24 @@ export const MODELS = [
   { file: 'models/cadillac_xt6.glb', len: 5.05, kinds: ['ecar'], forward: '+z', paint: /^Paint_Color$/, credit: '„Cadillac XT6 Luxury 2023 (free)“ von 3dShowroom, CC BY 4.0' },
   { file: 'models/police_charger.glb', len: 5.1, kinds: ['police'], forward: '+z', blink: /^emergrx$/, credit: '„Dodge Charger SRT (Police)“ von temich, CC BY-NC 4.0' }, // eigene Polizei-Bemalung, Blaulicht blinkt
   { file: 'models/urus.glb', len: 5.11, kinds: ['pickupxl'], forward: '+z', paint: /2018Paint_Material$/, credit: '„2019 Lamborghini Urus“ von Ddiaz Design, CC BY-NC-SA 4.0' },
+  { file: 'models/mansory_rr.glb', len: 4.9, kinds: ['luxsuv'], forward: '+z', paint: /^CarPaint_1$/, credit: '„2016 Mansory Range Rover Sport SVR“ von Ddiaz Design, CC BY-NC-SA 4.0' },
+  { file: 'models/trackhawk.glb', len: 4.89, kinds: ['jeep'], forward: '+z', paint: /2018Paint_Material$/, credit: '„2018 Jeep Grand Cherokee Trackhawk“ von Ddiaz Design, CC BY-NC-SA 4.0' },
+  { file: 'models/e63_wagon.glb', len: 4.99, kinds: ['kombi'], forward: '+z', paint: /^CAR_PAINT$/, credit: '„2018 Mercedes-Benz E63 AMG S Wagon“ von SINNIK, CC BY 4.0' },
+  { file: 'models/porsche_gt3rs.glb', len: 4.57, kinds: ['sports'], forward: '+z', paint: /carPaint\.003$/, credit: '„Porsche GT3 RS“ von Black Snow, CC BY 4.0' },
+  { file: 'models/tiguan_x.glb', len: 4.7, kinds: ['car'], forward: '+z', paint: /^carpaint_[12]$/, credit: '„2021 Volkswagen Tiguan X 380 TSI“ von Ddiaz Design, CC BY-NC-SA 4.0' },
+  { file: 'models/tiguan_2024.glb', len: 4.54, kinds: ['ecar'], forward: '+z', paint: /^body$/, credit: '„2024 Volkswagen Tiguan“ von BloxBloger, CC BY-NC 4.0' },
+  { file: 'models/sls_amg.glb', len: 4.64, kinds: ['muscle'], forward: '+z', paint: /^Carpaint\.007$/, credit: '„2010 Mercedes SLS AMG“ von Dave Love, CC BY 4.0' },
+  { file: 'models/bmw_x2.glb', len: 4.36, kinds: ['hatch'], forward: '+z', paint: /^carPaint$/, credit: '„2019 BMW X2 xDrive20d M Sport X“ von Ddiaz Design, CC BY-NC-SA 4.0' },
+  { file: 'models/lotus_exige.glb', len: 4.08, kinds: ['smart'], forward: '+z', paint: /^CAR_chassis\.5$/, credit: '„AC – Lotus Exige 240 (free)“ von David & 3D (Sketchfab Standard)' },
+  { file: 'models/jeep_renegade.glb', len: 4.26, kinds: ['mini'], forward: '+z', credit: '„Jeep Renegade 2016“ von Jose Bronze, CC BY 4.0' },
+  { file: 'models/mclaren_p1.glb', len: 4.59, kinds: ['formula'], forward: '+z', paint: /^Carpaint$/, credit: '„McLaren P1“ von vecarz, CC BY 4.0' },
+  { file: 'models/ambulance.glb', len: 6.0, kinds: ['ambulance'], forward: '-x', beacons: true, eyeX: 1.2, eyeY: 1.65, credit: '„Rettungswagen (Krankenwagen / Ambulance)“ von GRIP420, CC BY 4.0' }, // Blaulichter aufs Dach
   { file: 'models/golf_gti.glb', len: 4.27, kinds: ['kompakt'], forward: '+z', paint: /^Carpaint$/, credit: '„VW Golf GTi MK7“ von vecarz, CC BY-NC 4.0' },
 ];
-const modelOf = new Map(); // Typ → fertig vorbereitetes Modell
+const modelOf = new Map(); // Typ → fertig vorbereitete Modelle (mehrere = Varianten, je Fahrzeug fest gewählt)
+export const hasModel = kind => modelOf.has(kind);
+const seedOf = v => { const s = String(v.id || v.seed || ''); let h = 7; for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) >>> 0; return h; };
+const modelFor = v => { const L = modelOf.get(v.kind); return L ? L[seedOf(v) % L.length] : null; };
 let modelsLoading = null;
 export function loadCarModels() {
   if (modelsLoading) return modelsLoading;
@@ -1654,13 +1669,11 @@ export function loadCarModels() {
     let GLTFLoader;
     try { ({ GLTFLoader } = await import('three/examples/jsm/loaders/GLTFLoader.js')); } catch (e) { return false; }
     const loader = new GLTFLoader();
-    await Promise.all(MODELS.map(async M => {
-      try {
-        const g = await loader.loadAsync(M.file);
-        const prep = prepareModel(g.scene, M);
-        for (const k of M.kinds) { modelOf.set(k, prep); for (const key of [...templates.keys()]) if (key.startsWith(k + '|')) templates.delete(key); }
-      } catch (e) { console.warn('Automodell fehlt:', M.file, e); }
+    const preps = await Promise.all(MODELS.map(async M => {
+      try { return prepareModel((await loader.loadAsync(M.file)).scene, M); } catch (e) { console.warn('Automodell fehlt:', M.file, e); return null; }
     }));
+    MODELS.forEach((M, i) => { if (preps[i]) for (const k of M.kinds) { if (!modelOf.has(k)) modelOf.set(k, []); modelOf.get(k).push(preps[i]); } }); // Reihenfolge wie in MODELS
+    for (const k of modelOf.keys()) for (const key of [...templates.keys()]) if (key.startsWith(k + '|')) templates.delete(key);
     return true;
   })();
   return modelsLoading;
@@ -1756,7 +1769,7 @@ function prepareModel(scene, M) {
       m.needsUpdate = true;
     }
   });
-  return { holder, length: size.x, height: size.y, paint, paints, wheels: M.wheels, tris: Math.round(tris), credit: M.credit, len: M.len, eye: modelEye(holder, size), eyeX: M.eyeX, eyeY: M.eyeY };
+  return { holder, length: size.x, height: size.y, paint, paints, wheels: M.wheels, tris: Math.round(tris), credit: M.credit, len: M.len, eye: modelEye(holder, size), eyeX: M.eyeX, eyeY: M.eyeY, beacons: M.beacons };
 }
 // Augen des Fahrers im Modell (Fahrersitz-Kamera): knapp hinter der Oberkante der Frontscheibe, etwas unter dem Dach, links
 function modelEye(holder, size) {
@@ -1810,13 +1823,14 @@ export function buildCar(v, kinds, hDiv) {
   if (kinds && kinds[v.kind] && kinds[v.kind].retired) v = { ...v, kind: kinds[v.kind].retired }; // altes Fantasie-Fahrzeug: echtes Auto zeigen
   const tune = v.tune || {};
   const orig = modelOf.has(v.kind) && !isPainted(v); // echtes Modell, nicht gespritzt: Originalfarbe des Modells
-  const key = [v.kind, v.special || '', COLOR_KINDS.has(v.kind) ? v.color || '' : '', hDiv || '', JSON.stringify(tune), orig ? 'orig' : ''].join('|');
+  const MV = modelFor(v), mvi = MV ? modelOf.get(v.kind).indexOf(MV) : -1; // welches echte Modell (Variante)
+  const key = [v.kind, v.special || '', COLOR_KINDS.has(v.kind) ? v.color || '' : '', hDiv || '', JSON.stringify(tune), orig ? 'orig' : '', mvi].join('|');
   let t = templates.get(key);
   if (!t) {
     if (templates.size > 150) templates.clear();
     const C = kit(v, kinds, hDiv, BUILD[v.kind] ? SPEC_HINT[v.kind] || {} : {});
     (BUILD[v.kind] || BUILD.car)(C);
-    const MP = modelOf.get(v.kind);
+    const MP = MV;
     let farProc = null, farPaint = null;
     if (MP && MP.len) C.L = MP.len; // echte Länge des Autos (auch für Zusammenstösse)
     if (MP) { // echtes 3D-Modell statt der eigenen Form; weit weg genügt die einfache Fassung der eigenen Form
@@ -1824,6 +1838,10 @@ export function buildCar(v, kinds, hDiv) {
       mergeStatic(C.body);
       farPaint = C.paint; farProc = makeFar(C.group, C.paint);
       const pm = useModel(C, MP);
+      if (MP.beacons) { // Blaulichter auf dem Dach (blinken über animateCar)
+        const sc = C.L / MP.length, y = MP.height * sc + 0.06;
+        for (const s of [-1, 1]) { const l = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.14, 0.34), new THREE.MeshStandardMaterial({ color: 0x0b1a40, emissive: 0x2f6bff, emissiveIntensity: 0 })); l.position.set(C.L * 0.36, y, s * 0.42); l.userData.blink = s; C.group.getObjectByName('body').add(l); }
+      }
       if (MP.eye) { const sc = C.L / MP.length; C.eye = MP.eye.map(n => n * sc); if (MP.eyeX !== undefined) C.eye[0] = MP.eyeX; if (MP.eyeY !== undefined) C.eye[1] = MP.eyeY; }
       if (pm && orig) C.paint = pm; // Originalfarbe: Lack bleibt, wie er ist
       else if (pm) { // gespritzt: alle Lack-Teile in der Wagenfarbe (Bild grau, damit die Farbe stimmt)
