@@ -190,7 +190,7 @@ curl -X DELETE -H "Authorization: Bearer $TOKEN"         "$DB/reviewers/<uid>.js
 curl -X DELETE -H "Authorization: Bearer $TOKEN"         "$DB/reviewKeys/<Code>.json"     # Code ungültig machen
 ```
 
-Gross-/Kleinschreibung zählt beim Review-Code. Findings liegen unter `review/findings`; Claude liest sie mit
+Review-Code **kleingeschrieben** anlegen (die Eingabe wird in Kleinbuchstaben umgewandelt). Findings liegen unter `review/findings`; Claude liest sie mit
 `node tools/findings.mjs` (Code in `.review-code`, beides gitignored) und markiert sie mit `done <id> "Antwort"` als erledigt.
 Wenn das Spiel neu installiert oder der Browser-Speicher gelöscht wird, braucht das Gerät den Code nochmals.
 

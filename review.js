@@ -43,6 +43,25 @@ const CSS = `
 
 let R = null; // offene Review-Seite
 
+// Eigenes Eingabefeld statt window.prompt (das wird in installierten Web-Apps, im Vollbild und in eingebetteten Browsern oft still unterdrückt)
+function askCode() {
+  return new Promise(done => {
+    const d = document.createElement('div');
+    d.style.cssText = 'position:fixed;inset:0;z-index:90;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,.55)';
+    d.innerHTML = '<form style="background:#161b26;padding:14px;border-radius:12px;display:flex;gap:8px;font:16px system-ui">' +
+      '<input type="text" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" maxlength="64" placeholder="Code" ' +
+      'style="font-size:18px;padding:8px;border-radius:8px;border:1px solid #374151;background:#0b0e15;color:#fff;width:150px">' +
+      '<button style="font-size:18px;padding:8px 12px;border-radius:8px;border:0;background:#f59e0b">OK</button>' +
+      '<button type="button" style="font-size:18px;padding:8px 12px;border-radius:8px;border:0;background:#374151;color:#fff">✕</button></form>';
+    const inp = d.querySelector('input'), end = v => { d.remove(); done(v); };
+    d.querySelector('form').addEventListener('submit', e => { e.preventDefault(); end(inp.value); });
+    d.querySelector('button[type=button]').addEventListener('click', () => end(''));
+    d.addEventListener('pointerdown', e => { if (e.target === d) end(''); });
+    for (const ev of ['pointerdown', 'pointerup', 'keydown', 'keyup', 'touchstart']) d.addEventListener(ev, e => e.stopPropagation()); // Spiel bekommt nichts mit
+    document.body.appendChild(d); setTimeout(() => inp.focus(), 50);
+  });
+}
+
 // Zugang prüfen: Gerät schon freigeschaltet? Sonst Code abfragen. Falsch/abgebrochen/offline = still nichts tun.
 export async function tryOpenReview(api) {
   if (R) return;
@@ -52,7 +71,7 @@ export async function tryOpenReview(api) {
   let ok = false;
   try { ok = (await fb.get(me)).exists(); } catch (e) { ok = false; }
   if (!ok) {
-    const code = (window.prompt('Code:') || '').trim();
+    const code = (await askCode()).trim().toLowerCase();
     if (!code) return;
     const name = (/iPhone|iPad/.test(navigator.userAgent) ? 'iPhone' : /Android/.test(navigator.userAgent) ? 'Android' : 'PC') + ' ' + new Date().toLocaleDateString('de-CH');
     try { await fb.set(me, { code, name, t: fb.serverTimestamp() }); ok = true; } catch (e) { ok = false; }
