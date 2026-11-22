@@ -207,6 +207,11 @@ Browser-Spiel ohne Build: `index.html` + `game.js` (Spiellogik, Menüs und 2D-Ze
   `cityDealer.junkBuild` in game.js). Spielstand `autoRetterJunk`. Eigenbau-Fahrzeuge in `KINDS` mit `junk: true`, `secret`
   (nicht im Shop, nicht verkaufbar), Seltenheit `eigenbau`; zuerst ein Typ, den man noch nicht hat; jedes mit eigener Farbe →
   eigenes Flickenmuster (`special: 'junk'`, `junkTexture` in cars3d.js; 3D: Grundform + `junkExtras`). Fertig steht es bei `BUILT`.
+- `review.js`: Review-Seite für Lionel (3× auf „Ersteller: LIONEL“, `reviewTap` in game.js; nur freigeschaltete Geräte,
+  beim ersten Mal Code-Abfrage → `reviewers/<uid>`): alle Autos in 3D, Blinker/Warnblinker/Nacht/Bremse, Delle/Reparieren,
+  Motor mit Drehzahl-Regler, Kamera vorne/hinten/Seite/Fahrersitz; Findings nach `review/findings`.
+  **Findings lesen:** `node tools/findings.mjs` (offene), `--all`, `done <id> "Antwort"` nach dem Beheben.
+- `carlamps.js`: Lichter (`makeLamps`/`setLamps`/`removeLamps`) und Beulen (`dentAt`/`dropDents`) der Autos, für city.js und review.js.
 - `world3d.js`: Baukasten für die Landschaften (Rauschen, Oberflächen mit Relief, Gelände, Wolken, Staub, Lichtstrahlen).
 Texte im Spiel sind Deutsch (Schweizer Schreibweise, kein ß).
 

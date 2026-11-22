@@ -44,6 +44,7 @@ async function connect() {
   return fb;
 }
 const serverNow = () => Date.now() + (fb ? fb.offset : 0);
+export const connectFirebase = connect; // für die Review-Seite (review.js)
 
 // ---------- Besucherzähler ----------
 // Ohne persönliche Daten: jedes Gerät zählt einmal (stats/devices) und höchstens einmal pro Tag (stats/days/<Datum>).

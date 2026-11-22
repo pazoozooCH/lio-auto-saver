@@ -6,3 +6,7 @@ _site/
 .claude/settings.local.json
 
 __pycache__/
+
+# Review-Seite: Code und Geräte-Anmeldung des Lese-Skripts (nie ins Repo)
+.review-code
+.review-device.json

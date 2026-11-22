@@ -179,6 +179,21 @@ Erlaubte Zeichen: Buchstaben, Ziffern und `-` (kein `.`, `#`, `$`, `[`, `]`, `/`
 Wer den Schlüssel kennt, gibt ihn im Spiel einmal unter „Raum erstellen“ ein, das Spiel merkt ihn sich.
 Zum Beitreten reicht der Raum-Code.
 
+**Review-Seite** (nur Lionels Geräte, `review.js`): Im Startbild 3× schnell auf „Ersteller: LIONEL“ tippen.
+Beim ersten Mal fragt das Gerät nach dem Review-Code. Richtig → das Gerät ist für immer freigeschaltet
+(`reviewers/<uid>`), falsch → es passiert einfach nichts. Code anlegen (wie Freundes-Schlüssel, nie ins Repository):
+
+```bash
+curl -X PUT    -H "Authorization: Bearer $TOKEN" -d true "$DB/reviewKeys/<Code>.json"     # Code anlegen
+curl           -H "Authorization: Bearer $TOKEN"         "$DB/reviewers.json"             # freigeschaltete Geräte
+curl -X DELETE -H "Authorization: Bearer $TOKEN"         "$DB/reviewers/<uid>.json"       # Gerät sperren
+curl -X DELETE -H "Authorization: Bearer $TOKEN"         "$DB/reviewKeys/<Code>.json"     # Code ungültig machen
+```
+
+Gross-/Kleinschreibung zählt beim Review-Code. Findings liegen unter `review/findings`; Claude liest sie mit
+`node tools/findings.mjs` (Code in `.review-code`, beides gitignored) und markiert sie mit `done <id> "Antwort"` als erledigt.
+Wenn das Spiel neu installiert oder der Browser-Speicher gelöscht wird, braucht das Gerät den Code nochmals.
+
 **Räume anzeigen oder alle löschen** (normalerweise nicht nötig, Räume räumen sich selbst auf):
 
 ```bash
@@ -194,6 +209,8 @@ Die Regeln in `database.rules.json` sorgen dafür:
   Die Raumliste unter `rooms/` ist nicht abrufbar, man sieht nur einen Raum, dessen Code man kennt.
   Lesbar für alle ist nur `public/` mit den freiwillig öffentlichen Räumen (Art, Gastgeber-Name, Spielerzahl).
   Eintragen darf dort nur der Gastgeber des Raums. Einträge ohne Raum darf jeder löschen.
+- Review-Seite und Findings: lesen und schreiben nur freigeschaltete Geräte (`reviewers/<uid>`, nur mit gültigem
+  Review-Code aus `reviewKeys/`, der selbst nicht lesbar ist).
 - Räume erstellen nur mit gültigem Freundes-Schlüssel. Die Schlüssel selbst sind nicht lesbar.
 - Jeder schreibt nur seinen eigenen Platz (`uid`). Start und Runde setzt nur der Gastgeber.
 - Nur bekannte Felder mit geprüften Typen und Grössen (z.B. Name 1–16 Zeichen),
