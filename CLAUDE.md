@@ -153,6 +153,8 @@ Browser-Spiel ohne Build: `index.html` + `game.js` (Spiellogik, Menüs und 2D-Ze
   (`__cityS().scene.traverse`), Bildzeiten per requestAnimationFrame (Tab vorne).
   `prepareModel` fasst je Material zusammen: gespiegelte Teile umdrehen (`flipWinding`), alle Werte als Float32, Bilder nur
   UV-Lage 0 (`uv1` fällt weg, sonst Shader-Fehler = unsichtbare Teile), Ecken-Farben aus (`vertexColors`, sonst schwarz), mit Index zusammengefasst (Ecken geteilt, viel weniger Speicher als ohne Index), Teile ohne Bilder ohne UV, Normalen als Int8 (`packNormals`; `dentAt` macht sie vor dem Neu-Rechnen wieder genau); Räder als Kopie (Datei-Puffer wird frei).
+  Lampen nur aufgemalt (eine Textur für alles, z. B. BMW X4): `lampTex` (Material, Farben dort suchen, nur nach vorne/hinten
+  schauende Flächen, Lack nie) und `lampBox` (wo die Lampe sitzt, Bruchteile fy/fz, wenn die Farbe nicht reicht, z. B. dunkles Glas).
   Fehlt metalness im Modell (glTF = 1), wird sie auf 0,25 gesetzt (sonst schwarz). Fahrersitz-Kamera: `modelEye` (hinter der
   Oberkante der Frontscheibe, Dach nur in der Mitte gesucht), sonst `eyeX`/`eyeY` in MODELS. Lichter nach Material-Namen
   (`LAMP_RE`) in `MODEL_LAMPS`, leuchten nachts (city.js); `blink` = Blaulicht (Polizei: Dodge Charger mit eigener Bemalung).
@@ -207,7 +209,7 @@ Browser-Spiel ohne Build: `index.html` + `game.js` (Spiellogik, Menüs und 2D-Ze
   `cityDealer.junkBuild` in game.js). Spielstand `autoRetterJunk`. Eigenbau-Fahrzeuge in `KINDS` mit `junk: true`, `secret`
   (nicht im Shop, nicht verkaufbar), Seltenheit `eigenbau`; zuerst ein Typ, den man noch nicht hat; jedes mit eigener Farbe →
   eigenes Flickenmuster (`special: 'junk'`, `junkTexture` in cars3d.js; 3D: Grundform + `junkExtras`). Fertig steht es bei `BUILT`.
-- `review.js`: Review-Seite für Lionel (3× auf „Ersteller: LIONEL“, `reviewTap` in game.js; nur freigeschaltete Geräte,
+- `review.js` (öffnen setzt `state = 'review'`: Presse/Ton stehen still; Tippfläche gross für das Handy): Review-Seite für Lionel (3× auf „Ersteller: LIONEL“, `reviewTap` in game.js; nur freigeschaltete Geräte,
   beim ersten Mal Code-Abfrage → `reviewers/<uid>`): alle Autos in 3D, Blinker/Warnblinker/Nacht/Bremse, Delle/Reparieren,
   Motor mit Drehzahl-Regler, Kamera vorne/hinten/Seite/Fahrersitz; Findings nach `review/findings`. Technik je Auto (`carStats`:
   Dreiecke, Teile, Bilder, Grafikspeicher, Dateigrösse PC/Handy per HEAD, Masse, Lampen, Ton) und 📊 Tabelle aller echten Autos (sortierbar).

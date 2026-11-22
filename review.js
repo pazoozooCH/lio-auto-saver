@@ -149,6 +149,7 @@ export async function openReview(api, fb) { // ohne Freischaltung zeigt sie nur 
       </div>
     </div>`;
   document.body.appendChild(root);
+  api.onOpen && api.onOpen();
   const $ = s => root.querySelector(s), msg = t => { $('.rmsg').textContent = t; };
   msg('⏳ Autos werden geladen …');
   await loadCarModels();

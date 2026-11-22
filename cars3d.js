@@ -1614,7 +1614,7 @@ for (const [k, base] of Object.entries(JUNK_BASE)) BUILD[k] = C => { BUILD[base]
 // paint = Name(n) der Lack-Materialien (werden in der Wagenfarbe eingefärbt), hide = Materialien weglassen, opaque = fälschlich durchsichtige Materialien, blink = Blaulicht, eyeX/eyeY = Augen des Fahrers (m, wenn die Schätzung in modelEye nicht passt), credit = Ersteller (Lizenz CC BY verlangt das).
 // Solange ein Modell noch nicht geladen ist (oder fehlt), zeichnet buildCar das eigene Auto.
 export const MODELS = [
-  { file: 'models/lowpoly_generic_suv.glb', len: 4.75, kinds: ['offroad'], forward: '+z', wheels: /^Wheel_/i, drop: /^Shadow/i, paint: /^Body$/i,
+  { file: 'models/lowpoly_generic_suv.glb', len: 4.75, kinds: ['offroad'], forward: '+z', wheels: /^Wheel_/i, drop: /^Shadow/i, paint: /^Body$/i, lampTex: /^Texture$/, lampBox: { head: { fy: [0.4, 0.62], fz: [0.28, 0.86] } },
     credit: '„Lowpoly Generic SUV“ von mk2design (sketchfab.com/mk2design), CC BY 4.0' },
   // verkleinert mit glTF-Transform (Innenraum, Motor, Fahrwerk weg; 167'000 → 33'500 Dreiecke)
   { file: 'models/mmc_generic_small_suv.glb', len: 4.4, kinds: ['minivan'], forward: '+z', wheels: /^(wheel|tire-low|brake-disc)-(fl|fr|rl|rr)$/i, paint: /^body$/i,
@@ -1796,7 +1796,7 @@ function prepareModel(scene, M) {
       m.needsUpdate = true;
     }
   });
-  return { holder, length: size.x, height: size.y, paint, paints, wheels: M.wheels, tris: Math.round(tris), credit: M.credit, len: M.len, eye: modelEye(holder, size), eyeX: M.eyeX, eyeY: M.eyeY, beacons: M.beacons, ...lampsWithShapes(holder, size) };
+  return { holder, length: size.x, height: size.y, paint, paints, wheels: M.wheels, tris: Math.round(tris), credit: M.credit, len: M.len, eye: modelEye(holder, size), eyeX: M.eyeX, eyeY: M.eyeY, beacons: M.beacons, ...lampsWithShapes(holder, size, M) };
 }
 // Wo sitzen die Lampen dieses Modells? Aus den Teilen mit Lampen-Materialien (Scheinwerfer, Rücklichter, Lampenglas):
 // je Ecke (vorne/hinten, links = −z / rechts = +z) die Mitte der vordersten/hintersten Lampenteile = Scheinwerfer bzw. Rück- und
@@ -1819,27 +1819,39 @@ function lampKindOf(r, g, b) { // 0…1 Farben → 'amber' | 'red' | 'white' | n
   if (s < 0.22 && mx > 0.55) return 'white';
   return null;
 }
-function lampsWithShapes(holder, size) {
+function lampsWithShapes(holder, size, M = {}) {
   let lamps = modelLamps(holder, size); const Lh = size.x / 2;
   const B = { head: [[], []], tail: [[], []], blinkF: [[], []], blinkR: [[], []] }, a = new THREE.Vector3(), b = new THREE.Vector3(), c = new THREE.Vector3();
+  // lampBox (MODELS): wo eine aufgemalte Lampe sitzt, in Bruchteilen (fy 0 = Boden … 1 = Dach, fz 0 = Mitte … 1 = Seite), wenn die Farbe nicht reicht
+  const LB = M.lampBox || {}, y0 = new THREE.Box3().setFromObject(holder, true).min.y;
+  const inBox = (k, cy, cz) => { const q = LB[k]; if (!q) return false; const fy = (cy - y0) / size.y, fz = Math.abs(cz) / (size.z / 2); return fy >= q.fy[0] && fy <= q.fy[1] && fz >= q.fz[0] && fz <= q.fz[1]; };
   holder.traverse(o => {
     if (!o.isMesh || !o.name.startsWith('part:')) return;
-    const m = o.material, nm = m.name || ''; if (!LAMP_POS_RE.test(nm) || LAMP_POS_NOT.test(nm)) return;
+    const m = o.material, nm = m.name || '', atlas = M.lampTex && M.lampTex.test(nm) && m.map; // atlas: Lampen nur aufgemalt (eine Textur für alles)
+    if (!atlas && (!LAMP_POS_RE.test(nm) || LAMP_POS_NOT.test(nm))) return;
+    if (atlas && M.paint && M.paint.test(nm)) return; // Lack ist nie eine Lampe (ein rotes Auto hätte sonst ein leuchtendes Heck)
     const pos = o.geometry.attributes.position, uv = o.geometry.attributes.uv, ix = o.geometry.index, td = m.map ? texData(m.map) : null, mc = m.color || new THREE.Color(1, 1, 1);
     const n = ix ? ix.count : pos.count;
     for (let t = 0; t < n; t += 3) {
       const i0 = ix ? ix.getX(t) : t, i1 = ix ? ix.getX(t + 1) : t + 1, i2 = ix ? ix.getX(t + 2) : t + 2;
       a.fromBufferAttribute(pos, i0); b.fromBufferAttribute(pos, i1); c.fromBufferAttribute(pos, i2);
-      const cx = (a.x + b.x + c.x) / 3, cz = (a.z + b.z + c.z) / 3; if (Math.abs(cx) < Lh * 0.45) continue;
+      const cx = (a.x + b.x + c.x) / 3, cz = (a.z + b.z + c.z) / 3; if (Math.abs(cx) < Lh * (atlas ? 0.72 : 0.45)) continue;
+      if (atlas) { // nur Flächen, die nach vorne bzw. hinten schauen (sonst zählt jedes helle Stück Blech)
+        const nx = (b.y - a.y) * (c.z - a.z) - (b.z - a.z) * (c.y - a.y), ny = (b.z - a.z) * (c.x - a.x) - (b.x - a.x) * (c.z - a.z), nz = (b.x - a.x) * (c.y - a.y) - (b.y - a.y) * (c.x - a.x);
+        const nl = Math.hypot(nx, ny, nz) || 1; if (nx / nl * Math.sign(cx) < 0.35) continue;
+      }
       let r = mc.r, g = mc.g, bl = mc.b;
       if (td && uv) {
         const u = (uv.getX(i0) + uv.getX(i1) + uv.getX(i2)) / 3, w = (uv.getY(i0) + uv.getY(i1) + uv.getY(i2)) / 3;
         const x = Math.max(0, Math.min(td.w - 1, Math.floor((((u % 1) + 1) % 1) * td.w))), y = Math.max(0, Math.min(td.h - 1, Math.floor((((w % 1) + 1) % 1) * td.h)));
         const k = (y * td.w + x) * 4; r *= td.px[k] / 255; g *= td.px[k + 1] / 255; bl *= td.px[k + 2] / 255;
       }
-      const kind = lampKindOf(r, g, bl); if (!kind) continue;
-      const front = cx > 0, side = cz < 0 ? 0 : 1;
-      const key = kind === 'amber' ? (front ? 'blinkF' : 'blinkR') : kind === 'red' ? (front ? null : 'tail') : (front ? 'head' : null);
+      const front = cx > 0, side = cz < 0 ? 0 : 1, cy = (a.y + b.y + c.y) / 3;
+      const boxed = atlas && ['head', 'tail', 'blinkF', 'blinkR'].find(k => (k === 'head' || k === 'blinkF') === front && inBox(k, cy, cz));
+      if (boxed) { B[boxed][side].push(a.x, a.y, a.z, b.x, b.y, b.z, c.x, c.y, c.z); continue; }
+      const kind = lampKindOf(r, g, bl); if (!kind || (atlas && kind === 'white' && Math.max(r, g, bl) < 0.8)) continue;
+      let key = kind === 'amber' ? (front ? 'blinkF' : 'blinkR') : kind === 'red' ? (front ? null : 'tail') : (front ? 'head' : null);
+      if (key && LB[key]) key = null; // dafür gilt die Box
       if (key) B[key][side].push(a.x, a.y, a.z, b.x, b.y, b.z, c.x, c.y, c.z);
     }
   });

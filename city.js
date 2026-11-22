@@ -1696,11 +1696,14 @@ function prewarm() {
     if (!o.visible) { shown.push(o); o.visible = true; }
     if (o.frustumCulled) { culled.push(o); o.frustumCulled = false; }
   });
-  const rt = new THREE.WebGLRenderTarget(64, 64);
-  S.renderer.setRenderTarget(rt);
-  S.renderer.render(S.scene, S.camera);
-  S.renderer.setRenderTarget(null);
-  rt.dispose();
+  if (MOBILE) S.renderer.compile(S.scene, S.camera); // Handy: nur die Shader übersetzen. Alles auf einmal zeichnen (über 12 Mio. Dreiecke, alle Bilder
+  else { //   auf die Grafikkarte) liess das iPhone abstürzen = Seite lädt neu, man fliegt sofort aus der Stadt
+    const rt = new THREE.WebGLRenderTarget(64, 64);
+    S.renderer.setRenderTarget(rt);
+    S.renderer.render(S.scene, S.camera);
+    S.renderer.setRenderTarget(null);
+    rt.dispose();
+  }
   for (const o of shown) o.visible = false;
   for (const o of culled) o.frustumCulled = true;
 }

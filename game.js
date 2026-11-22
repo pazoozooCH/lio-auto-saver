@@ -4763,7 +4763,8 @@ function reviewTap() {
   reviewTaps.push(time);
   if (reviewTaps.length < 3) return;
   reviewTaps = [];
-  import('./review.js').then(m => m.tryOpenReview({ kinds: KINDS, modelKinds: MODEL_KINDS, name: vehicleName, version: versionText() })).catch(() => {});
+  import('./review.js').then(m => m.tryOpenReview({ kinds: KINDS, modelKinds: MODEL_KINDS, name: vehicleName, version: versionText(),
+    onOpen: () => { state = 'review'; }, onClose: () => { state = 'title'; lastTime = performance.now(); } })).catch(() => {}); // Presse steht still (kein Ton)
 }
 
 // Alles auf Anfang: 4 Startautos, keine Münzen, kein Rekord
@@ -4906,7 +4907,7 @@ canvas.addEventListener('pointerdown', e => {
       if (inRect(px, py, QUIT_BTN)) quitApp();
       else if (appUpdate.info && inRect(px, py, UPDATE_BTN)) applyUpdate();
       else if (inRect(px, py, VERSION_AREA)) secretTap();
-      else if (inRect(px, py, { x: W - 160, y: creditsY() - 4, w: 156, h: 20 })) reviewTap();
+      else if (inRect(px, py, { x: W - 210, y: creditsY() - 12, w: 210, h: 52 })) reviewTap(); // gross, damit es auf dem Handy gut trifft (beide Namen)
       else if (inRect(px, py, RACE_BTN)) openMenu('racemenu');
       else if (inRect(px, py, DRAG_BTN)) openDragMenu();
       else if (inRect(px, py, ONLINE_BTN)) openOnline();
@@ -4967,7 +4968,7 @@ let lastTime = performance.now();
 function frame(now) {
   const dt = Math.min(0.05, (now - lastTime) / 1000);
   lastTime = now;
-  if (!['race', 'drag', 'online', 'city', 'stunt'].includes(state)) { // dort zeichnen race.js, drag.js, online.js, city.js bzw. stunt.js
+  if (!['race', 'drag', 'online', 'city', 'stunt', 'review'].includes(state)) { // dort zeichnen race.js, drag.js, online.js, city.js bzw. stunt.js (review: Spiel steht still)
     update(dt);
     if (photos) photos.work();
     draw();
