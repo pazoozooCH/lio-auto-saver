@@ -311,7 +311,52 @@ function carriageVoice(P, dest) {
 
 function makeVoice(kind, dest) {
   const P = soundOf(kind);
-  return ({ engine: engineVoice, electric: electricVoice, turbine: turbineVoice, rotor: rotorVoice, steam: steamVoice, carriage: carriageVoice })[P.type](P, dest);
+  const v = ({ engine: engineVoice, electric: electricVoice, turbine: turbineVoice, rotor: rotorVoice, steam: steamVoice, carriage: carriageVoice })[P.type](P, dest);
+  return SAMPLES[kind] && P.type === 'engine' ? recordedVoice(P, dest, SAMPLES[kind], v) : v;
+}
+
+// ---------- Echte Motor-Aufnahmen (freesound.org, Namen in der Danke-Zeile) ----------
+// Je Auto eine ruhige Leerlauf-Schleife und (wenn vorhanden) eine Schleife bei hoher Drehzahl (sounds/<typ>_idle.wav, _rev.wav).
+// Gespielt schneller oder langsamer je nach Drehzahl und von Leerlauf zu hoch überblendet; der nachgebaute Motor bleibt leise
+// darunter (für den Übergang und das Klepfen). rev = wie viel höher die hohe Schleife ist (gemessen, Verhältnis der Tonhöhe).
+const SAMPLES = {
+  coupe: { rev: 13.5 }, jeep: { rev: 2.05 }, muscle: {}, e63: {}, roadster: { rev: 2.83 }, car: {}, sports: {}, gt3rs: {},
+  supercar: { rev: 3.16 }, hyperev: { rev: 7.5 }, racer: { rev: 6.5 }, kombi: {}, luxsuv: {}, kompakt: { rev: 3.8 }, offroad: { rev: 7.9 },
+};
+const bufCache = new Map();
+function loadBuf(url) {
+  if (!bufCache.has(url)) bufCache.set(url, fetch(url).then(r => (r.ok ? r.arrayBuffer() : Promise.reject(new Error(url)))).then(b => A.ctx.decodeAudioData(b)).catch(() => null));
+  return bufCache.get(url);
+}
+export function preloadEngineSounds(kinds) { if (!setup()) return; for (const k of kinds) if (SAMPLES[k]) { loadBuf('sounds/' + k + '_idle.wav'); if (SAMPLES[k].rev) loadBuf('sounds/' + k + '_rev.wav'); } }
+function recordedVoice(P, dest, spec, synth) {
+  const { ctx } = A, kind = Object.keys(SAMPLES).find(k => SAMPLES[k] === spec);
+  const idleG = gain(0), revG = gain(0), out = gain(1); chain(idleG, out); chain(revG, out); chain(out, dest);
+  let idleS = null, revS = null, ready = false, stopped = false;
+  const revRpm = spec.rev ? Math.min(P.red * 0.8, Math.max(P.idle * 2, P.idle * spec.rev)) : 0;
+  const play = (buf, g) => { const s = ctx.createBufferSource(); s.buffer = buf; s.loop = true; s.connect(g); s.start(now(), Math.random() * buf.duration); return s; };
+  Promise.all([loadBuf('sounds/' + kind + '_idle.wav'), spec.rev ? loadBuf('sounds/' + kind + '_rev.wav') : null]).then(([bi, br]) => {
+    if (stopped || !bi) return;
+    idleS = play(bi, idleG); if (br) revS = play(br, revG); ready = true;
+  });
+  return {
+    pops: n => synth.pops && synth.pops(n),
+    set(frac, throttle, level, dt = 0.016) {
+      synth.set(frac, throttle, ready ? level * 0.3 : level, dt); // nachgebauter Motor leise darunter (Klepfen bleibt)
+      if (!ready) return;
+      const rpm = P.idle + (P.red - P.idle) * frac, tc = 0.05;
+      const w = revS ? Math.max(0, Math.min(1, (rpm - P.idle * 1.3) / (revRpm - P.idle * 1.3))) : 0, ws = w * w * (3 - 2 * w);
+      const vol = level * (0.55 + throttle * 0.45) * 1.1;
+      smooth(idleS.playbackRate, Math.max(0.6, Math.min(revS ? 2.2 : 3.2, rpm / P.idle)), tc);
+      smooth(idleG.gain, vol * (1 - ws), tc);
+      if (revS) { smooth(revS.playbackRate, Math.max(0.45, Math.min(1.8, rpm / revRpm)), tc); smooth(revG.gain, vol * ws, tc); }
+    },
+    stop() {
+      stopped = true; synth.stop();
+      out.gain.setTargetAtTime(0, now(), 0.05);
+      for (const s of [idleS, revS]) if (s) s.stop(now() + 0.4);
+    },
+  };
 }
 
 // Automatikgetriebe für den Klang: aus Tempo und Höchsttempo Gang und Drehzahl (0 = Leerlauf, 1 = Höchstdrehzahl).

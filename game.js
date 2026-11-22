@@ -2856,10 +2856,17 @@ function drawVersion() {
   ctx.textAlign = 'right';
   ctx.textBaseline = 'bottom';
   ctx.fillText(versionText(), W - 12, H - 8);
-  ctx.textAlign = 'left'; ctx.font = '11px system-ui, sans-serif'; ctx.globalAlpha = 0.7; // Danke: echte 3D-Automodelle (CC BY verlangt die Nennung)
-  ctx.fillText('3D-Automodelle von Sketchfab (Creative Commons): mk2design · MMC Works · NewViStudios · Ddiaz Design · Tiaan Pretorius ·', 12, H - 47);
-  ctx.fillText('SINNIK · Dave Love · David & 3D · Jose Bronze · GRIP420 · BloxBloger ·', 12, H - 34);
-  ctx.fillText('Outlaw Games · vecarz · Karol Miklas · Black Snow · jkazulyblanco · PROJECT CAR90 · Randomness · 3dShowroom · temich – danke! (Liste in cars3d.js, MODELS)', 12, H - 21); ctx.globalAlpha = 1;
+  // Danke (CC BY verlangt die Nennung): klein, automatisch umbrochen, unter den Knöpfen und links neben der Version
+  ctx.textAlign = 'left'; ctx.font = '9px system-ui, sans-serif'; ctx.globalAlpha = 0.65;
+  const credit = '3D-Automodelle von Sketchfab (Creative Commons): mk2design · MMC Works · NewViStudios · Ddiaz Design · Tiaan Pretorius · SINNIK · Dave Love · David & 3D · '
+    + 'Jose Bronze · GRIP420 · BloxBloger · Outlaw Games · vecarz · Karol Miklas · Black Snow · jkazulyblanco · PROJECT CAR90 · Randomness · 3dShowroom · temich. '
+    + 'Motorgeräusche von freesound.org: Andreabarata · Damsteegt · whillsway · marcelweiss · Quold · Robo9418 · mrpeet · FritzSounds · jtvdb · cheesepuff · '
+    + 'Jonas_Jocys · FFKoenigsegg20012017 · firefreak · EverydaySounds · ikbenraar – danke! (Listen in cars3d.js MODELS und sound.js)';
+  const lines = [], maxW = W - 270; let line = '';
+  for (const w of credit.split(' ')) { const t = line ? line + ' ' + w : w; if (ctx.measureText(t).width > maxW && line) { lines.push(line); line = w; } else line = t; }
+  if (line) lines.push(line);
+  lines.forEach((l, k) => ctx.fillText(l, 12, H - 8 - (lines.length - 1 - k) * 10));
+  ctx.globalAlpha = 1;
   if (appUpdate.info) { // neue Version gefunden: Knopf oben rechts
     const pulse = 1 + 0.04 * Math.sin(time * 5);
     ctx.save();
@@ -2917,7 +2924,7 @@ function drawQuit() {
 // auf dem Startbildschirm ein Update-Knopf; kommt man auf dem Startbildschirm in die App zurück, wird gleich aktualisiert.
 // APP_FILES: alle Dateien des Spiels (beim Hinzufügen einer Datei hier ergänzen).
 const APP_FILES = ['./', 'index.html', 'game.js', 'version.js', 'press3d.js', 'race.js', 'drag.js', 'cars3d.js', 'world3d.js',
-  'online.js', 'sound.js', 'city.js', 'tracks.js', 'stunt.js', 'netcars.js', 'chat.js', 'fx.js', 'viewer.js', 'photo.js', 'outskirts.js', 'country.js', 'moon.js', 'look.js', 'suburbs.js', 'island.js', 'monaco.js', 'junkyard.js', 'models/lowpoly_generic_suv.glb', 'models/mmc_generic_small_suv.glb', 'models/cullinan.glb', 'models/g_class.glb', 'models/ferrari_488.glb', 'models/lambo_revuelto.glb', 'models/laferrari.glb', 'models/porsche_gt2rs.glb', 'models/porsche_911_4s.glb', 'models/bmw_m4.glb', 'models/corvette_c8.glb', 'models/maybach.glb', 'models/audi_rs6.glb', 'models/audi_r8.glb', 'models/jesko.glb', 'models/koenigsegg_one1.glb', 'models/pagani_imola.glb', 'models/cayenne.glb', 'models/defender.glb', 'models/suburban.glb', 'models/express_van.glb', 'models/mclaren_765lt.glb', 'models/bugatti_tourbillon.glb', 'models/golf_gti.glb', 'models/cadillac_xt6.glb', 'models/police_charger.glb', 'models/urus.glb', 'models/mansory_rr.glb', 'models/trackhawk.glb', 'models/e63_wagon.glb', 'models/porsche_gt3rs.glb', 'models/tiguan_x.glb', 'models/tiguan_2024.glb', 'models/sls_amg.glb', 'models/bmw_x2.glb', 'models/lotus_exige.glb', 'models/jeep_renegade.glb', 'models/mclaren_p1.glb', 'models/ambulance.glb', 'models/bentley_gt.glb', 'models/skoda_kodiaq.glb', 'models/audi_q5.glb', 'manifest.webmanifest', 'icon-192.png', 'icon-512.png', 'apple-touch-icon.png', 'favicon.png'];
+  'online.js', 'sound.js', 'city.js', 'tracks.js', 'stunt.js', 'netcars.js', 'chat.js', 'fx.js', 'viewer.js', 'photo.js', 'outskirts.js', 'country.js', 'moon.js', 'look.js', 'suburbs.js', 'island.js', 'monaco.js', 'junkyard.js', 'models/lowpoly_generic_suv.glb', 'models/mmc_generic_small_suv.glb', 'models/cullinan.glb', 'models/g_class.glb', 'models/ferrari_488.glb', 'models/lambo_revuelto.glb', 'models/laferrari.glb', 'models/porsche_gt2rs.glb', 'models/porsche_911_4s.glb', 'models/bmw_m4.glb', 'models/corvette_c8.glb', 'models/maybach.glb', 'models/audi_rs6.glb', 'models/audi_r8.glb', 'models/jesko.glb', 'models/koenigsegg_one1.glb', 'models/pagani_imola.glb', 'models/cayenne.glb', 'models/defender.glb', 'models/suburban.glb', 'models/express_van.glb', 'models/mclaren_765lt.glb', 'models/bugatti_tourbillon.glb', 'models/golf_gti.glb', 'models/cadillac_xt6.glb', 'models/police_charger.glb', 'models/urus.glb', 'models/mansory_rr.glb', 'models/trackhawk.glb', 'models/e63_wagon.glb', 'models/porsche_gt3rs.glb', 'models/tiguan_x.glb', 'models/tiguan_2024.glb', 'models/sls_amg.glb', 'models/bmw_x2.glb', 'models/lotus_exige.glb', 'models/jeep_renegade.glb', 'models/mclaren_p1.glb', 'models/ambulance.glb', 'models/bentley_gt.glb', 'models/skoda_kodiaq.glb', 'models/audi_q5.glb', 'sounds/car_idle.wav', 'sounds/coupe_idle.wav', 'sounds/coupe_rev.wav', 'sounds/e63_idle.wav', 'sounds/gt3rs_idle.wav', 'sounds/hyperev_idle.wav', 'sounds/hyperev_rev.wav', 'sounds/jeep_idle.wav', 'sounds/jeep_rev.wav', 'sounds/kombi_idle.wav', 'sounds/kompakt_idle.wav', 'sounds/kompakt_rev.wav', 'sounds/luxsuv_idle.wav', 'sounds/muscle_idle.wav', 'sounds/offroad_idle.wav', 'sounds/offroad_rev.wav', 'sounds/racer_idle.wav', 'sounds/racer_rev.wav', 'sounds/roadster_idle.wav', 'sounds/roadster_rev.wav', 'sounds/sports_idle.wav', 'sounds/supercar_idle.wav', 'sounds/supercar_rev.wav', 'manifest.webmanifest', 'icon-192.png', 'icon-512.png', 'apple-touch-icon.png', 'favicon.png'];
 const UPDATE_BTN = { x: W - 262, y: 14, w: 248, h: 46 };
 const appUpdate = { info: null, busy: false, last: 0 };
 
