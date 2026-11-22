@@ -60,5 +60,5 @@ if (cmd === 'done' || cmd === 'answer') {
   const list = Object.entries(all).filter(([, f]) => cmd === '--all' || cmd === '--json' || f.status !== 'erledigt').sort((a, b) => a[1].t - b[1].t);
   if (cmd === '--json') console.log(JSON.stringify(Object.fromEntries(list), null, 1));
   else if (!list.length) console.log('Keine offenen Findings.');
-  else for (const [k, f] of list) console.log(`${k}  [${f.status}] ${new Date(f.t).toLocaleString('de-CH')}  ${f.kind} (${f.model})  ${f.topic}  v${f.version || '?'}\n   ${f.text}${f.answer ? '\n   → ' + f.answer : ''}`);
+  else for (const [k, f] of list) console.log(`${k}  [${f.status}] ${new Date(f.t).toLocaleString('de-CH')}  ${f.kind} (${f.model})  ${f.topic}  ${f.version || '?'}\n   ${f.text}${f.answer ? '\n   → ' + f.answer : ''}`);
 }
