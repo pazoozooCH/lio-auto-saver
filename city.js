@@ -1514,7 +1514,7 @@ function buildWorld() {
   scene.add(headlight, headlight.target);
   const headlight2 = MOBILE ? null : new THREE.SpotLight(0xfff2d6, 0, 70, 0.5, 0.5, 1.2);
   if (headlight2) scene.add(headlight2, headlight2.target);
-  const tailGlow = MOBILE ? null : new THREE.PointLight(0xff2a14, 0, 9, 2);
+  const tailGlow = MOBILE ? null : new THREE.PointLight(0xff2a14, 0, 5, 2);
   if (tailGlow) scene.add(tailGlow);
 
   // Ampeln: vor jeder Kreuzung rechts ein Mast; Lichter teilen sich je Richtung und Farbe ein Material
@@ -3284,10 +3284,12 @@ function stepCarLights(n, night) {
   city.blinkPhase = phase;
   const braking = driving && !!city.input.brake; // Bremspedal (auch im Stand)
   if (L) {
-    for (const s of L.head) s.material.opacity = driving ? night : 0;
-    L.tail.forEach(s => { s.material.opacity = driving ? Math.min(1, night * 0.55 + (braking ? 0.9 : 0)) : 0; s.scale.setScalar(braking ? 0.8 : 0.55); });
+    // Leuchtpunkte nur, wo das Modell keine echte Lampenform hat (sonst leuchtet die Lampe selbst; Punkte sassen oft daneben)
+    const has = (k, i) => !!(L.shapes[k] && L.shapes[k][i]);
+    L.head.forEach((s, i) => { s.material.opacity = driving && !has('head', i) ? night : 0; });
+    L.tail.forEach((s, i) => { s.material.opacity = driving && !has('tail', i) ? Math.min(1, night * 0.55 + (braking ? 0.9 : 0)) : 0; s.scale.setScalar(braking ? 0.8 : 0.55); });
     const on = side => phase && (city.blink === 'hazard' || city.blink === side);
-    [L.blinkF, L.blinkR].forEach(pair => pair.forEach((s, i) => { s.material.opacity = on(i ? 'right' : 'left') ? 1 : 0; }));
+    [['blinkF', L.blinkF], ['blinkR', L.blinkR]].forEach(([k, pair]) => pair.forEach((s, i) => { s.material.opacity = on(i ? 'right' : 'left') && !has(k, i) ? 1 : 0; }));
     // die echten Lampenformen: Scheinwerfer nachts, Rücklicht nachts schwach / beim Bremsen hell, Blinker im Takt
     const S2 = L.shapes, set = (a, v) => a.forEach(s => { if (s) s.material.opacity = v; });
     set(S2.head, driving ? night * 0.9 : 0);
@@ -3305,7 +3307,7 @@ function stepCarLights(n, night) {
     sl.target.position.set(wx(p.x + 25, pz * 1.6), y0, wz(p.x + 25, pz * 1.6));
   });
   if (n.tailGlow) {
-    n.tailGlow.intensity = driving ? night * 3 + (braking ? 2 + night * 6 : 0) : 0;
+    n.tailGlow.intensity = driving ? night * (0.35 + (braking ? 1.1 : 0)) : 0; // nur ein Hauch Rot auf der Strasse: die Lampen selbst sollen leuchten
     if (L) n.tailGlow.position.set(wx(L.tailX, 0), y0 + L.tailY, wz(L.tailX, 0));
   }
 }
