@@ -55,6 +55,9 @@ Browser-Spiel ohne Build: `index.html` + `game.js` (Spiellogik, Menüs und 2D-Ze
   (`canSee`, Häuser dazwischen) → `startChase(c)` (der Streifenwagen selbst jagt); mehr Streifen über `ensurePatrols` (`c.patrol`).
   Aussteigen geht auch während der Jagd (`exitCar`), dann rennt ein Polizist nach (`P.cop`, `stepCop`, `makeCop`). Erwischt:
   Busse, `giveBack` gibt das Auto zurück und holt dein eigenes (`city.stolenFrom`, ein geparktes Auto); bei ⭐⭐⭐ Gefängnis.
+  Lichter am eigenen Auto (`stepCarLights`, `makeLamps`: Leuchtpunkte aus dem Umriss): Scheinwerfer nachts, Rück-/Bremslicht (Bremse), Blinker
+  `,` `.` und Warnblinker `G` (Knöpfe ◀ ⚠️ ▶, `setBlink`, geht nach dem Abbiegen aus); zwei Lichtkegel aus den Scheinwerfern, hinten rotes
+  Leuchten (Handy: nur ein Kegel). Motorklang je echtem Auto in sound.js (`bmw6`, `amg8`, `v12` …, `pops` = Klepfen beim Gaswegnehmen/Schalten).
   Weiter in der Stadt: Unfälle der Bots mit Stau (`stepAccidents`), Tank/Akku (`city.fuel`, Tankstelle mit Ladesäule),
   Schaden mit Kratzern, bei echten Modellen echte Beulen (`dentAt`: eigene Kopie der getroffenen Teile, `dropDents` beim Reparieren/Wechseln) und Werkstatt (`hurt`, pro Unfall nur ein Viertel von früher, Block 7,4, davor Parkplatz für den Auftrag Einparken), Wetter (`stepWeather`),
   Fahrschule (Auftrag `school`, Führerschein in `autoRetterLicense`) und Autohändler (Block 2,4, `cityDealer` in `game.js`).

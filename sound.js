@@ -62,6 +62,18 @@ const PROFILES = {
   prop: { type: 'rotor', rate: 28 },
   steam: { type: 'steam' },
   carriage: { type: 'carriage' },
+  // Echte Autos (Wunsch Lionel: jedes klingt anders); pops = „Klepfen“ (Knallen im Auspuff beim Gaswegnehmen und Hochschalten)
+  bmw6: { type: 'engine', cyl: 6, idle: 820, red: 7300, bright: 0.95, knock: 0.12, sub: 0.55, pops: 1 },      // BMW Reihensechser
+  amg8: { type: 'engine', cyl: 8, idle: 700, red: 7000, bright: 0.85, knock: 0.18, sub: 1.15, pops: 0.8 },   // AMG-V8: tief, brabbelt
+  usv8: { type: 'engine', cyl: 8, idle: 600, red: 6200, bright: 0.7, knock: 0.22, sub: 1.25, pops: 0.35 },   // amerikanischer V8
+  softv8: { type: 'engine', cyl: 8, idle: 650, red: 6000, bright: 0.55, knock: 0.1, sub: 0.8 },             // leiser Luxus-V8
+  v10: { type: 'engine', cyl: 10, idle: 1050, red: 8700, bright: 1.1, knock: 0.1, sub: 0.45, pops: 0.4 },    // Audi R8
+  v12: { type: 'engine', cyl: 12, idle: 1000, red: 9200, bright: 1.2, knock: 0.08, sub: 0.35, pops: 0.25 },  // Lamborghini, Ferrari, Pagani
+  softv12: { type: 'engine', cyl: 12, idle: 600, red: 5800, bright: 0.5, knock: 0.05, sub: 0.7 },           // Rolls-Royce: fast lautlos
+  flat6: { type: 'engine', cyl: 6, idle: 950, red: 9000, bright: 1.05, knock: 0.2, sub: 0.4, pops: 0.3 },    // Porsche-Boxer
+  w16: { type: 'engine', cyl: 16, idle: 850, red: 7000, bright: 0.95, knock: 0.08, sub: 0.9, pops: 0.2 },    // Bugatti
+  turbo4: { type: 'engine', cyl: 4, idle: 850, red: 6800, bright: 0.9, knock: 0.15, sub: 0.45, pops: 0.6 },  // Golf GTI
+  twinv8: { type: 'engine', cyl: 8, idle: 1000, red: 8500, bright: 1.05, knock: 0.12, sub: 0.6, pops: 0.5 }, // McLaren, Koenigsegg, Ferrari 488
 };
 const KIND_SOUND = {};
 const group = (name, kinds) => { for (const k of kinds.split(' ')) KIND_SOUND[k] = name; };
@@ -79,7 +91,23 @@ group('rotor', 'heli');
 group('prop', 'hovercraft zeppelin');
 group('steam', 'train');
 group('carriage', 'royal pumpkin sleigh');
+// Echte Autos: jedes mit eigenem Motor (überschreibt die Gruppen oben)
+group('bmw6', 'offroad coupe hatch'); group('amg8', 'jeep e63 muscle kombi pickupxl mansory'); group('usv8', 'roadster trackhawk police oldtimer');
+group('softv8', 'limo bentley car luxlimo'); group('v10', 'racer'); group('v12', 'hyperev hyper musclegt'); group('softv12', 'luxsuv');
+group('flat6', 'sports gt3rs gtcar'); group('w16', 'luxlimo'); group('turbo4', 'kompakt tiguanx q5 kodiaq minivan'); group('twinv8', 'supercar stockcar formula lemans gtlegend');
+group('diesel', 'safari delivery ambulance'); group('small', 'mini smart'); group('electric', 'ecar tiguan24');
 export const soundOf = kind => PROFILES[KIND_SOUND[kind] || 'car'];
+// Knall im Auspuff („Klepfen“): kurzer Rauschstoss und tiefer Wumms
+function pop(level) {
+  if (!setup()) return;
+  const t = now(), s = A.ctx.createBufferSource(); s.buffer = A.white;
+  const f = filter('bandpass', 500 + Math.random() * 900, 1.1), g = gain(0), v = 0.12 + Math.random() * 0.22 * level;
+  g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(v, t + 0.004); g.gain.exponentialRampToValueAtTime(0.001, t + 0.05 + Math.random() * 0.05);
+  chain(s, f, g, A.out); s.start(t, Math.random(), 0.12);
+  const o = A.ctx.createOscillator(), og = gain(0); o.type = 'sine'; o.frequency.setValueAtTime(110, t); o.frequency.exponentialRampToValueAtTime(45, t + 0.08);
+  og.gain.setValueAtTime(0.0001, t); og.gain.exponentialRampToValueAtTime(v * 0.9, t + 0.005); og.gain.exponentialRampToValueAtTime(0.001, t + 0.09);
+  chain(o, og, A.out); o.start(t); o.stop(t + 0.12);
+}
 
 // Verbrennungsmotor: Zündfrequenz = Drehzahl/60 × Zylinder/2, viele Obertöne (Auspuff), leicht verstimmt,
 // Diesel „nageln“ (Rauschen im Takt der Zündung), V8 „brabbeln“ (halbe Zündfrequenz), je nach Gas heller.
@@ -106,8 +134,15 @@ function engineVoice(P, dest) {
   chain(knock, knockF, knockGate, gain(P.knock * 1.2), mix);
   chain(mix, gain(0.42), shaper, lp, vol, dest);
   for (const o of [o1, o2, sub, knockO]) o.start();
+  let lastThr = 0, popT = 0, popWait = 0;
   return {
-    set(frac, throttle, level) {
+    pops(n = 3) { if (P.pops) popT = Math.max(popT, 0.12 * n); }, // beim Hochschalten
+    set(frac, throttle, level, dt = 0.016) {
+      if (P.pops) { // Gas weg bei hoher Drehzahl: es knallt und klepft im Auspuff
+        if (throttle < 0.2 && lastThr > 0.5 && frac > 0.35) popT = 0.5 + 0.6 * P.pops;
+        lastThr = throttle;
+        if (popT > 0) { popT -= dt; popWait -= dt; if (popWait <= 0) { pop(level * 2 * P.pops); popWait = 0.04 + Math.random() * (0.16 / P.pops); } }
+      }
       const rpm = P.idle + (P.red - P.idle) * frac, f = rpm / 60 * P.cyl / 2, tc = 0.04;
       smooth(o1.frequency, f, tc); smooth(o2.frequency, f, tc); smooth(sub.frequency, f / 2, tc);
       smooth(knockO.frequency, f, tc);
@@ -294,7 +329,7 @@ export function createCarSound({ kind = 'car', level = 0.5 } = {}) {
         while (gravelT < 0) { gravelT += 0.3 + Math.random(); click(1800 + Math.random() * 2400, 0.03 + vn * 0.05); }
       }
     },
-    shift() { if (soundOf(kind).type === 'engine') blowOff(); },
+    shift() { if (soundOf(kind).type === 'engine') { blowOff(); if (engine.pops) engine.pops(3); } },
     stop() {
       engine.stop(); if (other) other.stop();
       for (const n of srcs) n.stop(now() + 0.4);

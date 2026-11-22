@@ -1509,8 +1509,13 @@ function buildWorld() {
   stars.layers.set(1);
   scene.add(stars);
   // Scheinwerfer des eigenen Autos (nachts an)
-  const headlight = new THREE.SpotLight(0xfff2d6, 0, 70, 0.55, 0.5, 1.2);
+  // Zwei Lichtkegel aus dem linken und rechten Scheinwerfer, hinten ein rotes Leuchten (Handy: nur ein Kegel, spart Rechenzeit)
+  const headlight = new THREE.SpotLight(0xfff2d6, 0, 70, 0.5, 0.5, 1.2);
   scene.add(headlight, headlight.target);
+  const headlight2 = MOBILE ? null : new THREE.SpotLight(0xfff2d6, 0, 70, 0.5, 0.5, 1.2);
+  if (headlight2) scene.add(headlight2, headlight2.target);
+  const tailGlow = MOBILE ? null : new THREE.PointLight(0xff2a14, 0, 9, 2);
+  if (tailGlow) scene.add(tailGlow);
 
   // Ampeln: vor jeder Kreuzung rechts ein Mast; Lichter teilen sich je Richtung und Farbe ein Material
   const lamps = {};
@@ -1618,7 +1623,7 @@ function buildWorld() {
   scene.add(flash);
   sky.userData.noWarp = stars.userData.noWarp = true; // wandern mit der Kamera (render): Himmel überall, auch weit draussen
   return { chunks, skyMesh: sky, stars, monaco, renderer, scene, camera, sun, clouds, lamps, solid, round, parks, places, sign, country, height, moon, redCams, speedCams, flash, areas, ground: { asphalt: asphaltMat, grass: grassMat, pave: paveMat, land: land.material },
-    night: { sky: su, hemi, envs: { ...envs, day: dayEnv }, walls: [...walls, ...homeWalls], heads: headM.material, pools, stars, headlight, fog: scene.fog } };
+    night: { sky: su, hemi, envs: { ...envs, day: dayEnv }, walls: [...walls, ...homeWalls], heads: headM.material, pools, stars, headlight, headlight2, tailGlow, fog: scene.fog } };
 }
 
 // Gegen Ruckeln: grosse InstancedMesh (Bäume, Büsche, Blumen, Grasbüschel über die ganze Insel) in Kacheln von CHUNK
@@ -3197,6 +3202,87 @@ function pullOver(me, dt) {
   else me.speed = me.speed > 3.5 ? Math.max(3.5, me.speed - 7 * dt) : Math.min(3.5, me.speed + 4 * dt);
   if (me.speed < 0.4 && (atEdge || me.pullT > 4)) me.speed = 0;
   return { left: diff < -0.05, right: diff > 0.05 };
+}
+
+// ---------- Lichter am eigenen Auto: Scheinwerfer, Rücklichter, Bremslicht, Blinker, Warnblinker ----------
+// Leuchtpunkte an den richtigen Stellen (aus dem Umriss des Autos), die Lichtkegel kommen aus den Scheinwerfern.
+let lampTexture = null;
+function lampTex() {
+  if (lampTexture) return lampTexture;
+  const c = document.createElement('canvas'); c.width = c.height = 64; const g = c.getContext('2d');
+  const r = g.createRadialGradient(32, 32, 0, 32, 32, 32);
+  r.addColorStop(0, 'rgba(255,255,255,1)'); r.addColorStop(0.25, 'rgba(255,255,255,0.85)'); r.addColorStop(0.6, 'rgba(255,255,255,0.25)'); r.addColorStop(1, 'rgba(255,255,255,0)');
+  g.fillStyle = r; g.fillRect(0, 0, 64, 64);
+  lampTexture = new THREE.CanvasTexture(c); lampTexture.colorSpace = THREE.SRGBColorSpace;
+  return lampTexture;
+}
+function makeLamps(mesh) {
+  const g = new THREE.Group(); g.name = 'lamps';
+  mesh.updateMatrixWorld(true);
+  const inv = new THREE.Matrix4().copy(mesh.matrixWorld).invert(), b = new THREE.Box3(), m4 = new THREE.Matrix4();
+  (mesh.userData.body || mesh).traverseVisible(o => {
+    if (!o.isMesh || o.name === 'shadow' || (o.material && o.material.transparent)) return;
+    if (!o.geometry.boundingBox) o.geometry.computeBoundingBox();
+    b.union(o.geometry.boundingBox.clone().applyMatrix4(m4.multiplyMatrices(inv, o.matrixWorld)));
+  });
+  if (b.isEmpty()) b.set(new THREE.Vector3(-2.2, 0, -0.9), new THREE.Vector3(2.2, 1.4, 0.9));
+  const H = b.max.y - b.min.y, hw = (b.max.z - b.min.z) / 2, zc = (b.max.z + b.min.z) / 2;
+  const yh = b.min.y + H * 0.42, yt = b.min.y + H * 0.55, sides = [-1, 1]; // -z = links (Nase zeigt nach +x)
+  const spr = (color, size, x, y, z) => {
+    const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: lampTex(), color, blending: THREE.AdditiveBlending, depthWrite: false, transparent: true, opacity: 0 }));
+    s.scale.set(size, size, 1); s.position.set(x, y, z); g.add(s); return s;
+  };
+  const L = {
+    mesh, g,
+    head: sides.map(s => spr(0xfff3d6, 0.6, b.max.x + 0.04, yh, zc + s * (hw - 0.32))),
+    tail: sides.map(s => spr(0xff2a14, 0.6, b.min.x - 0.04, yt, zc + s * (hw - 0.3))),
+    blinkF: sides.map(s => spr(0xffa21a, 0.6, b.max.x - 0.08, yh, zc + s * (hw - 0.02))),
+    blinkR: sides.map(s => spr(0xffa21a, 0.65, b.min.x - 0.02, yt + 0.06, zc + s * (hw - 0.02))),
+    headPos: sides.map(s => new THREE.Vector3(b.max.x + 0.1, yh, zc + s * (hw - 0.32))), tailX: b.min.x - 0.6, tailY: yt,
+  };
+  return L;
+}
+function setBlink(kind) {
+  if (!city) return;
+  city.blink = city.blink === kind ? null : kind;
+  city.blinkH0 = city.me.heading; city.blinkTurned = false;
+  for (const b of S.ui.root.querySelectorAll('.blinkers button')) b.classList.toggle('on', b.dataset.b === city.blink);
+}
+function stepCarLights(n, night) {
+  const me = city.me, m = me.mesh, hide = !m || city.boat || city.plane;
+  if (city.lamps && city.lamps.mesh !== m) { city.lamps.g.parent && city.lamps.g.parent.remove(city.lamps.g); city.lamps = null; }
+  if (!hide && !city.lamps) { city.lamps = makeLamps(m); m.add(city.lamps.g); }
+  const L = city.lamps, driving = !city.walk && !hide;
+  // Blinker geht nach dem Abbiegen von selbst aus (wie im echten Auto)
+  if (city.blink === 'left' || city.blink === 'right') {
+    let d = me.heading - city.blinkH0; d = Math.atan2(Math.sin(d), Math.cos(d));
+    if (Math.abs(d) > 1.1) city.blinkTurned = true;
+    if (city.blinkTurned && Math.abs(me.steer || 0) < 0.04) setBlink(city.blink);
+  }
+  const phase = Math.floor(performance.now() / 380) % 2 === 0;
+  if (city.blink && phase !== city.blinkPhase && driving) window.beep && window.beep(phase ? 1500 : 1000, 0.018, 'square', 0.025); // tick … tack
+  city.blinkPhase = phase;
+  const braking = driving && !!city.input.brake; // Bremspedal (auch im Stand)
+  if (L) {
+    for (const s of L.head) s.material.opacity = driving ? night : 0;
+    L.tail.forEach(s => { s.material.opacity = driving ? Math.min(1, night * 0.55 + (braking ? 0.9 : 0)) : 0; s.scale.setScalar(braking ? 0.85 : 0.6); });
+    const on = side => phase && (city.blink === 'hazard' || city.blink === side);
+    [L.blinkF, L.blinkR].forEach(pair => pair.forEach((s, i) => { s.material.opacity = on(i ? 'right' : 'left') ? 1 : 0; }));
+  }
+  // Lichtkegel aus den Scheinwerfern (Weltlage aus Position und Richtung: so wie das Bild es verbiegt, wird auch das Licht verschoben)
+  const h = me.heading, ch = Math.cos(h), sh = Math.sin(h), y0 = me.alt + (city.gy || 0);
+  const wx = (lx, lz) => me.pos.x + lx * ch - lz * sh, wz = (lx, lz) => me.pos.z + lx * sh + lz * ch;
+  const heads = [n.headlight, n.headlight2].filter(Boolean), hp = L ? L.headPos : [new THREE.Vector3(1.5, 1.1, 0)];
+  heads.forEach((sl, i) => {
+    const p = hp[Math.min(i, hp.length - 1)], pz = heads.length === 1 ? 0 : p.z;
+    sl.intensity = driving ? (heads.length === 1 ? 90 : 55) * night : 0;
+    sl.position.set(wx(p.x, pz), y0 + p.y, wz(p.x, pz));
+    sl.target.position.set(wx(p.x + 25, pz * 1.6), y0, wz(p.x + 25, pz * 1.6));
+  });
+  if (n.tailGlow) {
+    n.tailGlow.intensity = driving ? night * 3 + (braking ? 2 + night * 6 : 0) : 0;
+    if (L) n.tailGlow.position.set(wx(L.tailX, 0), y0 + L.tailY, wz(L.tailX, 0));
+  }
 }
 
 function stepMe(dt) {
@@ -5684,6 +5770,10 @@ const CSS = `
 #city .walkbtn { position: absolute; top: 112px; right: 12px; width: 42px; height: 42px; border-radius: 50%; border: none;
   background: rgba(0,0,0,.55); color: #fff; font-size: 20px; }
 #city .walkbtn.ready { background: #16a34a; box-shadow: 0 0 0 3px #bbf7d0; }
+#city .blinkers { position: absolute; top: 74px; left: 8px; display: flex; gap: 4px; }
+#city .blinkers button { width: 36px; height: 30px; border-radius: 8px; border: 2px solid rgba(255,255,255,.5); background: rgba(0,0,0,.4); color: #fff;
+  font-size: 15px; padding: 0; touch-action: manipulation; }
+#city .blinkers button.on { background: #f59e0b; border-color: #fde68a; }
 #city .horn { position: absolute; top: 10px; left: 12px; width: 58px; height: 58px; border-radius: 50%; border: 3px solid rgba(255,255,255,.65);
   background: rgba(0,0,0,.4); font-size: 28px; }
 #city .drift { position: absolute; top: 14%; left: 50%; transform: translateX(-50%); background: linear-gradient(90deg, #f97316, #dc2626);
@@ -5747,6 +5837,7 @@ function buildDom() {
     <button class="cam" title="Kamera wechseln (V)">📷</button>
     <button class="gfx" title="Grafik: schön oder schnell" hidden>✨</button>
     <button class="horn" title="Hupen (H)">📯</button>
+    <div class="blinkers"><button data-b="left" title="Blinker links (,)">◀</button><button data-b="hazard" title="Warnblinker (G)">⚠️</button><button data-b="right" title="Blinker rechts (.)">▶</button></div>
     <button class="walkbtn" title="Aussteigen / einsteigen (X)">🚪</button>
     <button class="jobs" title="Aufträge (J)">📋</button>
     <button class="tagbtn" title="Fangis (online)" hidden>🏃</button>
@@ -5859,6 +5950,7 @@ function buildDom() {
     showMsg(S.look.on ? '✨ Grafik: schön' : '⚡ Grafik: schnell', 1.4);
   });
   $('.horn').addEventListener('pointerdown', e => { e.preventDefault(); honk(); });
+  for (const b of root.querySelectorAll('.blinkers button')) b.addEventListener('pointerdown', e => { e.preventDefault(); e.stopPropagation(); setBlink(b.dataset.b); });
   $('.walkbtn').addEventListener('pointerdown', e => { e.preventDefault(); toggleWalk(); });
   $('.bail').addEventListener('pointerdown', e => { e.preventDefault(); bail(); });
   $('.flybtn').addEventListener('pointerdown', e => { e.preventDefault(); toggleFly(); });
@@ -5911,6 +6003,8 @@ const KEYS = { ArrowLeft: 'left', KeyA: 'left', ArrowRight: 'right', KeyD: 'righ
 function onKey(e) {
   if (!city || (e.target && e.target.tagName === 'INPUT')) return; // im Chat wird geschrieben, nicht gefahren
   if (e.code === 'KeyH' && e.type === 'keydown') { honk(); e.preventDefault(); return; }
+  if (e.type === 'keydown' && !e.repeat && (e.code === 'Comma' || e.code === 'Period' || e.code === 'KeyG')) { // Blinker , . und Warnblinker G
+    setBlink(e.code === 'Comma' ? 'left' : e.code === 'Period' ? 'right' : 'hazard'); e.preventDefault(); return; }
   if (e.code === 'KeyJ' && e.type === 'keydown') { toggleJobs(); e.preventDefault(); return; }
   if (e.code === 'KeyV' && e.type === 'keydown') { nextCam(); e.preventDefault(); return; }
   if (e.code === 'KeyF' && e.type === 'keydown' && !e.repeat) { toggleFly(); e.preventDefault(); return; }
@@ -6514,10 +6608,8 @@ function stepDayNight(dt) {
   if (S.clouds.material && S.clouds.material.color) S.clouds.material.color.setScalar(0.25 + 0.75 * day);
   if (city.headMat) city.headMat.emissiveIntensity = 0.35 + 3.3 * night; // Scheinwerfer aller Autos: am Tag klares Glas, nachts hell
   for (const m of MODEL_LAMPS) m.emissiveIntensity = 1.4 * night; // Lichter der echten Automodelle
-  const me = city.me, fx = Math.cos(me.heading), fz = Math.sin(me.heading);
-  n.headlight.intensity = 90 * night;
-  n.headlight.position.set(me.pos.x + fx * 1.5, 1.1, me.pos.z + fz * 1.5);
-  n.headlight.target.position.set(me.pos.x + fx * 25, 0, me.pos.z + fz * 25);
+  city.night = night;
+  stepCarLights(n, night);
   // Uhr: Mittag = höchster Sonnenstand
   const mins = Math.floor(((city.tod - 0.25 + 1) % 1) * 24 * 60 + 12 * 60) % (24 * 60);
   const clock = '🔑 ' + city.keys.size + '/' + KEY_COUNT + '  ' + (city.wx.kind !== 'sun' && city.wx.i > 0.3 ? WX[city.wx.kind].icon + ' ' : night > 0.5 ? '🌙 ' : '☀️ ') + String(Math.floor(mins / 60)).padStart(2, '0') + ':' + String(mins % 60).padStart(2, '0');
@@ -6608,6 +6700,7 @@ function updateHud(dt) {
   let near = null, nd = Infinity;
   for (const c of city.cars) { const d = Math.hypot(c.x - me.pos.x, c.z - me.pos.z); if (d < nd) { nd = d; near = c; } }
   const g = city.gears(me.speed, me.maxV);
+  if (g.shifted && city.input.gas && !city.walk) S.snd.shift(); // Hochschalten: Pschh (und bei manchen Autos ein Knall)
   S.snd.update({ frac: g.frac, throttle: city.input.gas ? 1 : 0.15, speed: me.speed, slip: me.slip,
     surface: ['sand', 'mud', 'snow', 'gravel', 'moon'].includes(me.surface) ? 'gravel' : me.surface === 'water' ? 'grass' : me.surface,
     other: near ? { dist: nd, frac: 0.2 + near.speed / 30, kind: near.v.kind } : null, dt });
