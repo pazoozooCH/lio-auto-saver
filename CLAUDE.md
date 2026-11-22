@@ -56,7 +56,9 @@ Browser-Spiel ohne Build: `index.html` + `game.js` (Spiellogik, Menüs und 2D-Ze
   Aussteigen geht auch während der Jagd (`exitCar`), dann rennt ein Polizist nach (`P.cop`, `stepCop`, `makeCop`). Erwischt:
   Busse, `giveBack` gibt das Auto zurück und holt dein eigenes (`city.stolenFrom`, ein geparktes Auto); bei ⭐⭐⭐ Gefängnis.
   Lichter am eigenen Auto (`stepCarLights`, `makeLamps`: Leuchtpunkte dort, wo im Modell die Lampen sitzen – `modelLamps` in cars3d.js
-  aus den Lampen-Materialien, `userData.lampPos`; sonst aus dem Umriss): Scheinwerfer nachts, Rück-/Bremslicht (Bremse), Blinker
+  aus den Lampen-Materialien, `userData.lampPos`; sonst aus dem Umriss). Die echten Lampenformen leuchten selbst (`lampsWithShapes`:
+  Dreiecke nach Farbe im Bild – orange = Blinker, rot hinten = Rück-/Bremslicht, weiss vorne = Scheinwerfer; ohne Orange blinkt der äussere
+  Teil der Lampe; city.js legt leuchtende Überzüge darüber): Scheinwerfer nachts, Rück-/Bremslicht (Bremse), Blinker
   `,` `.` und Warnblinker `G` (Knöpfe ◀ ⚠️ ▶, `setBlink`, geht nach dem Abbiegen aus); zwei Lichtkegel aus den Scheinwerfern, hinten rotes
   Leuchten (Handy: nur ein Kegel). Motorklang je echtem Auto in sound.js (`KIND_PROFILE`: Zylinder, Drehzahlen, Turbo-Pfeifen, Kompressor,
   V8-Blubbern, Kreischen, Auspuff-Resonanz, `pops` = Klepfen); neues Auto = dort ein Profil eintragen.

@@ -3244,8 +3244,16 @@ function makeLamps(mesh) {
   const tail = sides.map((s, i) => pick('tail', i, [b.min.x - 0.04, yt, zc + s * (hw - 0.3)], -0.06));
   const blF = sides.map((s, i) => pick('blinkF', i, [b.max.x - 0.08, yh, zc + s * (hw - 0.02)], 0.06));
   const blR = sides.map((s, i) => pick('blinkR', i, [b.min.x - 0.02, yt + 0.06, zc + s * (hw - 0.02)], -0.06));
+  // Die echten Lampenformen des Modells (lampShapes aus cars3d.js) leuchten selbst: ein leuchtender Überzug genau auf der Lampe
+  const shp = mesh.userData.lampShapes, body = mesh.userData.body, shapes = { head: [], tail: [], blinkF: [], blinkR: [] };
+  if (shp && body) for (const [k, col] of [['head', 0xfff6e0], ['tail', 0xff1a0a], ['blinkF', 0xff9a10], ['blinkR', 0xff9a10]]) (shp[k] || []).forEach((geo, i) => {
+    if (!geo) return;
+    const m = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({ color: col, transparent: true, opacity: 0, blending: THREE.AdditiveBlending, depthWrite: false,
+      polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -4, side: THREE.DoubleSide, toneMapped: false }));
+    m.scale.setScalar(mesh.userData.lampScale || 1); m.userData.noWarp = true; m.frustumCulled = false; body.add(m); shapes[k][i] = m;
+  });
   const L = {
-    mesh, g,
+    mesh, g, shapes,
     head: head.map(p => spr(0xfff3d6, 0.55, ...p)),
     tail: tail.map(p => spr(0xff2a14, 0.55, ...p)),
     blinkF: blF.map(p => spr(0xffa21a, 0.5, ...p)),
@@ -3262,7 +3270,7 @@ function setBlink(kind) {
 }
 function stepCarLights(n, night) {
   const me = city.me, m = me.mesh, hide = !m || city.boat || city.plane;
-  if (city.lamps && city.lamps.mesh !== m) { city.lamps.g.parent && city.lamps.g.parent.remove(city.lamps.g); city.lamps = null; }
+  if (city.lamps && city.lamps.mesh !== m) { city.lamps.g.parent && city.lamps.g.parent.remove(city.lamps.g); for (const a of Object.values(city.lamps.shapes)) for (const s of a) if (s) { s.parent && s.parent.remove(s); s.material.dispose(); } city.lamps = null; }
   if (!hide && !city.lamps) { city.lamps = makeLamps(m); m.add(city.lamps.g); }
   const L = city.lamps, driving = !city.walk && !hide;
   // Blinker geht nach dem Abbiegen von selbst aus (wie im echten Auto)
@@ -3280,6 +3288,11 @@ function stepCarLights(n, night) {
     L.tail.forEach(s => { s.material.opacity = driving ? Math.min(1, night * 0.55 + (braking ? 0.9 : 0)) : 0; s.scale.setScalar(braking ? 0.8 : 0.55); });
     const on = side => phase && (city.blink === 'hazard' || city.blink === side);
     [L.blinkF, L.blinkR].forEach(pair => pair.forEach((s, i) => { s.material.opacity = on(i ? 'right' : 'left') ? 1 : 0; }));
+    // die echten Lampenformen: Scheinwerfer nachts, Rücklicht nachts schwach / beim Bremsen hell, Blinker im Takt
+    const S2 = L.shapes, set = (a, v) => a.forEach(s => { if (s) s.material.opacity = v; });
+    set(S2.head, driving ? night * 0.9 : 0);
+    set(S2.tail, driving ? Math.min(1, night * 0.45 + (braking ? 0.95 : 0)) : 0);
+    [S2.blinkF, S2.blinkR].forEach(pair => pair.forEach((s, i) => { if (s) s.material.opacity = on(i ? 'right' : 'left') ? 1 : 0; }));
   }
   // Lichtkegel aus den Scheinwerfern (Weltlage aus Position und Richtung: so wie das Bild es verbiegt, wird auch das Licht verschoben)
   const h = me.heading, ch = Math.cos(h), sh = Math.sin(h), y0 = me.alt + (city.gy || 0);

@@ -1796,13 +1796,78 @@ function prepareModel(scene, M) {
       m.needsUpdate = true;
     }
   });
-  return { holder, length: size.x, height: size.y, paint, paints, wheels: M.wheels, tris: Math.round(tris), credit: M.credit, len: M.len, eye: modelEye(holder, size), eyeX: M.eyeX, eyeY: M.eyeY, beacons: M.beacons, lamps: modelLamps(holder, size) };
+  return { holder, length: size.x, height: size.y, paint, paints, wheels: M.wheels, tris: Math.round(tris), credit: M.credit, len: M.len, eye: modelEye(holder, size), eyeX: M.eyeX, eyeY: M.eyeY, beacons: M.beacons, ...lampsWithShapes(holder, size) };
 }
 // Wo sitzen die Lampen dieses Modells? Aus den Teilen mit Lampen-Materialien (Scheinwerfer, Rücklichter, Lampenglas):
 // je Ecke (vorne/hinten, links = −z / rechts = +z) die Mitte der vordersten/hintersten Lampenteile = Scheinwerfer bzw. Rück- und
 // Bremslicht, der äusserste Teil davon = Blinker. Fehlt eine Ecke, rechnet city.js aus dem Umriss.
-const LAMP_POS_RE = /light|lamp|lampu|lanterna|freio|signal|tail|brake|indicator|blink|scheinw|ligth|headl/i;
+const LAMP_POS_RE = /light|lamp|lampu|lanterna|freio|signal|tail|brake|break|indicator|blink|scheinw|ligth|headl|red.?glass|glass.?red|redglass|red_?lg\b/i;
 const LAMP_POS_NOT = /chrom|metal|interior|dash|emerg|lightbar|reflector|plate|fog|logo|warning|lights_?led_?int/i;
+// Die echten Lampenformen: Dreiecke der Lampen-Teile nach ihrer Farbe im Bild (wie beim echten Auto): orange = Blinker,
+// rot hinten = Rück-/Bremslicht, weiss vorne = Scheinwerfer. city.js lässt genau diese Formen leuchten.
+const texPixels = new Map();
+function texData(tex) {
+  if (texPixels.has(tex)) return texPixels.get(tex);
+  let d = null; const img = tex && tex.image;
+  try { if (img && img.width) { const c = document.createElement('canvas'), w = Math.min(256, img.width), h = Math.min(256, img.height); c.width = w; c.height = h; const g = c.getContext('2d', { willReadFrequently: true }); g.drawImage(img, 0, 0, w, h); d = { w, h, px: g.getImageData(0, 0, w, h).data }; } } catch (e) { d = null; }
+  texPixels.set(tex, d); return d;
+}
+function lampKindOf(r, g, b) { // 0…1 Farben → 'amber' | 'red' | 'white' | null
+  const mx = Math.max(r, g, b), mn = Math.min(r, g, b), s = mx ? (mx - mn) / mx : 0;
+  if (s > 0.4 && r > 0.35 && g > r * 0.3 && g < r * 0.85 && b < g * 0.75) return 'amber';
+  if (s > 0.4 && r > 0.12 && r > g * 1.7 && r > b * 1.7) return 'red';
+  if (s < 0.22 && mx > 0.55) return 'white';
+  return null;
+}
+function lampsWithShapes(holder, size) {
+  let lamps = modelLamps(holder, size); const Lh = size.x / 2;
+  const B = { head: [[], []], tail: [[], []], blinkF: [[], []], blinkR: [[], []] }, a = new THREE.Vector3(), b = new THREE.Vector3(), c = new THREE.Vector3();
+  holder.traverse(o => {
+    if (!o.isMesh || !o.name.startsWith('part:')) return;
+    const m = o.material, nm = m.name || ''; if (!LAMP_POS_RE.test(nm) || LAMP_POS_NOT.test(nm)) return;
+    const pos = o.geometry.attributes.position, uv = o.geometry.attributes.uv, ix = o.geometry.index, td = m.map ? texData(m.map) : null, mc = m.color || new THREE.Color(1, 1, 1);
+    const n = ix ? ix.count : pos.count;
+    for (let t = 0; t < n; t += 3) {
+      const i0 = ix ? ix.getX(t) : t, i1 = ix ? ix.getX(t + 1) : t + 1, i2 = ix ? ix.getX(t + 2) : t + 2;
+      a.fromBufferAttribute(pos, i0); b.fromBufferAttribute(pos, i1); c.fromBufferAttribute(pos, i2);
+      const cx = (a.x + b.x + c.x) / 3, cz = (a.z + b.z + c.z) / 3; if (Math.abs(cx) < Lh * 0.45) continue;
+      let r = mc.r, g = mc.g, bl = mc.b;
+      if (td && uv) {
+        const u = (uv.getX(i0) + uv.getX(i1) + uv.getX(i2)) / 3, w = (uv.getY(i0) + uv.getY(i1) + uv.getY(i2)) / 3;
+        const x = Math.max(0, Math.min(td.w - 1, Math.floor((((u % 1) + 1) % 1) * td.w))), y = Math.max(0, Math.min(td.h - 1, Math.floor((((w % 1) + 1) % 1) * td.h)));
+        const k = (y * td.w + x) * 4; r *= td.px[k] / 255; g *= td.px[k + 1] / 255; bl *= td.px[k + 2] / 255;
+      }
+      const kind = lampKindOf(r, g, bl); if (!kind) continue;
+      const front = cx > 0, side = cz < 0 ? 0 : 1;
+      const key = kind === 'amber' ? (front ? 'blinkF' : 'blinkR') : kind === 'red' ? (front ? null : 'tail') : (front ? 'head' : null);
+      if (key) B[key][side].push(a.x, a.y, a.z, b.x, b.y, b.z, c.x, c.y, c.z);
+    }
+  });
+  // Kein oranges Glas (moderne Autos: Blinker hinter klarem Glas): dann blinkt der äussere Teil des Scheinwerfers bzw. Rücklichts
+  const outer = arr => {
+    if (arr.length < 9 * 4) return [];
+    let zMax = 0, zMin = Infinity; for (let j = 2; j < arr.length; j += 3) { const z = Math.abs(arr[j]); zMax = Math.max(zMax, z); zMin = Math.min(zMin, z); }
+    const cut = zMax - 0.3 * (zMax - zMin), out = []; // äussere 30 % der Lampenbreite
+    for (let j = 0; j < arr.length; j += 9) if (Math.abs((arr[j + 2] + arr[j + 5] + arr[j + 8]) / 3) >= cut) out.push(...arr.slice(j, j + 9));
+    return out;
+  };
+  for (let i = 0; i < 2; i++) {
+    if (B.blinkF[i].length < 18) B.blinkF[i] = outer(B.head[i]);
+    if (B.blinkR[i].length < 18) B.blinkR[i] = outer(B.tail[i]);
+  }
+  const shapes = {}; let any = false;
+  for (const [k, pair] of Object.entries(B)) shapes[k] = pair.map((arr, i) => {
+    if (arr.length < 9 * 2) return null;
+    any = true;
+    const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(arr, 3));
+    const cen = [0, 0, 0]; for (let j = 0; j < arr.length; j += 3) { cen[0] += arr[j]; cen[1] += arr[j + 1]; cen[2] += arr[j + 2]; }
+    const nv = arr.length / 3; cen[0] /= nv; cen[1] /= nv; cen[2] /= nv;
+    if (!lamps) lamps = { head: [null, null], tail: [null, null], blinkF: [null, null], blinkR: [null, null] };
+    lamps[k][i] = cen; // Leuchtpunkt in die Mitte der echten Lampe
+    return g;
+  });
+  return { lamps, lampShapes: any ? shapes : null };
+}
 function modelLamps(holder, size) {
   const Lh = size.x / 2, band = size.x * 0.085, v = new THREE.Vector3(), Q = { fl: [], fr: [], rl: [], rr: [] };
   holder.updateMatrixWorld(true);
@@ -1904,6 +1969,7 @@ export function buildCar(v, kinds, hDiv) {
         for (const s of [-1, 1]) { const l = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.14, 0.34), new THREE.MeshStandardMaterial({ color: 0x0b1a40, emissive: 0x2f6bff, emissiveIntensity: 0 })); l.position.set(C.L * 0.36, y, s * 0.42); l.userData.blink = s; C.group.getObjectByName('body').add(l); }
       }
       if (MP.lamps) { const sc = C.L / MP.length, f = p => p && p.map(n => n * sc); C.lampPos = Object.fromEntries(Object.entries(MP.lamps).map(([k, a]) => [k, a.map(f)])); }
+      if (MP.lampShapes) { C.lampShapes = MP.lampShapes; C.lampScale = C.L / MP.length; }
       if (MP.eye) { const sc = C.L / MP.length; C.eye = MP.eye.map(n => n * sc); if (MP.eyeX !== undefined) C.eye[0] = MP.eyeX; if (MP.eyeY !== undefined) C.eye[1] = MP.eyeY; }
       if (pm && orig) C.paint = pm; // Originalfarbe: Lack bleibt, wie er ist
       else if (pm) { // gespritzt: alle Lack-Teile in der Wagenfarbe (Bild grau, damit die Farbe stimmt)
@@ -1925,7 +1991,7 @@ export function buildCar(v, kinds, hDiv) {
     C.group.add(sh);
     // Augen für die Fahrersitz-Kamera; Fahrzeuge ohne Innenraum: knapp über dem Dach
     const eye = C.eye || [(C.roofX ?? 0) + 0.3, (C.roofY ?? C.H) + 0.3, 0];
-    t = { group: C.group, paint: C.paint, pkey: orig ? 'orig' : paintKey(v), radius: Math.max(1.2, Math.min(C.L, 4) / 2), length: C.L, eye, model: !!MP, lampPos: C.lampPos || null };
+    t = { group: C.group, paint: C.paint, pkey: orig ? 'orig' : paintKey(v), radius: Math.max(1.2, Math.min(C.L, 4) / 2), length: C.L, eye, model: !!MP, lampPos: C.lampPos || null, lampShapes: C.lampShapes || null, lampScale: C.lampScale || 1 };
     if (MP) { t.far = farProc; t.farPaint = farPaint; } // weit weg: einfache Fassung der eigenen Form
     templates.set(key, t);
   }
@@ -1942,7 +2008,7 @@ export function buildCar(v, kinds, hDiv) {
     g.traverse(o => { if (o.material === t.paint) o.material = paint; });
   }
   g.userData = { wheels: g.getObjectsByProperty('name', 'wheel'), paint, body: g.getObjectByName('body'), shadow: g.getObjectByName('shadow'), radius: t.radius, length: t.length,
-    eye: t.eye, driver: g.getObjectByName('driver'), lampPos: t.lampPos,
+    eye: t.eye, driver: g.getObjectByName('driver'), lampPos: t.lampPos, lampShapes: t.lampShapes, lampScale: t.lampScale,
     finish: tune.finish || null, far: null, isFar: false, tpl: t };
   return g;
 }
