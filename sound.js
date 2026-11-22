@@ -96,7 +96,51 @@ group('bmw6', 'offroad coupe hatch'); group('amg8', 'jeep e63 muscle kombi picku
 group('softv8', 'limo bentley car luxlimo'); group('v10', 'racer'); group('v12', 'hyperev hyper musclegt'); group('softv12', 'luxsuv');
 group('flat6', 'sports gt3rs gtcar'); group('w16', 'luxlimo'); group('turbo4', 'kompakt tiguanx q5 kodiaq minivan'); group('twinv8', 'supercar stockcar formula lemans gtlegend');
 group('diesel', 'safari delivery ambulance'); group('small', 'mini smart'); group('electric', 'ecar tiguan24');
-export const soundOf = kind => PROFILES[KIND_SOUND[kind] || 'car'];
+// Jedes echte Auto mit seinem eigenen Motor (Daten wie beim echten Auto): cyl Zylinder, idle/red Leerlauf/Höchstdrehzahl,
+// bright Helligkeit, sub Tiefe, knock Nageln, turbo Pfeifen, sc Kompressor-Heulen, burble V8-Blubbern (ungleichmässig),
+// rasp Kreischen (V10/V12), res Auspuff-Resonanz (Hz), pops Klepfen
+const E = (cyl, idle, red, bright, sub, o = {}) => ({ type: 'engine', cyl, idle, red, bright, sub, knock: 0.12, ...o });
+const KIND_PROFILE = {
+  offroad: E(6, 750, 7000, 0.85, 0.55, { turbo: 0.35, pops: 0.5, res: 220 }),            // BMW X4 (Reihensechser Turbo)
+  coupe: E(6, 850, 7600, 1.0, 0.5, { turbo: 0.5, pops: 1, res: 260, rasp: 0.3 }),         // BMW M4
+  hatch: E(4, 800, 4600, 0.5, 0.7, { knock: 0.55, turbo: 0.4 }),                          // BMW X2 20d (Diesel)
+  minivan: E(4, 800, 6000, 0.7, 0.5, { turbo: 0.2 }), kodiaq: E(4, 780, 6500, 0.75, 0.55, { turbo: 0.3 }),
+  q5: E(4, 760, 6500, 0.8, 0.55, { turbo: 0.35, res: 200 }), tiguanx: E(4, 800, 6500, 0.78, 0.5, { turbo: 0.3 }),
+  tiguan24: E(4, 820, 6300, 0.7, 0.5, { turbo: 0.25 }), ecar: E(6, 650, 6500, 0.6, 0.7, { res: 170 }), // Cadillac V6
+  kompakt: E(4, 850, 6800, 0.95, 0.5, { turbo: 0.5, pops: 0.6, res: 240 }),              // Golf GTI
+  car: E(8, 700, 6800, 0.8, 1.0, { turbo: 0.4, burble: 0.25, pops: 0.3 }),               // Cayenne Turbo
+  kombi: E(8, 750, 6800, 0.9, 1.1, { turbo: 0.45, burble: 0.35, pops: 0.7 }),            // Audi RS6
+  e63: E(8, 750, 7000, 0.9, 1.2, { turbo: 0.4, burble: 0.5, pops: 0.9 }),                // AMG E63
+  jeep: E(8, 620, 6200, 0.7, 1.2, { burble: 0.45, pops: 0.5 }),                          // G 550
+  muscle: E(8, 800, 7200, 0.95, 1.15, { burble: 0.55, pops: 0.8, rasp: 0.25 }),          // SLS AMG (Sauger)
+  pickupxl: E(8, 800, 6800, 0.9, 1.0, { turbo: 0.45, burble: 0.3, pops: 0.7 }),          // Urus
+  mansory: E(8, 700, 6500, 0.85, 1.2, { sc: 0.5, burble: 0.5, pops: 1 }),                // Range Rover SVR (Kompressor)
+  trackhawk: E(8, 650, 6200, 0.75, 1.3, { sc: 0.9, burble: 0.6, pops: 0.4 }),            // Trackhawk (Kompressor)
+  police: E(8, 650, 6200, 0.75, 1.25, { sc: 0.7, burble: 0.55, pops: 0.3 }),             // Charger Hellcat
+  roadster: E(8, 650, 6600, 0.85, 1.2, { burble: 0.6, pops: 0.5 }),                      // Corvette C8
+  oldtimer: E(8, 550, 4800, 0.5, 1.1, { burble: 0.5, knock: 0.25 }),                     // Suburban 1989
+  delivery: E(8, 600, 5200, 0.55, 1.0, { burble: 0.35, knock: 0.2 }),                    // Chevrolet Express
+  safari: E(6, 700, 4500, 0.55, 0.8, { knock: 0.5, turbo: 0.3 }),                        // Defender (Diesel)
+  ambulance: E(4, 750, 4200, 0.45, 0.8, { knock: 0.7, turbo: 0.25 }),                    // Sprinter (Diesel)
+  limo: E(12, 600, 6000, 0.5, 0.7, { knock: 0.05 }), bentley: E(8, 700, 6800, 0.85, 1.0, { turbo: 0.3, burble: 0.4, pops: 0.5 }),
+  luxsuv: E(12, 550, 5200, 0.45, 0.7, { knock: 0.04 }),                                  // Cullinan: fast lautlos
+  luxlimo: E(16, 900, 9000, 1.15, 0.7, { rasp: 0.35 }),                                  // Bugatti Tourbillon V16
+  hyperev: E(12, 1000, 9500, 1.25, 0.35, { rasp: 0.5, pops: 0.3 }),                      // Revuelto
+  hyper: E(12, 1100, 9250, 1.3, 0.3, { rasp: 0.55, pops: 0.2 }),                         // LaFerrari
+  musclegt: E(12, 900, 6800, 1.0, 0.6, { turbo: 0.5, rasp: 0.3, pops: 0.4 }),            // Pagani (AMG-V12 Turbo)
+  supercar: E(8, 1000, 8000, 1.1, 0.45, { turbo: 0.4, rasp: 0.4, pops: 0.3 }),           // Ferrari 488 Pista
+  stockcar: E(8, 1000, 8100, 1.05, 0.4, { turbo: 0.55, rasp: 0.35, pops: 0.5 }),         // McLaren 765LT
+  formula: E(8, 1050, 8500, 1.1, 0.4, { turbo: 0.6, rasp: 0.35, pops: 0.4 }),            // McLaren P1
+  lemans: E(8, 1000, 8500, 1.15, 0.5, { turbo: 0.7, rasp: 0.3, pops: 0.6 }),             // Koenigsegg Jesko
+  gtlegend: E(8, 1000, 8250, 1.1, 0.5, { turbo: 0.75, pops: 0.6 }),                      // Koenigsegg One:1
+  racer: E(10, 1100, 8700, 1.15, 0.45, { rasp: 0.45, pops: 0.5 }),                       // Audi R8 V10
+  sports: E(6, 850, 7500, 0.95, 0.45, { turbo: 0.35, rasp: 0.25, knock: 0.2 }),          // 911 Carrera 4S
+  gt3rs: E(6, 950, 9000, 1.2, 0.35, { rasp: 0.5, pops: 0.4 }),                           // 911 GT3 RS (Sauger)
+  gtcar: E(6, 900, 7200, 1.0, 0.45, { turbo: 0.8, pops: 0.5 }),                          // 911 GT2 RS
+  smart: E(4, 900, 8200, 1.0, 0.4, { sc: 0.5, rasp: 0.25 }),                             // Lotus Exige (Kompressor)
+  mini: E(4, 800, 6200, 0.7, 0.45, { turbo: 0.2 }),                                      // Jeep Renegade
+};
+export const soundOf = kind => KIND_PROFILE[kind] || PROFILES[KIND_SOUND[kind] || 'car'];
 // Knall im Auspuff („Klepfen“): kurzer Rauschstoss und tiefer Wumms
 function pop(level) {
   if (!setup()) return;
@@ -132,8 +176,16 @@ function engineVoice(P, dest) {
   chain(sub, gain(P.sub), mix);
   chain(comb, combF, combG, mix);
   chain(knock, knockF, knockGate, gain(P.knock * 1.2), mix);
-  chain(mix, gain(0.42), shaper, lp, vol, dest);
-  for (const o of [o1, o2, sub, knockO]) o.start();
+  // Auspuff-Resonanz (jedes Auto anders), V8-Blubbern (Lautstärke schwankt im Takt), Turbo-Pfeifen, Kompressor-Heulen, Kreischen
+  const res = filter('peaking', P.res || 200, 1.2); res.gain.value = P.res ? 7 : 0;
+  const am = gain(1), amO = ctx.createOscillator(), amG = gain((P.burble || 0) * 0.45); amO.type = 'sine';
+  chain(amO, amG, am.gain); am.gain.value = 1 - (P.burble || 0) * 0.3;
+  chain(mix, gain(0.42), shaper, res, lp, am, vol, dest);
+  const tw = ctx.createOscillator(), twG = gain(0); tw.type = 'sine'; chain(tw, twG, dest);
+  const scO = ctx.createOscillator(), scG = gain(0); scO.type = 'triangle'; chain(scO, filter('lowpass', 3000, 0.7), scG, dest);
+  const rasp = loopNoise(A.white), raspF = filter('bandpass', 2600, 1.6), raspGate = gain(0), raspG = gain(0);
+  chain(knockO, gain(0.8), raspGate.gain); chain(rasp, raspF, raspGate, raspG, dest);
+  for (const o of [o1, o2, sub, knockO, amO, tw, scO]) o.start();
   let lastThr = 0, popT = 0, popWait = 0;
   return {
     pops(n = 3) { if (P.pops) popT = Math.max(popT, 0.12 * n); }, // beim Hochschalten
@@ -143,7 +195,12 @@ function engineVoice(P, dest) {
         lastThr = throttle;
         if (popT > 0) { popT -= dt; popWait -= dt; if (popWait <= 0) { pop(level * 2 * P.pops); popWait = 0.04 + Math.random() * (0.16 / P.pops); } }
       }
-      const rpm = P.idle + (P.red - P.idle) * frac, f = rpm / 60 * P.cyl / 2, tc = 0.04;
+      const wob = frac < 0.15 ? 1 + 0.018 * Math.sin(now() * 7.3) + 0.01 * Math.sin(now() * 2.1) : 1; // Leerlauf schwankt leicht
+      const rpm = (P.idle + (P.red - P.idle) * frac) * wob, f = rpm / 60 * P.cyl / 2, tc = 0.04;
+      smooth(amO.frequency, f / 4, tc); // Blubbern
+      smooth(tw.frequency, 1500 + frac * 6500 * (0.4 + throttle * 0.6), 0.15); smooth(twG.gain, (P.turbo || 0) * 0.035 * level * throttle * frac * frac, 0.12);
+      smooth(scO.frequency, rpm * 0.32, tc); smooth(scG.gain, (P.sc || 0) * 0.05 * level * (0.25 + throttle) * frac, 0.06);
+      smooth(raspF.frequency, 2000 + frac * 3200, tc); smooth(raspG.gain, (P.rasp || 0) * 0.22 * level * (0.3 + throttle * 0.7) * frac, 0.05);
       smooth(o1.frequency, f, tc); smooth(o2.frequency, f, tc); smooth(sub.frequency, f / 2, tc);
       smooth(knockO.frequency, f, tc);
       smooth(combF.frequency, f * 2, tc);
@@ -153,7 +210,8 @@ function engineVoice(P, dest) {
     },
     stop() {
       vol.gain.setTargetAtTime(0, now(), 0.05);
-      for (const o of [o1, o2, sub, comb, knock, knockO]) o.stop(now() + 0.4);
+      for (const o of [o1, o2, sub, comb, knock, knockO, amO, tw, scO, rasp]) o.stop(now() + 0.4);
+      for (const gnode of [twG, scG, raspG]) gnode.gain.setTargetAtTime(0, now(), 0.05);
     },
   };
 }

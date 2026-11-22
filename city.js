@@ -3232,13 +3232,25 @@ function makeLamps(mesh) {
     const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: lampTex(), color, blending: THREE.AdditiveBlending, depthWrite: false, transparent: true, opacity: 0 }));
     s.scale.set(size, size, 1); s.position.set(x, y, z); g.add(s); return s;
   };
+  // Echte Modelle: Lampen genau dort, wo sie im Modell sitzen (lampPos aus cars3d.js), sonst aus dem Umriss geschätzt
+  const lp = mesh.userData.lampPos || {}, pick = (k, i, fb, dx) => {
+    let p = lp[k] && lp[k][i]; if (!p) return fb;
+    const front = dx > 0, s = sides[i];
+    if (front ? p[0] < b.max.x - 0.9 : p[0] > b.min.x + 0.9) return fb; // nicht ganz vorne/hinten: dann lieber aus dem Umriss
+    let z = p[2]; if (Math.abs(z - zc) < 0.45) z = zc + s * Math.max(0.45, hw - 0.3); // Lichtband quer über das Auto: an die Seiten
+    return [p[0] + dx, p[1], z];
+  };
+  const head = sides.map((s, i) => pick('head', i, [b.max.x + 0.04, yh, zc + s * (hw - 0.32)], 0.06));
+  const tail = sides.map((s, i) => pick('tail', i, [b.min.x - 0.04, yt, zc + s * (hw - 0.3)], -0.06));
+  const blF = sides.map((s, i) => pick('blinkF', i, [b.max.x - 0.08, yh, zc + s * (hw - 0.02)], 0.06));
+  const blR = sides.map((s, i) => pick('blinkR', i, [b.min.x - 0.02, yt + 0.06, zc + s * (hw - 0.02)], -0.06));
   const L = {
     mesh, g,
-    head: sides.map(s => spr(0xfff3d6, 0.6, b.max.x + 0.04, yh, zc + s * (hw - 0.32))),
-    tail: sides.map(s => spr(0xff2a14, 0.6, b.min.x - 0.04, yt, zc + s * (hw - 0.3))),
-    blinkF: sides.map(s => spr(0xffa21a, 0.6, b.max.x - 0.08, yh, zc + s * (hw - 0.02))),
-    blinkR: sides.map(s => spr(0xffa21a, 0.65, b.min.x - 0.02, yt + 0.06, zc + s * (hw - 0.02))),
-    headPos: sides.map(s => new THREE.Vector3(b.max.x + 0.1, yh, zc + s * (hw - 0.32))), tailX: b.min.x - 0.6, tailY: yt,
+    head: head.map(p => spr(0xfff3d6, 0.55, ...p)),
+    tail: tail.map(p => spr(0xff2a14, 0.55, ...p)),
+    blinkF: blF.map(p => spr(0xffa21a, 0.5, ...p)),
+    blinkR: blR.map(p => spr(0xffa21a, 0.55, ...p)),
+    headPos: head.map(p => new THREE.Vector3(p[0] + 0.05, p[1], p[2])), tailX: (tail[0][0] + tail[1][0]) / 2 - 0.5, tailY: (tail[0][1] + tail[1][1]) / 2,
   };
   return L;
 }
@@ -3265,7 +3277,7 @@ function stepCarLights(n, night) {
   const braking = driving && !!city.input.brake; // Bremspedal (auch im Stand)
   if (L) {
     for (const s of L.head) s.material.opacity = driving ? night : 0;
-    L.tail.forEach(s => { s.material.opacity = driving ? Math.min(1, night * 0.55 + (braking ? 0.9 : 0)) : 0; s.scale.setScalar(braking ? 0.85 : 0.6); });
+    L.tail.forEach(s => { s.material.opacity = driving ? Math.min(1, night * 0.55 + (braking ? 0.9 : 0)) : 0; s.scale.setScalar(braking ? 0.8 : 0.55); });
     const on = side => phase && (city.blink === 'hazard' || city.blink === side);
     [L.blinkF, L.blinkR].forEach(pair => pair.forEach((s, i) => { s.material.opacity = on(i ? 'right' : 'left') ? 1 : 0; }));
   }

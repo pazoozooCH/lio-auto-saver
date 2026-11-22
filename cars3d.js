@@ -1796,7 +1796,41 @@ function prepareModel(scene, M) {
       m.needsUpdate = true;
     }
   });
-  return { holder, length: size.x, height: size.y, paint, paints, wheels: M.wheels, tris: Math.round(tris), credit: M.credit, len: M.len, eye: modelEye(holder, size), eyeX: M.eyeX, eyeY: M.eyeY, beacons: M.beacons };
+  return { holder, length: size.x, height: size.y, paint, paints, wheels: M.wheels, tris: Math.round(tris), credit: M.credit, len: M.len, eye: modelEye(holder, size), eyeX: M.eyeX, eyeY: M.eyeY, beacons: M.beacons, lamps: modelLamps(holder, size) };
+}
+// Wo sitzen die Lampen dieses Modells? Aus den Teilen mit Lampen-Materialien (Scheinwerfer, Rücklichter, Lampenglas):
+// je Ecke (vorne/hinten, links = −z / rechts = +z) die Mitte der vordersten/hintersten Lampenteile = Scheinwerfer bzw. Rück- und
+// Bremslicht, der äusserste Teil davon = Blinker. Fehlt eine Ecke, rechnet city.js aus dem Umriss.
+const LAMP_POS_RE = /light|lamp|lampu|lanterna|freio|signal|tail|brake|indicator|blink|scheinw|ligth|headl/i;
+const LAMP_POS_NOT = /chrom|metal|interior|dash|emerg|lightbar|reflector|plate|fog|logo|warning|lights_?led_?int/i;
+function modelLamps(holder, size) {
+  const Lh = size.x / 2, band = size.x * 0.085, v = new THREE.Vector3(), Q = { fl: [], fr: [], rl: [], rr: [] };
+  holder.updateMatrixWorld(true);
+  holder.traverse(o => {
+    if (!o.isMesh || !o.name.startsWith('part:')) return;
+    const nm = o.material.name || ''; if (!LAMP_POS_RE.test(nm) || LAMP_POS_NOT.test(nm)) return;
+    const p = o.geometry.attributes.position, step = Math.max(1, Math.floor(p.count / 6000));
+    for (let i = 0; i < p.count; i += step) {
+      v.fromBufferAttribute(p, i);
+      if (Math.abs(v.x) < Lh * 0.45) continue; // Lampen sitzen vorne oder hinten, nicht in der Mitte
+      Q[(v.x > 0 ? 'f' : 'r') + (v.z < 0 ? 'l' : 'r')].push(v.x, v.y, v.z);
+    }
+  });
+  const corner = (a, front) => {
+    if (a.length < 9) return null;
+    let ext = front ? -1e9 : 1e9; for (let i = 0; i < a.length; i += 3) ext = front ? Math.max(ext, a[i]) : Math.min(ext, a[i]);
+    const sel = []; for (let i = 0; i < a.length; i += 3) if (Math.abs(a[i] - ext) < band) sel.push([a[i], a[i + 1], a[i + 2]]);
+    if (sel.length < 3) return null;
+    const c = [0, 0, 0]; for (const p of sel) { c[0] += p[0]; c[1] += p[1]; c[2] += p[2]; }
+    c[0] /= sel.length; c[1] /= sel.length; c[2] /= sel.length;
+    sel.sort((p, q) => Math.abs(q[2]) - Math.abs(p[2])); // äusserste zuerst: dort blinkt es
+    const k = Math.max(1, Math.floor(sel.length * 0.06)), o = [0, 0, 0];
+    for (let i = 0; i < k; i++) { o[0] += sel[i][0]; o[1] += sel[i][1]; o[2] += sel[i][2]; }
+    return { c, o: o.map(n => n / k), ext };
+  };
+  const fl = corner(Q.fl, true), fr = corner(Q.fr, true), rl = corner(Q.rl, false), rr = corner(Q.rr, false);
+  if (!fl && !fr && !rl && !rr) return null;
+  return { head: [fl && fl.c, fr && fr.c], blinkF: [fl && fl.o, fr && fr.o], tail: [rl && rl.c, rr && rr.c], blinkR: [rl && rl.o, rr && rr.o] };
 }
 // Augen des Fahrers im Modell (Fahrersitz-Kamera): knapp hinter der Oberkante der Frontscheibe, etwas unter dem Dach, links
 function modelEye(holder, size) {
@@ -1869,6 +1903,7 @@ export function buildCar(v, kinds, hDiv) {
         const sc = C.L / MP.length, y = MP.height * sc + 0.06;
         for (const s of [-1, 1]) { const l = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.14, 0.34), new THREE.MeshStandardMaterial({ color: 0x0b1a40, emissive: 0x2f6bff, emissiveIntensity: 0 })); l.position.set(C.L * 0.36, y, s * 0.42); l.userData.blink = s; C.group.getObjectByName('body').add(l); }
       }
+      if (MP.lamps) { const sc = C.L / MP.length, f = p => p && p.map(n => n * sc); C.lampPos = Object.fromEntries(Object.entries(MP.lamps).map(([k, a]) => [k, a.map(f)])); }
       if (MP.eye) { const sc = C.L / MP.length; C.eye = MP.eye.map(n => n * sc); if (MP.eyeX !== undefined) C.eye[0] = MP.eyeX; if (MP.eyeY !== undefined) C.eye[1] = MP.eyeY; }
       if (pm && orig) C.paint = pm; // Originalfarbe: Lack bleibt, wie er ist
       else if (pm) { // gespritzt: alle Lack-Teile in der Wagenfarbe (Bild grau, damit die Farbe stimmt)
@@ -1890,7 +1925,7 @@ export function buildCar(v, kinds, hDiv) {
     C.group.add(sh);
     // Augen für die Fahrersitz-Kamera; Fahrzeuge ohne Innenraum: knapp über dem Dach
     const eye = C.eye || [(C.roofX ?? 0) + 0.3, (C.roofY ?? C.H) + 0.3, 0];
-    t = { group: C.group, paint: C.paint, pkey: orig ? 'orig' : paintKey(v), radius: Math.max(1.2, Math.min(C.L, 4) / 2), length: C.L, eye, model: !!MP };
+    t = { group: C.group, paint: C.paint, pkey: orig ? 'orig' : paintKey(v), radius: Math.max(1.2, Math.min(C.L, 4) / 2), length: C.L, eye, model: !!MP, lampPos: C.lampPos || null };
     if (MP) { t.far = farProc; t.farPaint = farPaint; } // weit weg: einfache Fassung der eigenen Form
     templates.set(key, t);
   }
@@ -1907,7 +1942,7 @@ export function buildCar(v, kinds, hDiv) {
     g.traverse(o => { if (o.material === t.paint) o.material = paint; });
   }
   g.userData = { wheels: g.getObjectsByProperty('name', 'wheel'), paint, body: g.getObjectByName('body'), shadow: g.getObjectByName('shadow'), radius: t.radius, length: t.length,
-    eye: t.eye, driver: g.getObjectByName('driver'),
+    eye: t.eye, driver: g.getObjectByName('driver'), lampPos: t.lampPos,
     finish: tune.finish || null, far: null, isFar: false, tpl: t };
   return g;
 }
