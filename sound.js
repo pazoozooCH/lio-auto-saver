@@ -316,12 +316,13 @@ function makeVoice(kind, dest) {
 }
 
 // ---------- Echte Motor-Aufnahmen (freesound.org, Namen in der Danke-Zeile) ----------
-// Je Auto eine ruhige Leerlauf-Schleife und (wenn vorhanden) eine Schleife bei hoher Drehzahl (sounds/<typ>_idle.wav, _rev.wav).
-// Gespielt schneller oder langsamer je nach Drehzahl und von Leerlauf zu hoch überblendet; der nachgebaute Motor bleibt leise
-// darunter (für den Übergang und das Klepfen). rev = wie viel höher die hohe Schleife ist (gemessen, Verhältnis der Tonhöhe).
+// Je Auto eine ruhige Leerlauf-Stelle und (wenn vorhanden) eine Stelle bei hoher Drehzahl (sounds/<typ>_idle.wav, _rev.wav, 1,5–3 s).
+// Nicht als Schleife (die wiederholt sich hörbar, klingt wie eine Dampflok), sondern als Körnchen-Mischung: viele kurze, weich
+// ein- und ausgeblendete Stückchen von zufälligen Stellen, schneller oder langsamer je nach Drehzahl, von Leerlauf zu hoch überblendet.
+// Der nachgebaute Motor bleibt leise darunter (für den Übergang und das Klepfen). rev = wie viel höher die hohe Stelle ist (gemessen).
 const SAMPLES = {
-  coupe: { rev: 13.5 }, jeep: { rev: 2.05 }, muscle: {}, e63: {}, roadster: { rev: 2.83 }, car: {}, sports: {}, gt3rs: {},
-  supercar: { rev: 3.16 }, hyperev: { rev: 7.5 }, racer: { rev: 6.5 }, kombi: {}, luxsuv: {}, kompakt: { rev: 3.8 }, offroad: { rev: 7.9 },
+  coupe: { rev: 13 }, jeep: { rev: 1.9 }, muscle: {}, roadster: {}, car: {}, sports: {}, gt3rs: {},
+  supercar: {}, hyperev: { rev: 6.7 }, racer: { rev: 6.1 }, kombi: {}, luxsuv: {}, kompakt: { rev: 3.8 }, offroad: {},
 };
 const bufCache = new Map();
 function loadBuf(url) {
@@ -329,32 +330,49 @@ function loadBuf(url) {
   return bufCache.get(url);
 }
 export function preloadEngineSounds(kinds) { if (!setup()) return; for (const k of kinds) if (SAMPLES[k]) { loadBuf('sounds/' + k + '_idle.wav'); if (SAMPLES[k].rev) loadBuf('sounds/' + k + '_rev.wav'); } }
+const GRAIN = 0.1, HOP = GRAIN / 2; // Körnchen 100 ms, halb überlappend: mit Hann-Fenster gleichmässig laut
+const HANN = (() => { const n = 64, w = new Float32Array(n); for (let i = 0; i < n; i++) w[i] = Math.sin(Math.PI * i / (n - 1)) ** 2; return w; })();
+function grainLayer(buf, dest) {
+  const g = gain(0); g.connect(dest);
+  let next = 0, last = -1;
+  return {
+    g,
+    run(rate) { // Körnchen für die nächsten 120 ms planen
+      const t = now(); if (next < t) next = t + 0.01;
+      while (next < t + 0.12) {
+        const s = A.ctx.createBufferSource(), e = A.ctx.createGain(); s.buffer = buf; s.playbackRate.value = rate;
+        e.gain.value = 0; s.connect(e); e.connect(g);
+        const span = Math.max(0.02, buf.duration - GRAIN * rate - 0.02);
+        let off = Math.random() * span; if (last >= 0 && Math.abs(off - last) < 0.05) off = (off + span / 2) % span; last = off; // nie zweimal dieselbe Stelle
+        e.gain.setValueCurveAtTime(HANN, next, GRAIN);
+        s.start(next, off); s.stop(next + GRAIN + 0.02);
+        next += HOP;
+      }
+    },
+  };
+}
 function recordedVoice(P, dest, spec, synth) {
-  const { ctx } = A, kind = Object.keys(SAMPLES).find(k => SAMPLES[k] === spec);
-  const idleG = gain(0), revG = gain(0), out = gain(1); chain(idleG, out); chain(revG, out); chain(out, dest);
-  let idleS = null, revS = null, ready = false, stopped = false;
+  const kind = Object.keys(SAMPLES).find(k => SAMPLES[k] === spec), out = gain(1); chain(out, dest);
+  let idle = null, rev = null, ready = false, stopped = false;
   const revRpm = spec.rev ? Math.min(P.red * 0.8, Math.max(P.idle * 2, P.idle * spec.rev)) : 0;
-  const play = (buf, g) => { const s = ctx.createBufferSource(); s.buffer = buf; s.loop = true; s.connect(g); s.start(now(), Math.random() * buf.duration); return s; };
   Promise.all([loadBuf('sounds/' + kind + '_idle.wav'), spec.rev ? loadBuf('sounds/' + kind + '_rev.wav') : null]).then(([bi, br]) => {
     if (stopped || !bi) return;
-    idleS = play(bi, idleG); if (br) revS = play(br, revG); ready = true;
+    idle = grainLayer(bi, out); if (br) rev = grainLayer(br, out); ready = true;
   });
   return {
     pops: n => synth.pops && synth.pops(n),
     set(frac, throttle, level, dt = 0.016) {
       synth.set(frac, throttle, ready ? level * 0.3 : level, dt); // nachgebauter Motor leise darunter (Klepfen bleibt)
-      if (!ready) return;
-      const rpm = P.idle + (P.red - P.idle) * frac, tc = 0.05;
-      const w = revS ? Math.max(0, Math.min(1, (rpm - P.idle * 1.3) / (revRpm - P.idle * 1.3))) : 0, ws = w * w * (3 - 2 * w);
+      if (!ready || stopped) return;
+      const rpm = P.idle + (P.red - P.idle) * frac, tc = 0.06;
+      const w = rev ? Math.max(0, Math.min(1, (rpm - P.idle * 1.3) / (revRpm - P.idle * 1.3))) : 0, ws = w * w * (3 - 2 * w);
       const vol = level * (0.55 + throttle * 0.45) * 1.1;
-      smooth(idleS.playbackRate, Math.max(0.6, Math.min(revS ? 2.2 : 3.2, rpm / P.idle)), tc);
-      smooth(idleG.gain, vol * (1 - ws), tc);
-      if (revS) { smooth(revS.playbackRate, Math.max(0.45, Math.min(1.8, rpm / revRpm)), tc); smooth(revG.gain, vol * ws, tc); }
+      idle.run(Math.max(0.6, Math.min(rev ? 2.2 : 3, rpm / P.idle))); smooth(idle.g.gain, vol * (1 - ws), tc);
+      if (rev) { rev.run(Math.max(0.5, Math.min(1.8, rpm / revRpm))); smooth(rev.g.gain, vol * ws, tc); }
     },
     stop() {
       stopped = true; synth.stop();
       out.gain.setTargetAtTime(0, now(), 0.05);
-      for (const s of [idleS, revS]) if (s) s.stop(now() + 0.4);
     },
   };
 }

@@ -177,8 +177,8 @@ Browser-Spiel ohne Build: `index.html` + `game.js` (Spiellogik, Menüs und 2D-Ze
 - `online.js`: Online-Spiel (Lobby, Räume, Live-Daten) über Firebase Realtime Database mit anonymer Anmeldung.
   Regeln in `database.rules.json`, Einrichtung und Admin-Befehle im README. Freundes-Schlüssel nie ins Repo schreiben.
 - `sound.js`: Geräusche aus dem Synthesizer (Motor mit Gängen, Reifen, Gras/Kies/Randstein, Wind, Crashs). Für 15 echte Autos echte
-  Motor-Aufnahmen von freesound.org (`SAMPLES`, Dateien `sounds/<typ>_idle.wav` und `_rev.wav`: je 1 s Schleife, aus der Vorschau
-  geschnitten, Drehzahl über playbackRate, nachgebauter Motor leise darunter); Ersteller in der Danke-Zeile (game.js, umbrochen).
+  Motor-Aufnahmen von freesound.org (`SAMPLES`, Dateien `sounds/<typ>_idle.wav` und `_rev.wav`: ruhige Stellen 1,5–3 s; gespielt als
+  Körnchen-Mischung `grainLayer` – keine Schleife, die klang wie eine Dampflok; Drehzahl über playbackRate, nachgebauter Motor leise darunter); Ersteller in der Danke-Zeile (game.js, umbrochen).
 - `suburbs.js`: Vororte ausserhalb des Rings (Ostquartier zwischen Stadt und Raumbahnhof, Westquartier zwischen Hafen und
   Autobahn): frei geschwungene Strassen (`SUBURBS[].roads`, kein Verkehr) mit Trottoir, Lampen, Wendeplatz; Einfamilienhäuser
   (Kreise in `round`), Schule mit Sportplatz, Quartierladen, Bäckerei, Spielplätze. `suburbDist` macht das Gelände flach
