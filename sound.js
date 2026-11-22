@@ -323,6 +323,7 @@ const SAMPLES = {
   coupe: {}, jeep: {}, muscle: {}, roadster: {}, car: {}, sports: {}, gt3rs: {},
   supercar: {}, hyperev: {}, racer: {}, kombi: {}, luxsuv: {}, kompakt: {}, offroad: {},
 };
+export const hasRecording = kind => !!SAMPLES[kind]; // echte Motor-Aufnahme vorhanden (Review-Seite)
 const bufCache = new Map();
 function loadBuf(url) {
   if (!bufCache.has(url)) bufCache.set(url, fetch(url).then(r => (r.ok ? r.arrayBuffer() : Promise.reject(new Error(url)))).then(b => A.ctx.decodeAudioData(b)).catch(() => null));

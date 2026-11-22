@@ -209,7 +209,8 @@ Browser-Spiel ohne Build: `index.html` + `game.js` (Spiellogik, Menüs und 2D-Ze
   eigenes Flickenmuster (`special: 'junk'`, `junkTexture` in cars3d.js; 3D: Grundform + `junkExtras`). Fertig steht es bei `BUILT`.
 - `review.js`: Review-Seite für Lionel (3× auf „Ersteller: LIONEL“, `reviewTap` in game.js; nur freigeschaltete Geräte,
   beim ersten Mal Code-Abfrage → `reviewers/<uid>`): alle Autos in 3D, Blinker/Warnblinker/Nacht/Bremse, Delle/Reparieren,
-  Motor mit Drehzahl-Regler, Kamera vorne/hinten/Seite/Fahrersitz; Findings nach `review/findings`.
+  Motor mit Drehzahl-Regler, Kamera vorne/hinten/Seite/Fahrersitz; Findings nach `review/findings`. Technik je Auto (`carStats`:
+  Dreiecke, Teile, Bilder, Grafikspeicher, Dateigrösse PC/Handy per HEAD, Masse, Lampen, Ton) und 📊 Tabelle aller echten Autos (sortierbar).
   **Findings lesen:** `node tools/findings.mjs` (offene), `--all`, `done <id> "Antwort"` nach dem Beheben.
 - `carlamps.js`: Lichter (`makeLamps`/`setLamps`/`removeLamps`) und Beulen (`dentAt`/`dropDents`) der Autos, für city.js und review.js.
 - `world3d.js`: Baukasten für die Landschaften (Rauschen, Oberflächen mit Relief, Gelände, Wolken, Staub, Lichtstrahlen).

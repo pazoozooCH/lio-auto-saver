@@ -5,9 +5,9 @@
 // Lichter und Beulen kommen aus carlamps.js (gleich wie in der Stadt), der Ton aus sound.js.
 import * as THREE from 'three';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
-import { buildCar, animateCar, loadCarModels, setLod } from './cars3d.js';
+import { buildCar, animateCar, loadCarModels, setLod, MODELS, MOBILE, hasModel } from './cars3d.js';
 import { makeLamps, setLamps, removeLamps, dentAt, dropDents } from './carlamps.js';
-import { createCarSound, gearbox } from './sound.js';
+import { createCarSound, gearbox, soundOf, hasRecording } from './sound.js';
 import { connectFirebase } from './online.js';
 
 const TOPICS = ['Blinker', 'Licht', 'Bremslicht', 'Ton', 'Optik/Modell', 'Fahren', 'Name', 'Sonstiges'];
@@ -37,11 +37,47 @@ const CSS = `
 #review .find.done { opacity: .55; }
 #review .find small { color: #9ca3af; display: block; }
 #review .find .ans { color: #86efac; margin-top: 3px; }
+#review table { border-collapse: collapse; font-size: 13px; width: 100%; }
+#review td, #review th { padding: 2px 6px; border-bottom: 1px solid #222a38; text-align: left; vertical-align: top; }
+#review td:first-child { color: #9ca3af; white-space: nowrap; }
+#review .warn { color: #fbbf24; } #review .bad { color: #f87171; }
+#review .rall { position: absolute; inset: 0; z-index: 2; background: #0d1018; overflow: auto; padding: 8px; }
+#review .rall th { position: sticky; top: 0; background: #161b26; cursor: pointer; white-space: nowrap; }
+#review .rall td:first-child { color: #e5e7eb; cursor: pointer; }
+#review .rall td { text-align: right; } #review .rall td:first-child, #review .rall th:first-child { text-align: left; }
 #review .rmsg { font-size: 13px; color: #fbbf24; min-height: 16px; }
 @media (max-aspect-ratio: 1/1) { #review .rmain { flex-direction: column; } #review .rview { flex: none; height: 46vh; } }
 `;
 
 let R = null; // offene Review-Seite
+
+// ---------- Technische Daten eines gebauten Autos ----------
+const mb = b => b == null ? '–' : (b / 1048576).toFixed(b < 1048576 ? 2 : 1) + ' MB';
+const num = n => Math.round(n).toLocaleString('de-CH');
+const sizeCache = new Map();
+function fileSize(url) { // Dateigrösse vom Server (HEAD), ohne die Datei zu laden
+  if (!sizeCache.has(url)) sizeCache.set(url, fetch(url, { method: 'HEAD', cache: 'no-store' }).then(r => r.ok ? +r.headers.get('content-length') || null : null).catch(() => null));
+  return sizeCache.get(url);
+}
+function texBytes(t) { const i = t.image; if (!i || !i.width) return 0; return i.width * i.height * 4 * (t.generateMipmaps === false ? 1 : 4 / 3); }
+export function carStats(car) {
+  const geos = new Set(), mats = new Set(), texs = new Set(), b = new THREE.Box3(); let tris = 0, verts = 0, draws = 0;
+  car.traverseVisible(o => {
+    if (!o.isMesh || o.name === 'shadow') return;
+    if (o.name !== 'driver' && !o.parent?.name?.includes('driver') && !(o.material && o.material.transparent && o.material.opacity < 0.05)) b.expandByObject(o, true);
+    const g = o.geometry, n = o.isInstancedMesh ? o.count : 1;
+    tris += (g.index ? g.index.count : g.attributes.position.count) / 3 * n; verts += g.attributes.position.count; draws++;
+    geos.add(g);
+    for (const m of [].concat(o.material)) { mats.add(m); for (const k in m) { const v = m[k]; if (v && v.isTexture) texs.add(v); } }
+  });
+  let geoB = 0; for (const g of geos) { for (const a of Object.values(g.attributes)) geoB += a.array.byteLength; if (g.index) geoB += g.index.array.byteLength; }
+  let texB = 0, maxTex = 0; for (const t of texs) { texB += texBytes(t); maxTex = Math.max(maxTex, t.image?.width || 0, t.image?.height || 0); }
+  const sz = b.isEmpty() ? new THREE.Vector3() : b.getSize(new THREE.Vector3());
+  return { tris, verts, draws, mats: mats.size, texs: texs.size, maxTex, geoB, texB, size: sz };
+}
+const modelEntry = kind => MODELS.find(M => M.kinds.includes(kind)) || null;
+const mobileFile = f => f.replace('models/', 'models/m/');
+
 
 // Eigenes Eingabefeld statt window.prompt (das wird in installierten Web-Apps, im Vollbild und in eingebetteten Browsern oft still unterdrückt)
 function askCode() {
@@ -85,7 +121,7 @@ export async function openReview(api, fb) { // ohne Freischaltung zeigt sie nur 
   const root = document.createElement('div'); root.id = 'review';
   root.innerHTML = `
     <div class="rtop"><b>🔍 Review</b><button data-a="prev">◀</button><select class="rcar"></select><button data-a="next">▶</button>
-      <button data-a="close" title="Schliessen">✕</button></div>
+      <button data-a="all" title="Alle Autos als Tabelle">📊</button><button data-a="close" title="Schliessen">✕</button></div>
     <div class="rmain">
       <div class="rview"><div class="rinfo"></div></div>
       <div class="rside">
@@ -102,6 +138,8 @@ export async function openReview(api, fb) { // ohne Freischaltung zeigt sie nur 
           <button data-a="sound">🔊 Motor</button><button data-a="gas">⛽ Gas</button>
           <label>Drehzahl <input type="range" class="rrpm" min="0" max="1" step="0.01" value="0"></label>
         </div>
+        <h4>Technik</h4>
+        <table class="rtech"></table>
         <h4>Finding zu diesem Auto</h4>
         <div class="rform"><select class="rtopic">${TOPICS.map(t => `<option>${t}</option>`).join('')}</select><button data-a="send">📨 Speichern</button></div>
         <textarea class="rtext" maxlength="1000" placeholder="Was stimmt nicht? Z. B. „Blinker hinten links ist zu weit innen“"></textarea>
@@ -146,7 +184,9 @@ export async function openReview(api, fb) { // ohne Freischaltung zeigt sie nur 
     const car = buildCar(v, api.kinds); setLod(car, false);
     car.traverse(o => { if (o.isMesh) o.castShadow = true; });
     scene.add(car); st.car = car; car.updateMatrixWorld(true);
+    st.stats = carStats(car);
     st.lamps = makeLamps(car); car.add(st.lamps.g);
+    renderTech();
     const u = car.userData, src = u.lampShapes ? 'echte Lampenformen' : 'Lampen geschätzt (Modell ohne Lampenform)';
     $('.rinfo').textContent = `${label(kind)} · Typ ${kind} · ${(u.length || 0).toFixed(2)} m · ${src}`;
     if (st.snd) startSound();
@@ -155,6 +195,59 @@ export async function openReview(api, fb) { // ohne Freischaltung zeigt sie nur 
   function fillSelect() {
     const sel = $('.rcar'), open = k => Object.values(st.findings).filter(f => f.kind === k && f.status !== 'erledigt').length;
     sel.innerHTML = list.map(k => `<option value="${k}"${k === st.kind ? ' selected' : ''}>${label(k)}${open(k) ? ' (' + open(k) + ' offen)' : ''}</option>`).join('');
+  }
+  function renderTech() {
+    const k = st.kind, s = st.stats, u = st.car.userData, M = modelEntry(k), P = soundOf(k), K = api.kinds[k] || {};
+    const cls = (v, w, b) => v > b ? 'bad' : v > w ? 'warn' : '';
+    const ls = u.lampShapes, shapes = ls ? ['head', 'tail', 'blinkF', 'blinkR'].map(n => (ls[n] || []).filter(Boolean).length) : null;
+    const rows = [
+      ['Modell', M ? M.file.replace('models/', '') + (MOBILE ? ' (Handy-Fassung)' : '') : 'kein echtes Modell (gebaut aus Formen)'],
+      ['Dreiecke', `<span class="${cls(s.tris, 60000, 120000)}">${num(s.tris)}</span> · ${num(s.verts)} Ecken`],
+      ['Zeichen-Befehle', `<span class="${cls(s.draws, 40, 80)}">${s.draws}</span> Teile · ${s.mats} Materialien`],
+      ['Bilder', `${s.texs}${s.maxTex ? ' · grösstes ' + s.maxTex + ' px' : ''}`],
+      ['Grafikspeicher', `${mb(s.geoB + s.texB)} <small>(Form ${mb(s.geoB)}, Bilder ${mb(s.texB)})</small>`],
+      ['Datei', M ? '<span class="rfile">…</span>' : '–'],
+      ['Masse', `${s.size.x.toFixed(2)} × ${s.size.z.toFixed(2)} × ${s.size.y.toFixed(2)} m (L × B × H)${M ? ' · soll ' + M.len + ' m' : ''}`],
+      ['Räder', `${(u.wheels || []).length} drehende Teile`],
+      ['Lampen', shapes ? `echte Formen: Scheinwerfer ${shapes[0]}, Rück ${shapes[1]}, Blinker vorne ${shapes[2]} / hinten ${shapes[3]}` : (u.lampPos ? 'Lage aus dem Modell, keine Form' : 'geschätzt aus dem Umriss')],
+      ['Fahrersitz', u.eye ? u.eye.map(n => n.toFixed(2)).join(' / ') + (M && (M.eyeX !== undefined || M.eyeY !== undefined) ? ' (von Hand)' : '') : '–'],
+      ['Motor-Ton', (hasRecording(k) ? '🎙️ echte Aufnahme im Leerlauf + ' : '') + (P.type === 'engine' ? `${P.cyl} Zylinder, ${P.idle}–${P.red} U/min` + ['turbo', 'sc', 'burble', 'rasp', 'pops', 'knock'].filter(n => P[n] > 0.15).map(n => ({ turbo: ' · Turbo', sc: ' · Kompressor', burble: ' · Blubbern', rasp: ' · Kreischen', pops: ' · Klepfen', knock: ' · Diesel-Klopfen' })[n]).join('') : P.type || 'Synthesizer')],
+      ['Typ', `${k} · ${K.tier || '–'}${K.name ? ' · ' + K.name : ''}`],
+      ['Ersteller', M ? M.credit : '–'],
+    ];
+    const t = $('.rtech'); t.innerHTML = '';
+    for (const [a, b] of rows) { const tr = document.createElement('tr'); tr.innerHTML = `<td>${a}</td><td>${b}</td>`; t.append(tr); }
+    if (M) Promise.all([fileSize(M.file), fileSize(mobileFile(M.file))]).then(([pc, mo]) => {
+      if (st.kind !== k) return; const f = $('.rfile'); if (f) f.textContent = `PC ${mb(pc)} · Handy ${mb(mo)}`;
+    });
+  }
+  // Übersicht: alle echten Autos als Tabelle (antippen = dieses Auto zeigen, Spaltenkopf = sortieren)
+  async function showAll() {
+    if ($('.rall')) { $('.rall').remove(); return; }
+    const box = document.createElement('div'); box.className = 'rall'; box.textContent = '⏳ …'; view.append(box);
+    const rows = [];
+    for (const k of real) {
+      const M = modelEntry(k); if (!M || !hasModel(k)) continue;
+      const car = buildCar({ kind: k, id: 'review-' + k, color: '#9ca3af', special: null }, api.kinds); setLod(car, false); car.updateMatrixWorld(true);
+      const s = carStats(car), ls = car.userData.lampShapes;
+      rows.push({ k, name: label(k), tris: s.tris, draws: s.draws, texs: s.texs, maxTex: s.maxTex, gpu: s.geoB + s.texB, pc: await fileSize(M.file), mo: await fileSize(mobileFile(M.file)), lamps: ls ? 'Form' : 'geschätzt', snd: hasRecording(k) ? '🎙️' : '', open: Object.values(st.findings).filter(f => f.kind === k && f.status !== 'erledigt').length });
+    }
+    const cols = [['name', 'Auto'], ['tris', 'Dreiecke'], ['draws', 'Teile'], ['texs', 'Bilder'], ['maxTex', 'px'], ['gpu', 'Grafik'], ['pc', 'Datei PC'], ['mo', 'Handy'], ['lamps', 'Lampen'], ['snd', 'Ton'], ['open', 'offen']];
+    let by = 'tris', dir = -1;
+    const fmt = (c, v) => ['gpu', 'pc', 'mo'].includes(c) ? mb(v) : typeof v === 'number' ? num(v) : v;
+    const draw = () => {
+      rows.sort((a, b) => (a[by] > b[by] ? 1 : a[by] < b[by] ? -1 : 0) * dir);
+      const tot = rows.reduce((t, r) => ({ tris: t.tris + r.tris, pc: t.pc + (r.pc || 0), mo: t.mo + (r.mo || 0), gpu: t.gpu + r.gpu }), { tris: 0, pc: 0, mo: 0, gpu: 0 });
+      box.innerHTML = `<div style="font-size:13px;margin-bottom:4px">${rows.length} echte Autos · zusammen ${num(tot.tris)} Dreiecke · Dateien PC ${mb(tot.pc)}, Handy ${mb(tot.mo)} · Grafikspeicher ${mb(tot.gpu)} <button data-x="1">✕</button></div>` +
+        '<table><tr>' + cols.map(([c, n]) => `<th data-c="${c}">${n}${c === by ? (dir < 0 ? ' ▼' : ' ▲') : ''}</th>`).join('') + '</tr>' +
+        rows.map(r => `<tr data-k="${r.k}">` + cols.map(([c]) => `<td class="${c === 'tris' && r.tris > 120000 ? 'bad' : c === 'tris' && r.tris > 60000 ? 'warn' : ''}">${fmt(c, r[c])}</td>`).join('') + '</tr>').join('') + '</table>';
+    };
+    box.addEventListener('click', e => {
+      if (e.target.dataset.x) return box.remove();
+      const th = e.target.closest('th'); if (th) { const c = th.dataset.c; dir = by === c ? -dir : c === 'name' || c === 'lamps' ? 1 : -1; by = c; draw(); return; }
+      const tr = e.target.closest('tr[data-k]'); if (tr) { box.remove(); showCar(tr.dataset.k); }
+    });
+    draw();
   }
   function renderList() {
     const fl = $('.flist'), items = Object.entries(st.findings).filter(([, f]) => f.kind === st.kind).sort((a, b) => b[1].t - a[1].t);
@@ -191,6 +284,7 @@ export async function openReview(api, fb) { // ohne Freischaltung zeigt sie nur 
     const b = e.target.closest('button'); if (!b) return;
     const a = b.dataset.a, i = list.indexOf(st.kind);
     if (a === 'close') return close();
+    if (a === 'all') return showAll();
     if (a === 'prev') showCar(list[(i - 1 + list.length) % list.length]);
     if (a === 'next') showCar(list[(i + 1) % list.length]);
     if (a === 'bl') toggleBlink('left'); if (a === 'br') toggleBlink('right'); if (a === 'hz') toggleBlink('hazard');
