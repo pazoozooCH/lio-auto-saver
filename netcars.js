@@ -77,6 +77,7 @@ export function makeNetCars({ scene, kinds, net }) {
       for (const s of Object.keys(players)) {
         const slot = +s, p = players[s];
         if (slot === net.mySlot) continue;
+        if (p.special === 'ghost') { if (cars.has(slot)) remove(slot); continue; } // Geist-Cayenne (online.js): unsichtbar, kein Zusammenstoss
         const l = net.latest(slot);
         const fresh = l && now - l.t < 5000;
         let c = cars.get(slot);

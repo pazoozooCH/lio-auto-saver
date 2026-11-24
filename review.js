@@ -50,6 +50,7 @@ const CSS = `
 `;
 
 let R = null; // offene Review-Seite
+const ghostOn = () => { try { return localStorage.getItem('autoRetterGhost') !== '0'; } catch (e) { return true; } }; // Geist-Cayenne (online.js)
 
 // ---------- Technische Daten eines gebauten Autos ----------
 const mb = b => b == null ? '–' : (b / 1048576).toFixed(b < 1048576 ? 2 : 1) + ' MB';
@@ -129,6 +130,7 @@ export async function openReview(api, fb) { // ohne Freischaltung zeigt sie nur 
           <button data-a="bl">◀ Blinker</button><button data-a="hz">⚠️ Warnblinker</button><button data-a="br">Blinker ▶</button>
           <button data-a="night">🌙 Nacht</button><button data-a="brake">🛑 Bremse</button>
           <button data-a="dent">💥 Delle</button><button data-a="fix">🔧 Reparieren</button>
+          <button data-a="ghost" title="Dein Cayenne ist online beim freien Fahren für die anderen unsichtbar">👻 Geist-Cayenne online</button>
         </div>
         <div class="rbtns">
           <button data-a="cam" data-c="front">Vorne</button><button data-a="cam" data-c="back">Hinten</button><button data-a="cam" data-c="side">Seite</button>
@@ -298,8 +300,10 @@ export async function openReview(api, fb) { // ohne Freischaltung zeigt sie nur 
     if (a === 'sound') { if (st.snd) { st.snd.stop(); st.snd = null; } else startSound(); b.classList.toggle('on', !!st.snd); }
     if (a === 'gas') { st.gas = !st.gas; b.classList.toggle('on', st.gas); }
     if (a === 'send') send();
+    if (a === 'ghost') { const on = !ghostOn(); try { localStorage.setItem('autoRetterGhost', on ? '1' : '0'); } catch (e) {} b.classList.toggle('on', on); msg(on ? '👻 Dein Cayenne ist online für die anderen unsichtbar' : 'Dein Cayenne ist online wieder sichtbar'); }
   });
   btn('spin').classList.add('on');
+  btn('ghost').classList.toggle('on', ghostOn());
   $('.rcar').addEventListener('change', e => showCar(e.target.value));
   $('.rrpm').addEventListener('input', e => { st.rpm = +e.target.value; });
   async function send() {

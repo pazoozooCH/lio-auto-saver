@@ -4,7 +4,7 @@
 import * as THREE from 'three';
 import { Sky } from 'three/addons/objects/Sky.js';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
-import { buildCar, animateCar, warmUp, makeQuality } from './cars3d.js';
+import { buildCar, animateCar, warmUp, makeQuality, ghostLook } from './cars3d.js';
 import { makeNoise, rng, smoothstep, surface, terrain, cloudDome } from './world3d.js';
 import { createCarSound, crash, gearbox } from './sound.js';
 import { makeNetCars } from './netcars.js';
@@ -762,6 +762,7 @@ export function startStunt({ player, kinds, topSpeed, onExit, earn = () => {}, n
   }
   S.fx.clear();
   const mesh = buildCar(player, kinds);
+  if (player.ghost) ghostLook(mesh); // Geist-Cayenne: für die anderen unsichtbar, selber nur feine Linien
   mesh.rotation.order = 'YZX';
   const me = { mesh, special: player.special || null, steer: 0, maxV: Math.min(36, topSpeed(player.ps)), acc: 6 + player.ps * 0.07, radius: Math.max(1.3, mesh.userData.radius * 0.8) };
   // online starten alle etwas versetzt, damit sie nicht aufeinander stehen

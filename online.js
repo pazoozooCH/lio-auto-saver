@@ -38,11 +38,17 @@ async function connect() {
   const user = auth.currentUser || (await authM.signInAnonymously(auth)).user;
   const db = dbM.getDatabase(app);
   fb = { ...dbM, db, uid: user.uid, offset: 0 };
+  dbM.get(dbM.ref(db, 'reviewers/' + user.uid)).then(s => { ghostDevice = s.exists(); }).catch(() => {}); // Lionels Geräte (Review-Code)
   // Wird das anonyme Konto aufgeräumt (nach 30 Tagen), still neu anmelden
   authM.onAuthStateChanged(auth, u => { if (u) fb.uid = u.uid; else authM.signInAnonymously(auth).catch(() => {}); });
   dbM.onValue(dbM.ref(db, '.info/serverTimeOffset'), s => { fb.offset = s.val() || 0; });
   return fb;
 }
+// Geist-Cayenne (Wunsch Lionel): auf seinen Geräten ist sein Cayenne (Typ 'car') beim freien Fahren online für die anderen
+// unsichtbar (special 'ghost' im Platz; netcars.js zeigt ihn nicht, keine Zusammenstösse), er selbst sieht feine Linien
+// (ghostLook in cars3d.js). Ausschalten auf der Review-Seite (autoRetterGhost = '0').
+let ghostDevice = false;
+const ghostOn = () => ghostDevice && load('autoRetterGhost', '1') !== '0';
 const serverNow = () => Date.now() + (fb ? fb.offset : 0);
 export const connectFirebase = connect; // für die Review-Seite (review.js)
 
@@ -211,6 +217,7 @@ function readForm() {
   store(LS.car, carId);
   const me = { name, kind: v.kind, color: String(v.color || '#888888').slice(0, 10), ps: Math.min(1000, Math.max(0, Math.round(v.ps))) };
   if (v.special) me.special = v.special;
+  if (ghostOn() && v.kind === 'car') me.special = 'ghost';
   const t = cleanTune(v.tune);
   if (t) me.tune = t; // Tuning sehen auch die Mitspieler
   return me;
@@ -388,7 +395,7 @@ async function leaveRoom(byUser, msg = '') {
 // ---------- Rennen starten ----------
 function vehicleOf(p) {
   const kind = api.kinds[p.kind] ? p.kind : 'car';
-  return { kind, color: p.color, special: p.special || null, ps: p.ps, tune: cleanTune(p.tune) || undefined };
+  return { kind, color: p.color, special: p.special && p.special !== 'ghost' ? p.special : null, ps: p.ps, tune: cleanTune(p.tune) || undefined, ghost: p.special === 'ghost' };
 }
 // Tuning für die Datenbank: nur bekannte Teile, kurz (die Regeln prüfen dasselbe)
 function cleanTune(t) {

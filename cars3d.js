@@ -1955,6 +1955,21 @@ const templates = new Map(), paints = new Map();
 // Die Farbe steckt nur im Lack: eine Vorlage je Typ (sonst baut jede Farbe ein ganzes Auto neu – viel zu viel Speicher fürs Handy).
 // Ausnahmen: Typen, die die Farbe in Bilder malen (Streifen).
 const COLOR_KINDS = new Set(['cement', 'camper']);
+// Geist-Look (Geist-Cayenne online): das Auto nur als feine, helle Linien (Kanten der Formen); Lichter bleiben
+const GHOST_HIDE = new THREE.MeshBasicMaterial({ visible: false });
+const GHOST_LINE = new THREE.LineBasicMaterial({ color: 0xbfe9ff, transparent: true, opacity: 0.6, depthWrite: false });
+export function ghostLook(g) {
+  const parts = []; g.traverse(o => { if (o.isMesh) parts.push(o); });
+  for (const o of parts) {
+    if (o.name === 'shadow') { o.visible = false; continue; }
+    if (o.material && o.material.transparent && o.material.blending === THREE.AdditiveBlending) continue; // Leuchten
+    const lines = new THREE.LineSegments(new THREE.EdgesGeometry(o.geometry, 28), GHOST_LINE);
+    lines.userData.noWarp = o.userData.noWarp; o.add(lines);
+    o.material = GHOST_HIDE; o.castShadow = false;
+  }
+  g.userData.ghost = true;
+  return g;
+}
 export const isPainted = v => !!(v.painted || v.special); // selbst gespritzt (Lackiererei) oder Spezial-Lack
 const paintKey = v => [v.special || '', v.color || '', (v.tune && v.tune.finish) || '', (v.tune && v.tune.neon) || ''].join('|');
 export function buildCar(v, kinds, hDiv) {

@@ -2,7 +2,7 @@
 // Wird von game.js erst geladen, wenn man in die Stadt fährt.
 import * as THREE from 'three';
 import { Sky } from 'three/addons/objects/Sky.js';
-import { buildCar, animateCar, warmUp, makeQuality, mergeStatic, setLod, MODEL_LAMPS, hasModel, modelVariants, MOBILE } from './cars3d.js';
+import { buildCar, animateCar, warmUp, makeQuality, mergeStatic, setLod, MODEL_LAMPS, hasModel, modelVariants, MOBILE, ghostLook } from './cars3d.js';
 import { makeLamps, setLamps, removeLamps, dentAt, dropDents as dropCarDents } from './carlamps.js';
 import { buildJunkyard, JUNK, BENCH, BUILT, PARTS, inJunk, loadJunk, saveJunk, missingParts } from './junkyard.js';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
@@ -6335,6 +6335,7 @@ export function startCity({ player, kinds, topSpeed, onExit, pay = () => 0, earn
     window.addEventListener('resize', () => S && !S.ui.root.hidden && layout());
   }
   const mesh = buildCar(player, kinds);
+  if (player.ghost) ghostLook(mesh); // Geist-Cayenne: für die anderen unsichtbar, selber nur feine Linien
   mesh.rotation.order = 'YZX';
   // Start: auf der rechten Spur einer Strasse am Stadtrand, Richtung Zentrum
   // online starten alle auf einer anderen Strasse am Stadtrand
