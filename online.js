@@ -46,9 +46,9 @@ async function connect() {
 }
 // Geist-Cayenne (Wunsch Lionel): auf seinen Geräten ist sein Cayenne (Typ 'car') beim freien Fahren online für die anderen
 // unsichtbar (special 'ghost' im Platz; netcars.js zeigt ihn nicht, keine Zusammenstösse), er selbst sieht feine Linien
-// (ghostLook in cars3d.js). Ausschalten auf der Review-Seite (autoRetterGhost = '0').
+// (ghostLook in cars3d.js). Einschalten je Gerät auf der Review-Seite (autoRetterGhost = '1'), sonst aus.
 let ghostDevice = false;
-const ghostOn = () => ghostDevice && load('autoRetterGhost', '1') !== '0';
+const ghostOn = () => ghostDevice && load('autoRetterGhost', '0') === '1'; // nur wo auf der Review-Seite eingeschaltet (Wunsch Lionel: nur sein PC)
 const serverNow = () => Date.now() + (fb ? fb.offset : 0);
 export const connectFirebase = connect; // für die Review-Seite (review.js)
 

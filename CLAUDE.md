@@ -176,7 +176,7 @@ Browser-Spiel ohne Build: `index.html` + `game.js` (Spiellogik, Menüs und 2D-Ze
   Geist-Cayenne (Wunsch Lionel): auf Review-Geräten (`reviewers/<uid>`) ist der Cayenne (Typ `car`) für die anderen unsichtbar
   (`special: 'ghost'` im Platz, online.js; netcars.js zeigt ihn nicht und er sendet keine Position, so verschwindet er auch
   bei alten Versionen), selber nur feine Linien (`ghostLook` in cars3d.js);
-  Schalter 👻 auf der Review-Seite (`autoRetterGhost`). Nur freies Fahren, im Rennen normal.
+  Schalter 👻 auf der Review-Seite (`autoRetterGhost` = '1', je Gerät, Standard aus; Wunsch: nur Lionels PC). Nur freies Fahren, im Rennen normal.
 - `chat.js`: Chat beim freien Fahren online: feste Sprüche (gespeichert wird die Nummer; neue Sprüche hinten anhängen),
   freier Text nur in privaten Räumen, ohne Wortfilter (Entscheid der Eltern; Regeln prüfen Länge, Rate und privat).
 - `online.js`: Online-Spiel (Lobby, Räume, Live-Daten) über Firebase Realtime Database mit anonymer Anmeldung.

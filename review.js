@@ -50,7 +50,7 @@ const CSS = `
 `;
 
 let R = null; // offene Review-Seite
-const ghostOn = () => { try { return localStorage.getItem('autoRetterGhost') !== '0'; } catch (e) { return true; } }; // Geist-Cayenne (online.js)
+const ghostOn = () => { try { return localStorage.getItem('autoRetterGhost') === '1'; } catch (e) { return false; } }; // je Gerät, Standard aus // Geist-Cayenne (online.js)
 
 // ---------- Technische Daten eines gebauten Autos ----------
 const mb = b => b == null ? '–' : (b / 1048576).toFixed(b < 1048576 ? 2 : 1) + ' MB';
