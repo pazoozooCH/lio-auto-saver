@@ -2748,11 +2748,13 @@ function draw() {
       '🪙 In der Presse sammelst du Münzen für neue Fahrzeuge im Shop.',
       '🔥 Dragster: 1 gegen 1 – wer gewinnt, bekommt das Auto des anderen!',
     ], null);
+    drawPartyTitle(); // Geburtstag (Version 200)
     drawTitleButtons();
     drawVersion();
     drawCredits();
     drawQuit();
     if (menuMsgT > 0) drawMenuMsg('', 400);
+    drawPartyConfetti();
     if (daily.open) drawDaily();
   } else if (state === 'over') {
     drawOverlay('RUNDE VORBEI!', [
@@ -2762,6 +2764,91 @@ function draw() {
       '🚗 Alle deine Fahrzeuge sind wieder heil in der Garage.',
     ], null);
     if (overTime > 0.8) drawMenuButtons('▶ NOCHMAL');
+  }
+}
+
+// ---------- Geburtstag: Version 200 (Wunsch Lionel) ----------
+// Solange das Spiel Version 200 ist, ist alles geschmückt (Startbild hier, 3D in party.js); ab Version 201 von selbst weg.
+// Testen: ?party an die Adresse hängen.
+const PARTY = (() => { try { return (window.GAME_VERSION && window.GAME_VERSION.number === 200) || /[?&#]party\b/.test(location.search + location.hash); } catch (e) { return false; } })();
+const PARTY_COLS = ['#ef4444', '#f59e0b', '#facc15', '#22c55e', '#06b6d4', '#3b82f6', '#a855f7', '#ec4899'];
+const party2d = { conf: [], balls: [], last: 0, song: false };
+function partyInit() {
+  const r = (a, b) => a + Math.random() * (b - a);
+  for (let i = 0; i < 90; i++) party2d.conf.push({ x: r(0, W), y: r(-H, H), vy: r(40, 95), ph: r(0, 6.3), sp: r(3, 8), w: r(5, 8), h: r(8, 12), c: PARTY_COLS[i % 8] });
+  for (let i = 0; i < 12; i++) party2d.balls.push({ x: i % 2 ? r(W - 92, W - 22) : r(22, 92), y: r(60, H + 200), vy: r(28, 52), r: r(17, 24), ph: r(0, 6.3), c: PARTY_COLS[(i * 3) % 8] });
+}
+function partyStep() {
+  const now = performance.now(), dt = Math.min(0.05, party2d.last ? (now - party2d.last) / 1000 : 0); party2d.last = now;
+  if (!party2d.conf.length) partyInit();
+  for (const c of party2d.conf) { c.y += c.vy * dt; c.x += Math.sin(time * 1.7 + c.ph) * 25 * dt; if (c.y > H + 12) { c.y = -12; c.x = Math.random() * W; } }
+  for (const b of party2d.balls) { b.y -= b.vy * dt; if (b.y < -b.r * 4) { b.y = H + b.r * 2 + Math.random() * 120; } }
+}
+function drawBalloon(x, y, r, col) {
+  ctx.strokeStyle = 'rgba(255,255,255,0.7)'; ctx.lineWidth = 1.2; ctx.beginPath(); ctx.moveTo(x, y + r * 1.15);
+  ctx.bezierCurveTo(x + r * 0.5, y + r * 2, x - r * 0.5, y + r * 2.6, x + Math.sin(time * 2 + x) * 3, y + r * 3.4); ctx.stroke(); // Schnur
+  ctx.fillStyle = col; ctx.beginPath(); ctx.ellipse(x, y, r, r * 1.18, 0, 0, Math.PI * 2); ctx.fill();
+  ctx.beginPath(); ctx.moveTo(x - r * 0.18, y + r * 1.28); ctx.lineTo(x + r * 0.18, y + r * 1.28); ctx.lineTo(x, y + r * 1.1); ctx.fill(); // Knoten
+  const g = ctx.createRadialGradient(x - r * 0.4, y - r * 0.45, 1, x - r * 0.3, y - r * 0.3, r * 0.75); // Glanz
+  g.addColorStop(0, 'rgba(255,255,255,0.75)'); g.addColorStop(1, 'rgba(255,255,255,0)');
+  ctx.fillStyle = g; ctx.beginPath(); ctx.ellipse(x, y, r, r * 1.18, 0, 0, Math.PI * 2); ctx.fill();
+}
+// Schmuck über dem dunklen Startbild, unter den Knöpfen
+function drawPartyTitle() {
+  if (!PARTY) return;
+  partyStep();
+  ctx.save();
+  for (const b of party2d.balls) drawBalloon(b.x + Math.sin(time * 1.2 + b.ph) * 8, b.y, b.r, b.c);
+  // Wimpelkette oben
+  const x0 = 175, x1 = W - 175, n = 26, at = u => [x0 + (x1 - x0) * u, 6 + 26 * 4 * u * (1 - u)];
+  ctx.strokeStyle = '#e2e8f0'; ctx.lineWidth = 1.5; ctx.beginPath();
+  for (let k = 0; k <= 40; k++) { const [x, y] = at(k / 40); k ? ctx.lineTo(x, y) : ctx.moveTo(x, y); } ctx.stroke();
+  for (let k = 0; k < n; k++) {
+    const u0 = (k + 0.1) / n, u1 = (k + 0.9) / n, [ax, ay] = at(u0), [bx, by] = at(u1), [mx, my] = at((u0 + u1) / 2), sw = Math.sin(time * 3 + k) * 2;
+    ctx.fillStyle = PARTY_COLS[k % 8]; ctx.beginPath(); ctx.moveTo(ax, ay); ctx.lineTo(bx, by); ctx.lineTo(mx + sw, my + 20); ctx.fill();
+  }
+  // Torte links und goldene 200 rechts neben dem Titel, schaukeln leicht
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.save(); ctx.translate(215, 122); ctx.rotate(Math.sin(time * 2) * 0.08); ctx.font = '62px system-ui, sans-serif'; ctx.fillText('🎂', 0, 0); ctx.restore();
+  ctx.save(); ctx.translate(745, 118 + Math.sin(time * 1.6) * 4); ctx.rotate(Math.sin(time * 1.3) * 0.06);
+  ctx.strokeStyle = 'rgba(255,255,255,0.7)'; ctx.lineWidth = 1.2; ctx.beginPath(); ctx.moveTo(0, 30); ctx.quadraticCurveTo(8, 55, -2, 78); ctx.stroke();
+  const gold = ctx.createLinearGradient(0, -34, 0, 34); gold.addColorStop(0, '#fff7c2'); gold.addColorStop(0.45, '#facc15'); gold.addColorStop(1, '#b7791f');
+  ctx.font = '900 64px system-ui, sans-serif'; ctx.lineJoin = 'round'; ctx.lineWidth = 7; ctx.strokeStyle = '#fff'; ctx.strokeText('200', 0, 0);
+  ctx.fillStyle = gold; ctx.fillText('200', 0, 0); ctx.restore();
+  // Schriftzug
+  const txt = '🎉 HAPPY BIRTHDAY! 🎈 Version 200 🎉';
+  ctx.font = '900 29px system-ui, sans-serif'; ctx.lineWidth = 6; ctx.strokeStyle = 'rgba(0,0,0,0.6)'; ctx.strokeText(txt, W / 2, 171);
+  const tw = ctx.measureText(txt).width, rb = ctx.createLinearGradient(W / 2 - tw / 2, 0, W / 2 + tw / 2, 0), sh = (time * 0.25) % 1;
+  PARTY_COLS.concat(PARTY_COLS[0]).forEach((c, i, a) => rb.addColorStop((i / (a.length - 1) + sh) % 1, c));
+  ctx.fillStyle = rb; ctx.fillText(txt, W / 2, 171);
+  ctx.restore();
+}
+// Konfetti ganz oben drauf
+function drawPartyConfetti() {
+  if (!PARTY) return;
+  ctx.save();
+  for (const c of party2d.conf) {
+    ctx.save(); ctx.translate(c.x, c.y); ctx.rotate(time * c.sp + c.ph); ctx.scale(Math.cos(time * c.sp * 0.8 + c.ph), 1);
+    ctx.fillStyle = c.c; ctx.fillRect(-c.w / 2, -c.h / 2, c.w, c.h); ctx.restore();
+  }
+  ctx.restore();
+}
+// „Happy Birthday“ als Spieldose, einmal beim ersten Antippen des Startbilds (Melodie ist gemeinfrei)
+function partySong() {
+  if (!PARTY || party2d.song) return;
+  const a = audio(); if (!a) return;
+  party2d.song = true;
+  const G4 = 392, A4 = 440, B4 = 493.9, C5 = 523.3, D5 = 587.3, E5 = 659.3, F5 = 698.5, G5 = 784;
+  const notes = [[G4, .75], [G4, .25], [A4, 1], [G4, 1], [C5, 1], [B4, 2], [G4, .75], [G4, .25], [A4, 1], [G4, 1], [D5, 1], [C5, 2],
+    [G4, .75], [G4, .25], [G5, 1], [E5, 1], [C5, 1], [B4, 1], [A4, 2], [F5, .75], [F5, .25], [E5, 1], [C5, 1], [D5, 1], [C5, 2.5]];
+  let t = a.currentTime + 0.1; const beat = 0.34;
+  for (const [f, d] of notes) {
+    for (const [type, mul, vol] of [['triangle', 1, 0.09], ['sine', 2, 0.025]]) {
+      const o = a.createOscillator(), g = a.createGain(); o.type = type; o.frequency.value = f * mul;
+      g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(vol, t + 0.02); g.gain.exponentialRampToValueAtTime(0.0001, t + d * beat * 0.95 + 0.25);
+      o.connect(g).connect(a.destination); o.start(t); o.stop(t + d * beat + 0.3);
+    }
+    t += d * beat;
   }
 }
 
@@ -2924,7 +3011,7 @@ function drawQuit() {
 // auf dem Startbildschirm ein Update-Knopf; kommt man auf dem Startbildschirm in die App zurück, wird gleich aktualisiert.
 // APP_FILES: alle Dateien des Spiels (beim Hinzufügen einer Datei hier ergänzen).
 const APP_FILES = ['./', 'index.html', 'game.js', 'version.js', 'press3d.js', 'race.js', 'drag.js', 'cars3d.js', 'world3d.js',
-  'online.js', 'sound.js', 'city.js', 'tracks.js', 'stunt.js', 'netcars.js', 'chat.js', 'fx.js', 'viewer.js', 'photo.js', 'outskirts.js', 'country.js', 'moon.js', 'look.js', 'suburbs.js', 'island.js', 'monaco.js', 'junkyard.js', 'carlamps.js', 'review.js', 'service.js', 'models/lowpoly_generic_suv.glb', 'models/mmc_generic_small_suv.glb', 'models/cullinan.glb', 'models/g_class.glb', 'models/ferrari_488.glb', 'models/lambo_revuelto.glb', 'models/laferrari.glb', 'models/porsche_gt2rs.glb', 'models/porsche_911_4s.glb', 'models/bmw_m4.glb', 'models/corvette_c8.glb', 'models/maybach.glb', 'models/audi_rs6.glb', 'models/audi_r8.glb', 'models/jesko.glb', 'models/koenigsegg_one1.glb', 'models/pagani_imola.glb', 'models/cayenne.glb', 'models/defender.glb', 'models/suburban.glb', 'models/express_van.glb', 'models/mclaren_765lt.glb', 'models/bugatti_tourbillon.glb', 'models/golf_gti.glb', 'models/cadillac_xt6.glb', 'models/police_charger.glb', 'models/urus.glb', 'models/mansory_rr.glb', 'models/trackhawk.glb', 'models/e63_wagon.glb', 'models/porsche_gt3rs.glb', 'models/tiguan_x.glb', 'models/tiguan_2024.glb', 'models/sls_amg.glb', 'models/bmw_x2.glb', 'models/lotus_exige.glb', 'models/jeep_renegade.glb', 'models/mclaren_p1.glb', 'models/ambulance.glb', 'models/bentley_gt.glb', 'models/skoda_kodiaq.glb', 'models/audi_q5.glb', 'sounds/car_idle.wav', 'sounds/coupe_idle.wav', 'sounds/gt3rs_idle.wav', 'sounds/hyperev_idle.wav', 'sounds/jeep_idle.wav', 'sounds/kombi_idle.wav', 'sounds/kompakt_idle.wav', 'sounds/luxsuv_idle.wav', 'sounds/muscle_idle.wav', 'sounds/offroad_idle.wav', 'sounds/racer_idle.wav', 'sounds/roadster_idle.wav', 'sounds/sports_idle.wav', 'sounds/supercar_idle.wav', 'manifest.webmanifest', 'icon-192.png', 'icon-512.png', 'apple-touch-icon.png', 'favicon.png'];
+  'online.js', 'sound.js', 'city.js', 'tracks.js', 'stunt.js', 'netcars.js', 'chat.js', 'fx.js', 'viewer.js', 'photo.js', 'outskirts.js', 'country.js', 'moon.js', 'look.js', 'suburbs.js', 'island.js', 'monaco.js', 'junkyard.js', 'carlamps.js', 'review.js', 'service.js', 'party.js', 'models/lowpoly_generic_suv.glb', 'models/mmc_generic_small_suv.glb', 'models/cullinan.glb', 'models/g_class.glb', 'models/ferrari_488.glb', 'models/lambo_revuelto.glb', 'models/laferrari.glb', 'models/porsche_gt2rs.glb', 'models/porsche_911_4s.glb', 'models/bmw_m4.glb', 'models/corvette_c8.glb', 'models/maybach.glb', 'models/audi_rs6.glb', 'models/audi_r8.glb', 'models/jesko.glb', 'models/koenigsegg_one1.glb', 'models/pagani_imola.glb', 'models/cayenne.glb', 'models/defender.glb', 'models/suburban.glb', 'models/express_van.glb', 'models/mclaren_765lt.glb', 'models/bugatti_tourbillon.glb', 'models/golf_gti.glb', 'models/cadillac_xt6.glb', 'models/police_charger.glb', 'models/urus.glb', 'models/mansory_rr.glb', 'models/trackhawk.glb', 'models/e63_wagon.glb', 'models/porsche_gt3rs.glb', 'models/tiguan_x.glb', 'models/tiguan_2024.glb', 'models/sls_amg.glb', 'models/bmw_x2.glb', 'models/lotus_exige.glb', 'models/jeep_renegade.glb', 'models/mclaren_p1.glb', 'models/ambulance.glb', 'models/bentley_gt.glb', 'models/skoda_kodiaq.glb', 'models/audi_q5.glb', 'sounds/car_idle.wav', 'sounds/coupe_idle.wav', 'sounds/gt3rs_idle.wav', 'sounds/hyperev_idle.wav', 'sounds/jeep_idle.wav', 'sounds/kombi_idle.wav', 'sounds/kompakt_idle.wav', 'sounds/luxsuv_idle.wav', 'sounds/muscle_idle.wav', 'sounds/offroad_idle.wav', 'sounds/racer_idle.wav', 'sounds/roadster_idle.wav', 'sounds/sports_idle.wav', 'sounds/supercar_idle.wav', 'manifest.webmanifest', 'icon-192.png', 'icon-512.png', 'apple-touch-icon.png', 'favicon.png'];
 const UPDATE_BTN = { x: W - 262, y: 14, w: 248, h: 46 };
 const appUpdate = { info: null, busy: false, last: 0 };
 
@@ -4902,6 +4989,7 @@ canvas.addEventListener('pointerdown', e => {
   if (state === 'title' || state === 'over') {
     if (state === 'over' && overTime < 0.8) return;
     if (state === 'title') {
+      partySong(); // Geburtstag: einmal „Happy Birthday“
       if (daily.open) { dailyTap(px, py); return; }
       if (inRect(px, py, DAILY_SMALL)) { daily.open = true; return; }
       if (inRect(px, py, QUIT_BTN)) quitApp();

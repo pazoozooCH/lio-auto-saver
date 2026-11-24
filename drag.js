@@ -7,6 +7,7 @@ import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { buildCar, animateCar, warmUp, makeQuality, mergeStatic } from './cars3d.js';
 import { makeNoise, rng, smoothstep, surface, terrain, cloudDome } from './world3d.js';
 import { createCarSound } from './sound.js';
+import { PARTY, makeParty } from './party.js'; // Geburtstag (Version 200)
 
 const DIST = 402;                 // eine Viertelmeile
 const LANE = 3.2;                 // Abstand der Spurmitte von der Mittelmauer
@@ -645,6 +646,7 @@ function render(dt) {
   W3.sun.position.set(me.x - 60, 70, -50);
   W3.sun.target.position.set(me.x + 10, 0, 0);
   W3.clouds.position.set(cam.position.x, 0, cam.position.z);
+  if (PARTY) { if (!W3.party) W3.party = makeParty(W3.scene); W3.party.update(dt, cam, 0, 0); } // Geburtstag
   W3.renderer.render(W3.scene, cam);
 }
 

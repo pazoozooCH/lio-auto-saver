@@ -14,6 +14,7 @@ import { makeNetCars } from './netcars.js';
 import { setIsland, islandDist, landDist, SEA_Y, ISLAND_C, MONACO } from './island.js';
 import { buildMonaco, monGround, monRoad, inMonaco, nearMonPier, MON_BOAT, MON_PIER, MON_ROADS, MON_NAME, FERRY, FERRY_Y, FERRY_LEN, FERRY_PATH, ferryAt, ferryLocal, ferryWorld, makeFerry,
   makeMonacoTraffic, stepMonacoTraffic } from './monaco.js';
+import { PARTY, makeParty, partyGeo, birthdayBanner, birthdayCake } from './party.js';
 import { buildService, serviceDist, inService, SERVICES, CITY_SERVICES } from './service.js';
 import { buildSuburbs, suburbDist, inSuburb, suburbRoad, drawSuburbs, SUBURBS, SUB_PLACES } from './suburbs.js';
 import { loadLook, makeLook, skyEnvironment, lookWanted, setLookWanted } from './look.js';
@@ -1616,6 +1617,24 @@ function buildWorld() {
   // Diamantinsel (monaco.js): eigenes Gelände, Villen, Palast, Jachthafen, Piste
   const monaco = buildMonaco({ scene, group: decor, asphaltMat, lineMat, paveMat, sign, rng, round, solid,
     terrainMesh: o => terrain({ ...o, detail: grassDetail, detailRepeat: 160 }) });
+  if (PARTY) { // Geburtstag (Version 200, party.js): Wimpelketten über allen Strassen, Ballon-Sträusse an Kreuzungen, Torte und Banner
+    const pg = partyGeo(), off = ROAD / 2 + 1.3;
+    for (let i = 0; i <= N; i++) for (let j = 0; j <= N; j++) {
+      for (const d of [0, 1]) {
+        if (isPed(i, j, d)) continue;
+        const [fx, fz] = DIRS[d], mx = node(i) + fx * BLOCK / 2, mz = node(j) + fz * BLOCK / 2; // Mitte des Strassenstücks, quer darüber
+        const ax = mx - fz * off, az = mz - fx * off, bx = mx + fz * off, bz = mz + fx * off;
+        pg.pole(ax, az); pg.pole(bx, bz); pg.bunting(ax, az, bx, bz);
+      }
+      if ((i + j) % 2 === 0 && nodeSegs(i, j) >= 3 && blockOn(i, j) && (i + ',' + j) !== plaza) pg.bunch(node(i) + off + 0.6, node(j) + off + 0.6); // Ecke im Block (i, j)
+    }
+    const [pi, pj] = plaza.split(',').map(Number), pcx = (node(pi) + node(pi + 1)) / 2, pcz = (node(pj) + node(pj + 1)) / 2; // Platz mit Brunnen
+    for (const [dx, dz] of [[-19, -19], [19, -19], [-19, 19]]) pg.bunch(pcx + dx, pcz + dz, 0.16, 7);
+    decor.add(pg.mesh());
+    birthdayCake(decor, pcx + 16, pcz + 16, 4.6); round.push({ x: pcx + 16, z: pcz + 16, r: 4.8 });
+    birthdayBanner(decor, pcx, pcz - 18, 0); birthdayBanner(decor, pcx - 18, pcz, Math.PI / 2);
+    birthdayBanner(decor, node(1) + 60, node(0), Math.PI / 2, ROAD + 3); // gleich nach dem Start über die Strasse
+  }
   scene.add(decor);
   mergeStatic(decor, { bySig: true, tile: window.__mergeTile ?? 400 }); // gleiche Farben zusammen, in grossen Kacheln (weniger Zeichen-Befehle)
   const clouds = cloudDome({ radius: 2600, coverage: 0.52, shade: '#aebccd', seed: 9 });
@@ -6334,6 +6353,7 @@ export function startCity({ player, kinds, topSpeed, onExit, pay = () => 0, earn
     S.fx = { ...fx0, puff(x, y, z, vx, vz) { warpXZ(x, z, wp); fx0.puff(wp.x, y, wp.z, vx, vz); }, mark(k, x, y, z, on) { warpXZ(x, z, wp); fx0.mark(k, wp.x, y, wp.z, on); } };
     window.addEventListener('resize', () => S && !S.ui.root.hidden && layout());
   }
+  if (PARTY && !S.party) S.party = makeParty(S.scene); // Geburtstag: Ballone, Konfetti, nachts Feuerwerk
   const mesh = buildCar(player, kinds);
   if (player.ghost) ghostLook(mesh); // Geist-Cayenne: für die anderen unsichtbar, selber nur feine Linien
   mesh.rotation.order = 'YZX';
@@ -6717,6 +6737,7 @@ function render(dt) {
   S.clouds.position.set(cam.position.x, 0, cam.position.z);
   S.skyMesh.position.set(cam.position.x, 0, cam.position.z); S.stars.position.set(cam.position.x, 0, cam.position.z);
   S.fx.update(dt, cam, S.renderer);
+  if (S.party) { S.party.root.visible = !city.moonOn; if (!city.moonOn) S.party.update(dt, cam, city.night || 0, (city.gy || 0) + groundAt(me.pos.x, me.pos.z)); } // auf dem Mond keine Luft für Ballone
   if (S.look && S.look.on) S.look.render(dt); else S.renderer.render(S.scene, cam);
   unwarpFrame();
 }

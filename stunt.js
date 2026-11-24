@@ -7,6 +7,7 @@ import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 import { buildCar, animateCar, warmUp, makeQuality, ghostLook } from './cars3d.js';
 import { makeNoise, rng, smoothstep, surface, terrain, cloudDome } from './world3d.js';
 import { createCarSound, crash, gearbox } from './sound.js';
+import { PARTY, makeParty, birthdayBanner } from './party.js'; // Geburtstag (Version 200)
 import { makeNetCars } from './netcars.js';
 import { makeChat } from './chat.js';
 import { loadLook, makeLook, lookWanted } from './look.js';
@@ -761,6 +762,7 @@ export function startStunt({ player, kinds, topSpeed, onExit, earn = () => {}, n
     window.addEventListener('resize', () => S && !S.ui.root.hidden && layout());
   }
   S.fx.clear();
+  if (PARTY && !S.party) { S.party = makeParty(S.scene); birthdayBanner(S.scene, -150, 0, Math.PI / 2, 14, 7.9); } // Geburtstag: Ballone, Konfetti, Banner über dem Tor
   const mesh = buildCar(player, kinds);
   if (player.ghost) ghostLook(mesh); // Geist-Cayenne: für die anderen unsichtbar, selber nur feine Linien
   mesh.rotation.order = 'YZX';
@@ -872,6 +874,7 @@ function render(dt) {
   S.sun.target.position.set(me.x, me.y, me.z);
   S.clouds.position.set(cam.position.x, 0, cam.position.z);
   S.fx.update(dt, cam, S.renderer);
+  if (S.party) S.party.update(dt, cam, 0, 0);
   if (S.look && S.look.on && lookWanted()) { S.look.watch(dt); S.look.render(dt); } else S.renderer.render(S.scene, cam);
 }
 

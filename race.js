@@ -8,6 +8,7 @@ import { buildCar, animateCar, warmUp, makeQuality, mergeStatic } from './cars3d
 import { makeNoise, rng, smoothstep, surface, terrain, cloudDome } from './world3d.js';
 import { createCarSound, crash, gearbox } from './sound.js';
 import { TRACKS, THEMES, buildTheme } from './tracks.js';
+import { PARTY, makeParty } from './party.js'; // Geburtstag (Version 200)
 import { loadLook, makeLook, lookWanted } from './look.js';
 
 const TRACK_W = 14;          // Fahrbahnbreite in Metern
@@ -828,6 +829,7 @@ export function startRace({ player, opponents, kinds, topSpeed, onFinish, net = 
   if (!R.worlds[def.id]) R.worlds[def.id] = buildWorld(def, R.renderer);
   const world = R.worlds[def.id];
   if (!world.fx) world.fx = makeEffects(world.scene); // Reifenrauch und Bremsspuren (gehören zur Szene der Strecke)
+  if (PARTY && !world.party) world.party = makeParty(world.scene); // Geburtstag: Ballone und Konfetti
   Object.assign(R, world); // aktuelle Strecke: Szene, Kamera, Sonne, Strecke, Effekte …
   R.fx.clear();
   R.renderer.toneMappingExposure = THEMES[def.theme].exposure;
@@ -1274,6 +1276,7 @@ function render(dt) {
   R.clouds.position.set(R.camera.position.x, 0, R.camera.position.z);
   R.update(dt, race.t, R.camera);
   R.fx.update(dt, R.camera, R.renderer);
+  if (R.party) R.party.update(dt, R.camera, 0, my);
   if (lookOn()) { if (R.look.watch(dt)) R.lookOff = true; R.look.render(dt); } else R.renderer.render(R.scene, R.camera);
   renderMirror(me);
 }

@@ -221,6 +221,10 @@ Browser-Spiel ohne Build: `index.html` + `game.js` (Spiellogik, Menüs und 2D-Ze
 - `service.js`: Tankstellen mit Werkstatt (tanken, laden, reparieren wie in der Stadt; `S.places.services`, Karte ⛽):
   drei in der Stadt auf freien Waldblöcken (`CITY_SERVICES`, Block → Richtung zur Strasse) und acht draussen an den Zubringern
   der Autobahn-Ausfahrten (`SERVICES`, Welt-Koordinaten; `serviceDist` macht das Gelände eben und hält Bäume fern, `inService` = Boden 0).
+- `party.js`: Geburtstag zu Version 200 (Wunsch Lionel): nur wenn `GAME_VERSION.number === 200` (testen: `?party`), ab 201 von selbst weg.
+  Ballone, Konfetti, nachts Feuerwerk um die Kamera (`makeParty`: Stadt, Stuntpark, Rennen, Dragster), in der Stadt Wimpelketten
+  über allen Strassen, Ballon-Sträusse, Torte und Banner (`partyGeo`, `birthdayCake`, `birthdayBanner`); Startbild in game.js
+  (`drawPartyTitle`, `drawPartyConfetti`, `partySong` = „Happy Birthday“ beim ersten Antippen). Darf später ganz weg.
 - `world3d.js`: Baukasten für die Landschaften (Rauschen, Oberflächen mit Relief, Gelände, Wolken, Staub, Lichtstrahlen).
 Texte im Spiel sind Deutsch (Schweizer Schreibweise, kein ß).
 
