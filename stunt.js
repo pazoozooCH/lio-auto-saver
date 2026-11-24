@@ -771,7 +771,7 @@ export function startStunt({ player, kinds, topSpeed, onExit, earn = () => {}, n
   try { best = +localStorage.getItem(BEST_KEY) || 0; } catch (e) { /* egal */ }
   P = { me, input: {}, t: 0, msgT: 0, last: performance.now(), onExit, earn, score: 0, best, combo: 0, comboT: 0, drift: 0, driftT: 0,
     gripBoost: (kinds[player.kind] && kinds[player.kind].grip) || 1, canFly: !!(kinds[player.kind] && kinds[player.kind].fly), gears: gearbox(player.kind), net,
-    netCars: net ? makeNetCars({ scene: S.scene, kinds, net }) : null };
+    netCars: net ? makeNetCars({ scene: S.scene, kinds, net, ghost: !!player.ghost }) : null };
   window.__stunt = () => P; // für Tests im Browser
   window.__stuntS = () => S;
   S.scene.add(mesh);

@@ -174,7 +174,8 @@ Browser-Spiel ohne Build: `index.html` + `game.js` (Spiellogik, Menüs und 2D-Ze
   Im Rennen bleibt man über der Strecke (Wände gelten, nicht schneller, `T.clear` = erlaubte Höhe in Tunneln und unter Brücken).
 - `netcars.js`: Mitspieler beim freien Fahren online (Stadt, Stuntpark): senden, glätten, Namensschild, Zusammenstösse.
   Geist-Cayenne (Wunsch Lionel): auf Review-Geräten (`reviewers/<uid>`) ist der Cayenne (Typ `car`) für die anderen unsichtbar
-  (`special: 'ghost'` im Platz, online.js; netcars.js zeigt ihn nicht), selber nur feine Linien (`ghostLook` in cars3d.js);
+  (`special: 'ghost'` im Platz, online.js; netcars.js zeigt ihn nicht und er sendet keine Position, so verschwindet er auch
+  bei alten Versionen), selber nur feine Linien (`ghostLook` in cars3d.js);
   Schalter 👻 auf der Review-Seite (`autoRetterGhost`). Nur freies Fahren, im Rennen normal.
 - `chat.js`: Chat beim freien Fahren online: feste Sprüche (gespeichert wird die Nummer; neue Sprüche hinten anhängen),
   freier Text nur in privaten Räumen, ohne Wortfilter (Entscheid der Eltern; Regeln prüfen Länge, Rate und privat).

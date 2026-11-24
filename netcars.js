@@ -46,7 +46,7 @@ function bubble(text) {
   return s;
 }
 
-export function makeNetCars({ scene, kinds, net }) {
+export function makeNetCars({ scene, kinds, net, ghost = false }) { // ghost: Geist-Cayenne sendet keine Position (auch alte Versionen der anderen zeigen ihn dann nach 5 s nicht mehr)
   const cars = new Map(); // slot → { mesh, tag, x, y, z, h, a, b, v, key }
   let sendT = 0;
   const wrap = a => Math.atan2(Math.sin(a), Math.cos(a));
@@ -65,7 +65,7 @@ export function makeNetCars({ scene, kinds, net }) {
   return {
     // me: { x, y, z, h (Richtung), v (Tempo), a (Neigung vorne/hinten), b (Seitenneigung) }
     update(dt, t, me) {
-      if ((sendT -= dt) <= 0) {
+      if (!ghost && (sendT -= dt) <= 0) {
         sendT = 0.1; // 10× pro Sekunde
         const r = n => Math.round(n * 100) / 100;
         const st = { x: r(me.x), y: r(me.y || 0), z: r(me.z), h: r(wrap(me.h)), v: r(me.v), a: r(wrap(me.a || 0)), b: r(wrap(me.b || 0)) };
