@@ -5671,6 +5671,7 @@ const CSS = `
 #city .flash.on { animation: cityflash .45s ease-out; }
 @keyframes cityflash { from { opacity: .85; } to { opacity: 0; } }
 #city .minimap { position: absolute; top: 10px; right: 62px; width: 190px; height: 190px; border-radius: 50%; cursor: pointer; }
+#city.mobile .minimap:not(.big) { width: 118px; height: 118px; top: 8px; } /* Handy: Minikarte kleiner (Wunsch Lionel) */
 #city .mapzoom { position: absolute; top: 4%; left: 50%; transform: translateX(-50%); z-index: 9; display: flex; gap: 10px; }
 #city .mapzoom[hidden] { display: none; }
 #city .mapzoom button { width: 48px; height: 48px; border-radius: 50%; border: 2px solid #fff; background: rgba(15,23,42,.8); color: #fff; font-size: 24px; font-weight: 900; }
@@ -5766,7 +5767,7 @@ function buildDom() {
   style.textContent = CSS;
   document.head.appendChild(style);
   const root = document.createElement('div');
-  root.id = 'city';
+  root.id = 'city'; if (MOBILE) root.classList.add('mobile'); // Handy: kleinere Minikarte usw.
   root.hidden = true;
   root.innerHTML = `
     <canvas class="minimap" width="190" height="190"></canvas>
@@ -5950,8 +5951,6 @@ function onKey(e) {
   if (e.code === 'KeyB' && e.type === 'keydown' && !e.repeat) { toggleBase(); e.preventDefault(); return; }
   if (e.code === 'KeyX' && e.type === 'keydown' && !e.repeat) { toggleWalk(); e.preventDefault(); return; }
   if (e.code === 'KeyT' && e.type === 'keydown' && !e.repeat) { startTalk(); e.preventDefault(); return; }
-  if (e.type === 'keydown' && (e.code === 'KeyC' || e.key === '+' || e.key === '-')) { // Tempomat (Taste + und − je nach Tastatur)
-    cruiseCmd(e.code === 'KeyC' ? 'on' : e.key === '-' ? '-' : '+'); e.preventDefault(); return; }
   const k = KEYS[e.code];
   if (!k) return;
   city.input[k] = e.type === 'keydown';
@@ -6380,7 +6379,7 @@ export function startCity({ player, kinds, topSpeed, onExit, pay = () => 0, earn
     if (bm.userData.driver) bm.userData.driver.visible = false;
     S.scene.add(bm); city.rides.push({ v: { ...MOON_BUGGY.v }, x: MOON_BUGGY.x, z: MOON_BUGGY.z, h: MOON_BUGGY.h, mesh: bm });
   }
-  city.cruise = { on: false, kmh: Math.min(80, cruiseMax()) }; showCruise();
+  city.cruise = null; // Tempomat/Begrenzer abgeschafft (Wunsch Lionel); Code bleibt, falls er zurück soll
   const TR = RIDES_INFO.tractor;
   if (kinds.tractor) { // Traktor auf dem Bauernhof: zu Fuss hin und einsteigen
     const mesh = buildCar({ ...TR.v, special: null }, kinds); mesh.position.set(TR.x, groundAt(TR.x, TR.z), TR.z); mesh.rotation.y = -TR.h;
@@ -6633,7 +6632,7 @@ function updateHud(dt) {
   S.ui.kmh.textContent = Math.round(Math.abs(me.speed) * 3.6);
   S.ui.flybtn.textContent = me.fly && !me.landing ? '🛬' : '✈️';
   S.ui.flyctl.hidden = city.walk ? !!(city.walk.lift || city.sleep || city.movie) : city.plane ? (!city.plane.air && me.speed < 30) : (!me.fly || me.landing); // zu Fuss: ▲ springen, ▼ Backflip
-  S.ui.cruise.hidden = !!(city.walk || city.plane);
+  S.ui.cruise.hidden = true;
   drawMinimap();
   if (!S.snd) return;
   let near = null, nd = Infinity;

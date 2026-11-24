@@ -41,7 +41,7 @@ Browser-Spiel ohne Build: `index.html` + `game.js` (Spiellogik, Menüs und 2D-Ze
   Drehung: `warpDir` dreht genau in die eigene Blickrichtung (sonst stehen Autos schief zur gebogenen Strasse).
   Karte: eine Weltkarte für alles (Bilder im Arbeitsspeicher, `CPU2D` = willReadFrequently: auf der Grafikkarte blieben sie bei knappem Grafikspeicher leer = ganz blau; `mapBlank` prüft alle 2 s; `drawWorldMap` → `S.worldMap` + genaueres Stadtbild `S.worldDet` (`DM`), Rechteck `WM`, Meer bis zum Rand, Stadt verbogen über `wmPt`; neu gemalt, wenn
   sich die Schlüssel ändern). Oben rechts runder Ausschnitt um den Spieler, vorne = oben, in Stadt und Vororten näher
-  (`drawMinimap`); antippen = ganze Welt hochkant mit Namen (`city.bigMap`, `mapLabels`); dort zoomen (＋ − Mausrad, zwei
+  (`drawMinimap`; auf dem Handy kleiner: `#city.mobile`); antippen = ganze Welt hochkant mit Namen (`city.bigMap`, `mapLabels`); dort zoomen (＋ − Mausrad, zwei
   Finger, bis 10×) und ziehen (`mapView`, `zoomMap`, `panMap`, `mapPoint` beachtet das gedrehte Handy). Kurz antippen (`mapTap`):
   beim eigenen Pfeil = zu, sonst Navi-Ziel 📍 (`setDest`, Bild → Gitter über `unwarpXZ`); Weg durch die Stadtstrassen (`makeRoute`,
   `bfs` über `segOn`), draussen gerade; Linie auf beiden Karten (`drawRoute`), Lichtstrahl am Ziel, Abstand oben links (antippen = löschen). Auf dem Mond `drawMoonMap`.
@@ -80,8 +80,7 @@ Browser-Spiel ohne Build: `index.html` + `game.js` (Spiellogik, Menüs und 2D-Ze
   nicht über Autobahn-Leitplanken, nicht in gesperrte Gebiete); `groundAt` = Bodenhöhe genau wie das Gelände-Netz.
   Skifahren: zu Fuss zur Talstation (`LIFT` in country.js), X = Sessellift (`stepLift`), oben Ski an (`stepSki`).
   Fliegen: am Flughafen zu Fuss zum orangen Flugzeug (`S.areas.flyer`), X = einsteigen (`stepPlane`: rollen, ab ~150 km/h mit E/▲
-  abheben, landen flach und langsam, sonst Bruch = zurück zur Piste). Tempomat über der km/h-Anzeige (`city.cruise`, C, + / −;
-  höchstens die Höchstgeschwindigkeit des Autos). Stadtbild: Strassenbäume, Bänke, Läden mit Markisen, Balkone (Instanzen).
+  abheben, landen flach und langsam, sonst Bruch = zurück zur Piste). Tempomat/Begrenzer abgeschafft (`city.cruise = null`, Knöpfe versteckt). Stadtbild: Strassenbäume, Bänke, Läden mit Markisen, Balkone (Instanzen).
   Stadtleben: Läden über `openPanel` (Tankstellen-Snacks `gasShop`, Lackieren `paint`, Tuning `tuning` → `dealer.mod` in game.js
   speichert Farbe/Tuning, Drive-in `order`/`pickup`). Parkhaus (Block 5,3: `parkY`/`parkStep`/`parkBlocked`, Ebenen `city.pkL`),
   Kino (7,5: Film auf der Leinwand, X bei den Sitzen), Stadion (6,7: Spiel 14–22 Uhr, `S.match`).
