@@ -214,6 +214,9 @@ Browser-Spiel ohne Build: `index.html` + `game.js` (Spiellogik, Menüs und 2D-Ze
   Dreiecke, Teile, Bilder, Grafikspeicher, Dateigrösse PC/Handy per HEAD, Masse, Lampen, Ton) und 📊 Tabelle aller echten Autos (sortierbar).
   **Findings lesen:** `node tools/findings.mjs` (offene), `--all`, `done <id> "Antwort"` nach dem Beheben.
 - `carlamps.js`: Lichter (`makeLamps`/`setLamps`/`removeLamps`) und Beulen (`dentAt`/`dropDents`) der Autos, für city.js und review.js.
+- `service.js`: Tankstellen mit Werkstatt (tanken, laden, reparieren wie in der Stadt; `S.places.services`, Karte ⛽):
+  drei in der Stadt auf freien Waldblöcken (`CITY_SERVICES`, Block → Richtung zur Strasse) und acht draussen an den Zubringern
+  der Autobahn-Ausfahrten (`SERVICES`, Welt-Koordinaten; `serviceDist` macht das Gelände eben und hält Bäume fern, `inService` = Boden 0).
 - `world3d.js`: Baukasten für die Landschaften (Rauschen, Oberflächen mit Relief, Gelände, Wolken, Staub, Lichtstrahlen).
 Texte im Spiel sind Deutsch (Schweizer Schreibweise, kein ß).
 

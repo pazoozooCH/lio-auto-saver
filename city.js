@@ -14,6 +14,7 @@ import { makeNetCars } from './netcars.js';
 import { setIsland, islandDist, landDist, SEA_Y, ISLAND_C, MONACO } from './island.js';
 import { buildMonaco, monGround, monRoad, inMonaco, nearMonPier, MON_BOAT, MON_PIER, MON_ROADS, MON_NAME, FERRY, FERRY_Y, FERRY_LEN, FERRY_PATH, ferryAt, ferryLocal, ferryWorld, makeFerry,
   makeMonacoTraffic, stepMonacoTraffic } from './monaco.js';
+import { buildService, serviceDist, inService, SERVICES, CITY_SERVICES } from './service.js';
 import { buildSuburbs, suburbDist, inSuburb, suburbRoad, drawSuburbs, SUBURBS, SUB_PLACES } from './suburbs.js';
 import { loadLook, makeLook, skyEnvironment, lookWanted, setLookWanted } from './look.js';
 import { makeChat } from './chat.js';
@@ -611,7 +612,7 @@ function buildWorld() {
     const rr = Math.max(Math.abs(x), Math.abs(z));
     if (rr <= HALF + 60) return -0.06;
     if (inPassRegion(x, z)) return passTerrain(x, z, natural(x, z), 15); // am Berg: das feinere Gelände liegt darüber
-    let gs = groundShape(x, z); const cd = Math.min(countryDist(x, z), suburbDist(x, z)); if (cd < gs.d) gs = { d: cd, y: 0 }; // auch Bauernhof, Strand und Vororte eben
+    let gs = groundShape(x, z); const cd = Math.min(countryDist(x, z), suburbDist(x, z), serviceDist(x, z)); if (cd < gs.d) gs = { d: cd, y: 0 }; // auch Bauernhof, Strand, Vororte und Tankstellen eben
     const f = smoothstep(24, 100, gs.d); // unter Autobahn, Hafen und Flughafen eben (Hafenbecken tiefer); breiter
     // ebener Rand, sonst ragt das grobe Gelände (20-m-Raster) über die äusserste Spur
     return smoothstep(HALF + 90, HALF + 500, rr) * NZ.fbm(x / 260, z / 260, 4) * 190 * f * skiFade(x, z) + gs.y * (1 - f) + skiH(x, z) - 0.06; // + Schneeberg
@@ -675,7 +676,7 @@ function buildWorld() {
   const plaza = (N >> 1) + ',' + (N >> 1);
   const parks = new Set(); // zwölf Parks, über die Stadt verteilt (Luft zwischen den Häusern)
   while (parks.size < 12) { const k = Math.floor(r() * N) + ',' + Math.floor(r() * N); if (k !== plaza && !SPECIAL[k] && baseOf(k) < 0 && !MASK.has(k)) parks.add(k); }
-  const places = { bases: [] }; // Tankstelle, Waschanlage, Pizzeria: Mitte des Blocks; Basen
+  const places = { bases: [], services: [] }; // Tankstelle, Waschanlage, Pizzeria: Mitte des Blocks; Basen
   // Schild mit Schrift (beidseitig lesbar)
   const sign = (text, bg, fg, w = 8, h = 1.6) => {
     const c = document.createElement('canvas'); c.width = 512; c.height = Math.round(512 * h / w);
@@ -692,6 +693,7 @@ function buildWorld() {
     return b;
   };
   const tarmac = mat({ map: asphalt.map, roughness: 0.85 });
+  for (const SV of SERVICES) places.services.push(buildService(decor, SV, { sign, solid, round, y: 0 })); // draussen an den Autobahn-Ausfahrten
   function buildGas(cx, cz) { // Tankstelle: Dach auf vier Säulen, zwei Zapfsäulen, Shop dahinter
     box(40, 0.04, 30, tarmac, cx, 0.18, cz - 4);
     box(22, 0.7, 14, mat({ color: 0xf8fafc }), cx, 5.6, cz - 6);
@@ -1184,6 +1186,12 @@ function buildWorld() {
   for (let bi = 0; bi < N; bi++) for (let bj = 0; bj < N; bj++) {
     const cx = (node(bi) + node(bi + 1)) / 2, cz = (node(bj) + node(bj + 1)) / 2;
     if (ORGANIC.has(bi + ',' + bj)) { scatter(tufts, cx - 26, cz - 26, cx + 26, cz + 26, 60, 0, 0.8, 1.4, (x, z) => !suburbRoad(x, z) && !suburbRoad(x + 5, z) && !suburbRoad(x, z + 5)); continue; } // Quartier mit Gassen (suburbs.js)
+    const svc = CITY_SERVICES[bi + ',' + bj];
+    if (svc) { // Tankstelle mit Werkstatt (service.js) statt Wäldchen; 7 m näher an die Strasse
+      const [fx, fz] = { '-z': [0, -1], '+z': [0, 1], '-x': [-1, 0], '+x': [1, 0] }[svc];
+      places.services.push(buildService(decor, { x: cx + fx * 7, z: cz + fz * 7, face: svc }, { sign, solid, round, y: 0 }));
+      continue;
+    }
     if (!blockOn(bi, bj)) { // freier Block am Stadtrand: Wäldchen mit Wiese (eigener Zufall, der Haupt-Zufall bleibt gleich)
       const free = (x, z) => ![[0, 0], [7, 0], [-7, 0], [0, 7], [0, -7]].some(([a, b]) => suburbRoad(x + a, z + b)) // nicht auf die Strassen der Vororte
         && !SUBURBS.some(S2 => S2.inCity && x > S2.rect.x0 && x < S2.rect.x1 && z > S2.rect.z0 && z < S2.rect.z1); // und nicht zu den Häusern der Quartiere
@@ -1396,7 +1404,7 @@ function buildWorld() {
   for (let k = 0; k < 360;) {
     const a = r() * Math.PI * 2, rr = HALF + 30 + r() * 150;
     const tx = Math.cos(a) * rr * 1.1, tz = Math.sin(a) * rr * 1.1;
-    if (Math.max(Math.abs(tx), Math.abs(tz)) < HALF + ROAD / 2 + 12 || suburbDist(tx, tz) < 14 || groundShape(tx, tz).d < 14 || countryDist(tx, tz) < 14 || (inPassRegion(tx, tz) && passNearest(tx, tz).d < 16)) continue; // nicht auf Strassen und Plätzen
+    if (Math.max(Math.abs(tx), Math.abs(tz)) < HALF + ROAD / 2 + 12 || suburbDist(tx, tz) < 14 || serviceDist(tx, tz) < 14 || groundShape(tx, tz).d < 14 || countryDist(tx, tz) < 14 || (inPassRegion(tx, tz) && passNearest(tx, tz).d < 16)) continue; // nicht auf Strassen und Plätzen
     const ty = height(tx, tz); pines.push([tx, ty, tz, 0.9 + r() * 0.9]);
     for (let q = 0; q < 6; q++) tufts.push([tx + (vr() - 0.5) * 7, ty, tz + (vr() - 0.5) * 7, 1 + vr() * 0.6]);
     k++;
@@ -1404,7 +1412,7 @@ function buildWorld() {
   // Wiesen rund um die Stadt: viele Grasbüschel (nicht auf Strassen, Plätzen, Vororten und dem Pass)
   for (let k = 0, n = 0; k < 20000 && n < 6500; k++) {
     const a = vr() * Math.PI * 2, rr = HALF + 22 + vr() * 260, tx = Math.cos(a) * rr * 1.15, tz = Math.sin(a) * rr * 1.15;
-    if (Math.max(Math.abs(tx), Math.abs(tz)) < HALF + ROAD / 2 + 8 || groundShape(tx, tz).d < 12 || suburbDist(tx, tz) < 6 || countryDist(tx, tz) < 10
+    if (Math.max(Math.abs(tx), Math.abs(tz)) < HALF + ROAD / 2 + 8 || groundShape(tx, tz).d < 12 || suburbDist(tx, tz) < 6 || serviceDist(tx, tz) < 8 || countryDist(tx, tz) < 10
       || inPassRegion(tx, tz) || islandDist(tx, tz) < 30) continue; // am Pass liegt ein eigenes Gelände
     tufts.push([tx, height(tx, tz), tz, 0.9 + vr() * 0.8]); n++;
   }
@@ -3512,7 +3520,7 @@ function groundAt(x, z) {
   if (inPassRegion(x, z)) return Math.max(0, S.country.ground(x, z)); // auch knapp am Stadtrand: dort liegt schon das Pass-Gelände
   if (Math.abs(x) <= LIMIT && Math.abs(z) <= LIMIT) return 0;
   if (onHighway(x, z)) return hwGround(x, z); // auf der Brücke oben
-  if (onRoads(x, z) || inArea(x, z) || inCountry(x, z) || inSuburb(x, z) || inJunk(x, z)) return 0;
+  if (onRoads(x, z) || inArea(x, z) || inCountry(x, z) || inSuburb(x, z) || inJunk(x, z) || inService(x, z)) return 0;
   const gx = (x + 1100) / 20, gz = (z + 1100) / 20, i = Math.floor(gx), j = Math.floor(gz), fx = gx - i, fz = gz - j;
   const a = landAt(i, j), b = landAt(i, j + 1), c = landAt(i + 1, j + 1), d = landAt(i + 1, j);
   return Math.max(0, fx + fz <= 1 ? a + (d - a) * fx + (b - a) * fz : c + (b - c) * (1 - fx) + (d - c) * (1 - fz));
@@ -3562,7 +3570,7 @@ function stepPlaces(dt) {
   if (city.turbo > 0) city.turbo -= dt;
   // Tankstelle: unter dem Dach anhalten = volltanken (1 Münze pro 10 %) und Turbo-Benzin (30 s schneller);
   // Elektroautos laden an der grünen Ladesäule daneben. Ohne Münzen gratis.
-  const RZ = REST_ZONES, Pl = inZone(RZ.gas, x, z, 10) || inZone(RZ.charge, x, z, 10) ? RZ : P; // Tankstelle in der Stadt oder an der Raststätte
+  const Pl = [REST_ZONES, ...P.services].find(q => inZone(q.gas, x, z, 10) || inZone(q.charge, x, z, 10)) || P; // Tankstelle in der Stadt, an der Raststätte oder eine der Stationen (service.js)
   const ev = isElectric(me.v.kind), zone = ev ? Pl.charge : Pl.gas, stopped = Math.abs(me.speed) < 1.5 && me.alt < 2 && !city.walk;
   if (stopped && !ev && inZone(Pl.charge, x, z) && city.fuelT === 0) { showMsg('⛽ Benziner tanken unter dem roten Dach', 1.6); city.fuelT = -1; }
   if (stopped && ev && inZone(Pl.gas, x, z) && city.fuelT === 0) { showMsg('⚡ Elektroauto: lade an der grünen Ladesäule', 1.6); city.fuelT = -1; }
@@ -3660,8 +3668,8 @@ function stepDamage(dt) {
     const fx = Math.cos(me.heading), fz = Math.sin(me.heading), f = me.len * 0.38;
     S.fx.puff(me.pos.x + fx * f, me.alt + 1.1, me.pos.z + fz * f, fx * me.speed * 0.5, fz * me.speed * 0.5);
   }
-  // Werkstatt: in der Halle anhalten
-  const P = S.places.repair;
+  // Werkstatt: in der Halle anhalten (in der Stadt oder in einer Station mit Tankstelle, service.js)
+  const P = S.places.services.map(q => q.repair).find(q => inZone(q, me.pos.x, me.pos.z, 3)) || S.places.repair;
   if (inZone(P, me.pos.x, me.pos.z) && Math.abs(me.speed) < 1.5 && me.alt < 2 && !city.walk) {
     if (city.repairT >= 0) {
       if (city.damage < 0.02) { if (city.repairT === 0) showMsg('🔧 Dein Auto ist ganz – nichts zu reparieren', 1.6); city.repairT = -1; return; }
@@ -5612,6 +5620,7 @@ function stepCop(P, dt, T) {
 
 function surfaceAt(x, z) {
   if (city && city.boat && !city.walk) return 'water';
+  for (const q of (S.places && S.places.services) || []) { const b = q.pad; if (x > b.x0 && x < b.x1 && z > b.z0 && z < b.z1) return 'asphalt'; } // Tankstellen mit Werkstatt
   if (inMoon(x, z)) return 'moon';
   if (Math.abs(x) > HALF + ROAD / 2 || Math.abs(z) > HALF + ROAD / 2) {
     if (onHighway(x, z) || onRoads(x, z) || inArea(x, z) || suburbRoad(x, z) || monRoad(x, z) || onDeck(x, z)) return 'asphalt';
@@ -6262,6 +6271,7 @@ function drawMinimap() {
   const icon = (t, x, z, size = 13) => { const [a, b] = toS(x, z); g.font = size + 'px system-ui, sans-serif'; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText(t, a, b); };
   for (const [k, ic] of PLACE_ICONS) { const p = S.places[k]; if (p) icon(ic, p.x ?? p.cx, p.z ?? p.cz, big ? 11 : 13); }
   for (const q of SUB_PLACES) icon(q.icon, q.x, q.z, big ? 10 : 13);
+  for (const q of S.places.services) icon('⛽', q.x, q.z, big ? 11 : 13); // Tankstellen mit Werkstatt
   if (city.works) { const W2 = city.works, [a, b] = toS(node(W2.a[0]), node(W2.a[1])), [c2, d2] = toS(node(W2.b[0]), node(W2.b[1])); g.strokeStyle = '#f97316'; g.lineWidth = 4; g.beginPath(); g.moveTo(a, b); g.lineTo(c2, d2); g.stroke(); }
   for (const c of city.cars) if (!c.off) dot(c.x, c.z, '#ffffff', big ? 1.3 : 1.8);
   for (const c of city.hw || []) if (c.dir) dot(c.x, c.z, '#fde047', big ? 1 : 1.6);
