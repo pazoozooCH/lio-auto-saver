@@ -48,6 +48,10 @@ async function connect() {
 // unsichtbar (special 'ghost' im Platz; netcars.js zeigt ihn nicht, keine Zusammenstösse), er selbst sieht feine Linien
 // (ghostLook in cars3d.js). Einschalten je Gerät auf der Review-Seite (autoRetterGhost = '1'), sonst aus.
 let ghostDevice = false;
+async function refreshGhost() { // erst jetzt prüfen: das Gerät kann inzwischen (Review-Seite) freigeschaltet worden sein
+  if (!fb) return;
+  try { ghostDevice = (await fb.get(fb.ref(fb.db, 'reviewers/' + fb.uid))).exists(); } catch (e) { /* bleibt, wie es war */ }
+}
 const ghostOn = () => ghostDevice && load('autoRetterGhost', '0') === '1'; // nur wo auf der Review-Seite eingeschaltet (Wunsch Lionel: nur sein PC)
 const serverNow = () => Date.now() + (fb ? fb.offset : 0);
 export const connectFirebase = connect; // für die Review-Seite (review.js)
@@ -228,6 +232,7 @@ function busy(on) { ui.wrap.querySelectorAll('button').forEach(b => { b.disabled
 const ACTIONS = {
   back: () => { close(); },
   async create(b) {
+    await refreshGhost();
     const me = readForm();
     if (!me) return;
     // Gross-/Kleinschreibung egal (Handy-Tastaturen schreiben gern den ersten Buchstaben gross)
@@ -261,6 +266,7 @@ const ACTIONS = {
     busy(false);
   },
   async join(b) {
+    await refreshGhost();
     const me = readForm();
     if (!me) return;
     const code = (b && b.dataset.code) || ui.wrap.querySelector('#on-code').value.replace(/\D/g, '');
