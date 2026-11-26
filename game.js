@@ -3602,7 +3602,13 @@ const SKIN_DEFAULT = { tone: '#f2c9a0', hair: 'short', hairCol: '#5a3a1e', head:
 const SKIN_TABS = [
   { id: 'tone', name: '🙂 Haut' }, { id: 'hair', name: '💇 Haare', col: 'hairCol' }, { id: 'head', name: '🧢 Kopf', col: 'headCol' },
   { id: 'top', name: '👕 Oberteil', col: 'topCol' }, { id: 'legs', name: '👖 Hose', col: 'legsCol' }, { id: 'shoes', name: '👟 Schuhe', col: 'shoesCol' }, { id: 'extras', name: '✨ Extras' },
+  { id: 'designer', name: '💎 Designer' },
 ];
+// Designer-Kleider (Wunsch Lionel): eigene Seite, Teile verschiedener Arten (Fantasie-Marken wie bei den Autonamen), feste Farben
+const DESIGNER = [['top', 'supreme', 'Supriem-Shirt', 150, '🟥'], ['legs', 'cargo', 'Prado-Cargohose', 180, '👖'], ['head', 'gcap', 'Gutschi-Kappe', 180, '🧢'],
+  ['shoes', 'jordan', 'Jordän-Sneaker', 220, '👟'], ['top', 'balenci', 'Balentschiaga-Hoodie', 250, '🖤'], ['shoes', 'triple', 'Balentschiaga-Triple', 260, '🥿'],
+  ['top', 'gucci', 'Gutschi-Pulli', 300, '🧶'], ['extras', 'chain', 'Goldkette', 300, '📿'], ['extras', 'bag', 'Luis Wuitong-Tasche', 350, '👜'],
+  ['top', 'lv', 'Luis Wuitong-Jacke', 400, '🧥'], ['extras', 'watch', 'Rolecks-Uhr', 400, '⌚']];
 const SKIN_ITEMS = {
   hair: [['short', 'Kurz', 0, '💇'], ['long', 'Lang', 0, '👱'], ['bun', 'Dutt', 0, '🧑'], ['bald', 'Glatze', 0, '🥚'], ['spiky', 'Igel', 10, '🦔'], ['curly', 'Locken', 10, '🌀']],
   head: [['cap', 'Kappe', 0, '🧢'], ['none', 'Nichts', 0, '🙂'], ['beanie', 'Mütze', 15, '🧶'], ['hat', 'Sonnenhut', 20, '👒'], ['headphones', 'Kopfhörer', 40, '🎧'],
@@ -3620,15 +3626,15 @@ let skin = { ...SKIN_DEFAULT, ...loadJSON('autoRetterSkin', {}) }, skinTab = 'to
 const saveSkin = () => storeJSON('autoRetterSkin', skin);
 const skinOwned = (cat, id, price) => !price || skin.owned.includes(cat + ':' + id);
 function skinCards() {
-  const items = SKIN_ITEMS[skinTab] || [], cw = 146, ch = 78, gap = 8;
-  return items.map((it, i) => ({ it, x: 324 + (i % 4) * (cw + gap), y: 128 + Math.floor(i / 4) * (ch + gap), w: cw, h: ch }));
+  const items = skinTab === 'designer' ? DESIGNER.map(d => d.slice(1)) : SKIN_ITEMS[skinTab] || [], cw = 146, ch = 78, gap = 8;
+  return items.map((it, i) => ({ it, cat: skinTab === 'designer' ? DESIGNER[i][0] : skinTab, x: 324 + (i % 4) * (cw + gap), y: 128 + Math.floor(i / 4) * (ch + gap), w: cw, h: ch }));
 }
 function skinSwatches() {
   const tab = SKIN_TABS.find(t => t.id === skinTab), list = skinTab === 'tone' ? SKIN_TONES : skinTab === 'hair' ? SKIN_HAIRCOLS : tab.col ? SKIN_COLORS : [];
   const y = skinTab === 'tone' ? 150 : 316;
   return list.map((c, i) => ({ c, x: 324 + i * 50, y, w: 42, h: 42 }));
 }
-const skinTabRects = () => SKIN_TABS.map((t, i) => ({ t, x: 324 + i * 89, y: 76, w: 84, h: 40 }));
+const skinTabRects = () => SKIN_TABS.map((t, i) => ({ t, x: 324 + i * 78, y: 76, w: 74, h: 40 }));
 // Figur von vorne (2D), wie sie in der Stadt aussieht
 function drawSkinFigure(cx, cy, k, S = skin) {
   const P = (x, y) => [cx + x * k, cy + y * k];
@@ -3639,16 +3645,21 @@ function drawSkinFigure(cx, cy, k, S = skin) {
   if (S.extras.includes('wings')) { ell(-26, -10, 22, 34, '#f8fafc'); ell(26, -10, 22, 34, '#f8fafc'); ell(-26, -10, 14, 24, '#e0f2fe'); ell(26, -10, 14, 24, '#e0f2fe'); }
   if (S.extras.includes('cape')) { fill(top === '#dc2626' ? '#7c3aed' : '#dc2626'); ctx.beginPath(); ctx.moveTo(...P(-18, -28)); ctx.lineTo(...P(18, -28)); ctx.lineTo(...P(28, 46)); ctx.lineTo(...P(-28, 46)); ctx.fill(); }
   // Beine und Schuhe
-  const legC = S.legs === 'skirt' || S.legs === 'shorts' ? S.tone : S.legsCol;
+  const LEGS = S.legs === 'cargo' ? '#1f2937' : S.legsCol; // Designer-Hose: feste Farbe
+  const legC = S.legs === 'skirt' || S.legs === 'shorts' ? S.tone : LEGS;
   box(-13, 22, 11, 38, astro ? '#f1f5f9' : legC); box(2, 22, 11, 38, astro ? '#f1f5f9' : legC);
   if (S.legs === 'shorts') { box(-14, 20, 13, 16, S.legsCol); box(1, 20, 13, 16, S.legsCol); }
+  if (S.legs === 'cargo') { box(-15, 32, 5, 11, '#111827', 2); box(10, 32, 5, 11, '#111827', 2); fill('#cbd5e1'); ctx.beginPath(); ctx.moveTo(...P(-9, 26)); ctx.lineTo(...P(-5, 26)); ctx.lineTo(...P(-7, 29)); ctx.fill(); }
   if (S.legs === 'track') { box(-13, 22, 2, 38, '#fff', 1); box(11, 22, 2, 38, '#fff', 1); }
   if (S.legs === 'skirt') { fill(S.legsCol); ctx.beginPath(); ctx.moveTo(...P(-15, 16)); ctx.lineTo(...P(15, 16)); ctx.lineTo(...P(22, 40)); ctx.lineTo(...P(-22, 40)); ctx.fill(); }
-  const shoeC = S.shoes === 'gold' ? '#facc15' : S.shoesCol;
+  const shoeC = S.shoes === 'gold' ? '#facc15' : S.shoes === 'jordan' ? '#dc2626' : S.shoes === 'triple' ? '#e5e7eb' : S.shoesCol;
+  if (S.shoes === 'triple') { ell(-8, 64, 13, 5, '#9ca3af'); ell(8, 64, 13, 5, '#9ca3af'); } // dicke Sohle
   if (S.shoes === 'boots') { box(-15, 46, 14, 16, '#78350f'); box(1, 46, 14, 16, '#78350f'); }
   ell(-8, 61, 10, 5, shoeC); ell(8, 61, 10, 5, shoeC);
+  if (S.shoes === 'jordan') for (const s of [-1, 1]) { ell(s * 8 + s * 4, 61, 4, 3.5, '#f8fafc'); ell(s * 8, 64, 10, 2, '#111827'); }
   // Oberteil und Arme
-  const shirt = S.top === 'tux' ? '#111827' : astro ? '#f1f5f9' : top, arm = S.top === 'tee' || S.top === 'jersey' || S.top === 'hawaii' ? S.tone : shirt;
+  const DTOP = { gucci: '#1e293b', lv: '#6b4423', balenci: '#111111', supreme: '#f8fafc' }; // Designer: feste Farben
+  const shirt = S.top === 'tux' ? '#111827' : astro ? '#f1f5f9' : DTOP[S.top] || top, arm = ['tee', 'jersey', 'hawaii', 'supreme'].includes(S.top) ? S.tone : shirt;
   box(-29, -26, 9, 34, arm, 4); box(20, -26, 9, 34, arm, 4); // Arme
   if (arm === S.tone) { box(-29, -26, 9, 12, shirt, 3); box(20, -26, 9, 12, shirt, 3); }
   ell(-24.5, 10, 5, 5, astro ? '#e5e7eb' : S.tone); ell(24.5, 10, 5, 5, astro ? '#e5e7eb' : S.tone); // Hände
@@ -3660,9 +3671,19 @@ function drawSkinFigure(cx, cy, k, S = skin) {
   if (S.top === 'jacket') { box(-0.8, -30, 1.6, 52, '#9ca3af', 0); box(-12, -30, 24, 6, '#0004', 3); }
   if (S.top === 'tux') { fill('#f8fafc'); ctx.beginPath(); ctx.moveTo(...P(-7, -30)); ctx.lineTo(...P(7, -30)); ctx.lineTo(...P(0, -6)); ctx.fill(); ell(-3, -26, 3, 2, '#dc2626'); ell(3, -26, 3, 2, '#dc2626'); }
   if (S.top === 'hero') { fill('#facc15'); ctx.beginPath(); ctx.moveTo(...P(0, -24)); ctx.lineTo(...P(9, -14)); ctx.lineTo(...P(0, -4)); ctx.lineTo(...P(-9, -14)); ctx.fill(); box(-19, 12, 38, 4, '#facc15', 0); }
+  if (S.top === 'gucci') { box(-19, -17, 38, 3, '#15803d', 0); box(-19, -14, 38, 3, '#b91c1c', 0); box(-19, -11, 38, 3, '#15803d', 0); ctx.strokeStyle = '#facc15'; ctx.lineWidth = 1.6 * k; for (const s of [-1, 1]) { ctx.beginPath(); ctx.arc(...P(s * 3, 2), 4.5 * k, 0, 7); ctx.stroke(); } }
+  if (S.top === 'lv') { box(-0.7, -30, 1.4, 52, '#d6b98c', 0); for (let r = 0; r < 5; r++) for (let c = 0; c < 4; c++) ell(-14 + c * 9 + (r % 2) * 4, -24 + r * 9, 1.6, 1.6, '#e7c98f'); }
+  if (S.top === 'balenci' || S.top === 'supreme') {
+    if (S.top === 'supreme') box(-13, -20, 26, 10, '#dc2626', 1);
+    ctx.fillStyle = '#fff'; ctx.font = 'bold ' + Math.max(4, Math.round((S.top === 'supreme' ? 6 : 4.6) * k)) + 'px system-ui, sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillText(S.top === 'supreme' ? 'Supriem' : 'BALENTSCHIAGA', ...P(0, -15));
+  }
   if (astro) { box(-10, -18, 20, 12, '#cbd5e1', 3); ell(-5, -12, 2, 2, '#dc2626'); ell(1, -12, 2, 2, '#22c55e'); ell(6, -12, 2, 2, '#3b82f6'); }
   if (S.extras.includes('backpack')) { box(-17, -28, 4, 34, '#ca8a04', 2); box(13, -28, 4, 34, '#ca8a04', 2); }
-  if (!['tux', 'hero', 'astro'].includes(S.top) && S.legs !== 'skirt') { box(-19, 18, 38, 6, S.legsCol, 2); box(-19, 17, 38, 2, '#3b2a1a', 0); }
+  if (!['tux', 'hero', 'astro'].includes(S.top) && S.legs !== 'skirt') { box(-19, 18, 38, 6, LEGS, 2); box(-19, 17, 38, 2, '#3b2a1a', 0); }
+  if (S.extras.includes('chain')) { ctx.strokeStyle = '#facc15'; ctx.lineWidth = 2 * k; ctx.beginPath(); ctx.arc(...P(0, -32), 10 * k, 0.15 * Math.PI, 0.85 * Math.PI); ctx.stroke(); ell(0, -21, 3.2, 3.2, '#facc15'); }
+  if (S.extras.includes('bag')) { ctx.strokeStyle = '#3f2a14'; ctx.lineWidth = 2 * k; ctx.beginPath(); ctx.moveTo(...P(-14, -28)); ctx.lineTo(...P(27, 4)); ctx.stroke(); box(20, 2, 17, 14, '#6b4423', 3); for (const [x, y] of [[24, 6], [32, 6], [28, 11]]) ell(x, y, 1.4, 1.4, '#e7c98f'); }
+  if (S.extras.includes('watch')) { box(-29.5, 3, 10, 4, '#facc15', 1); ell(-24.5, 5, 2, 2, '#f8fafc'); }
   // Kopf
   ell(0, -50, 22, 23, S.tone);
   const longHair = S.hair === 'long';
@@ -3679,7 +3700,11 @@ function drawSkinFigure(cx, cy, k, S = skin) {
   if (S.hair !== 'bald') { fill(hc); ctx.beginPath(); ctx.ellipse(...P(0, -58), 23 * k, 16 * k, 0, Math.PI, Math.PI * 2); ctx.fill(); }
   if (S.hair === 'bun') ell(0, -76, 8, 8, hc);
   const H = S.headCol;
-  if (S.head === 'cap') { fill(H); ctx.beginPath(); ctx.ellipse(...P(0, -62), 24 * k, 15 * k, 0, Math.PI, Math.PI * 2); ctx.fill(); box(-24, -64, 48, 5, H, 2); ell(0, -74, 2.5, 2.5, '#fff'); ell(0, -66, 4, 4, '#facc15'); }
+  if (S.head === 'cap' || S.head === 'gcap') {
+    const C2 = S.head === 'gcap' ? '#e7d8b5' : H;
+    fill(C2); ctx.beginPath(); ctx.ellipse(...P(0, -62), 24 * k, 15 * k, 0, Math.PI, Math.PI * 2); ctx.fill(); box(-24, -64, 48, 5, C2, 2); ell(0, -74, 2.5, 2.5, '#fff');
+    if (S.head === 'gcap') { box(-23, -69, 46, 1.6, '#15803d', 0); box(-23, -67.4, 46, 1.6, '#b91c1c', 0); box(-23, -65.8, 46, 1.6, '#15803d', 0); } else ell(0, -66, 4, 4, '#facc15');
+  }
   if (S.head === 'beanie') { fill(H); ctx.beginPath(); ctx.ellipse(...P(0, -62), 24 * k, 18 * k, 0, Math.PI, Math.PI * 2); ctx.fill(); box(-24, -64, 48, 7, '#0003', 2); ell(0, -80, 5, 5, '#fff'); }
   if (S.head === 'hat') { ell(0, -64, 36, 6, H); box(-16, -82, 32, 18, H, 6); box(-16, -70, 32, 4, '#dc2626', 0); }
   if (S.head === 'headphones') { ctx.strokeStyle = '#111827'; ctx.lineWidth = 4 * k; ctx.beginPath(); ctx.arc(...P(0, -52), 25 * k, Math.PI * 1.05, Math.PI * 1.95); ctx.stroke(); box(-28, -58, 9, 15, H, 4); box(19, -58, 9, 15, H, 4); }
@@ -3697,15 +3722,15 @@ function drawSkin() {
   for (const r of skinTabRects()) {
     const on = r.t.id === skinTab;
     ctx.fillStyle = on ? '#2563eb' : 'rgba(255,255,255,0.1)'; rr(r.x, r.y, r.w, r.h, 10); ctx.fill();
-    ctx.fillStyle = '#fff'; ctx.font = 'bold 14px system-ui, sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText(r.t.name, r.x + r.w / 2, r.y + r.h / 2 + 1);
+    ctx.fillStyle = '#fff'; ctx.font = 'bold 13px system-ui, sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; fitText(r.t.name, r.x + r.w / 2, r.y + r.h / 2 + 1, r.w - 6);
   }
   for (const c of skinCards()) {
-    const [id, name, price, icon] = c.it, own = skinOwned(skinTab, id, price), on = skinTab === 'extras' ? skin.extras.includes(id) : skin[skinTab] === id;
-    ctx.fillStyle = on ? 'rgba(37,99,235,0.45)' : 'rgba(255,255,255,0.07)'; rr(c.x, c.y, c.w, c.h, 12); ctx.fill();
-    ctx.strokeStyle = skinPending === skinTab + ':' + id ? '#ffe066' : on ? '#93c5fd' : 'rgba(255,255,255,0.15)'; ctx.lineWidth = on || skinPending ? 3 : 1.5; ctx.stroke();
+    const [id, name, price, icon] = c.it, cat = c.cat, own = skinOwned(cat, id, price), on = cat === 'extras' ? skin.extras.includes(id) : skin[cat] === id;
+    ctx.fillStyle = on ? 'rgba(37,99,235,0.45)' : skinTab === 'designer' ? 'rgba(250,204,21,0.1)' : 'rgba(255,255,255,0.07)'; rr(c.x, c.y, c.w, c.h, 12); ctx.fill();
+    ctx.strokeStyle = skinPending === cat + ':' + id ? '#ffe066' : on ? '#93c5fd' : 'rgba(255,255,255,0.15)'; ctx.lineWidth = on || skinPending ? 3 : 1.5; ctx.stroke();
     ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
     ctx.fillStyle = '#fff'; ctx.font = '26px system-ui, sans-serif'; ctx.fillText(icon, c.x + 26, c.y + c.h / 2); // undurchsichtig (sonst blasse Bildchen)
-    ctx.fillStyle = '#fff'; ctx.font = 'bold 15px system-ui, sans-serif'; ctx.textAlign = 'left'; ctx.fillText(name, c.x + 48, c.y + 26);
+    ctx.fillStyle = '#fff'; ctx.font = 'bold 15px system-ui, sans-serif'; ctx.textAlign = 'left'; fitText(name, c.x + 48, c.y + 26, c.w - 52);
     if (own) { ctx.fillStyle = on ? '#86efac' : 'rgba(255,255,255,0.6)'; ctx.font = '13px system-ui, sans-serif'; ctx.fillText(on ? '✓ an' : price ? '✓ gekauft' : 'gratis', c.x + 48, c.y + 52); }
     else { drawCoin(c.x + 58, c.y + 52, 9, 0); ctx.fillStyle = wallet >= price ? '#ffe066' : '#9aa0aa'; ctx.font = 'bold 16px system-ui, sans-serif'; ctx.fillText(String(price), c.x + 72, c.y + 53); }
   }
@@ -3726,15 +3751,15 @@ function skinTap(px, py) {
   }
   for (const c of skinCards()) {
     if (!inRect(px, py, c)) continue;
-    const [id, name, price] = c.it, key = skinTab + ':' + id;
-    if (!skinOwned(skinTab, id, price)) {
+    const [id, name, price] = c.it, cat = c.cat, key = cat + ':' + id;
+    if (!skinOwned(cat, id, price)) {
       if (wallet < price) { showMenuMsg('Dir fehlen noch ' + (price - wallet) + ' Münzen für ' + name + '.'); beep(200, 0.15, 'square', 0.05); return; }
       if (skinPending !== key) { skinPending = key; showMenuMsg(name + ' für ' + price + ' Münzen kaufen? Nochmals tippen!'); beep(440, 0.07, 'triangle', 0.06); return; }
       wallet -= price; storeJSON('autoRetterCoins', wallet); skin.owned.push(key); skinPending = null;
       showMenuMsg('🎉 ' + name + ' gekauft!'); beep(880, 0.1, 'triangle', 0.06); beep(1175, 0.15, 'triangle', 0.06, 0.1);
     }
-    if (skinTab === 'extras') { const i = skin.extras.indexOf(id); if (i >= 0) skin.extras.splice(i, 1); else skin.extras.push(id); }
-    else skin[skinTab] = id;
+    if (cat === 'extras') { const i = skin.extras.indexOf(id); if (i >= 0) skin.extras.splice(i, 1); else skin.extras.push(id); }
+    else skin[cat] = id;
     saveSkin(); beep(660, 0.06, 'triangle', 0.05);
     return;
   }

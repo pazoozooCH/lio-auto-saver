@@ -4047,22 +4047,25 @@ function makePlayer(cfg = loadSkin()) {
   root.add(spin); spin.position.y = 1.0; spin.add(body); body.position.y = -1.0;
   const hx = c => parseInt(String(c || '#888888').slice(1), 16), X = new Set(cfg.extras || []);
   const skin = hx(cfg.tone), white = 0xf8fafc, top = cfg.top, astro = top === 'astro';
-  const topC = top === 'tux' ? 0x111827 : astro ? 0xf1f5f9 : hx(cfg.topCol), topD = shade(topC, 0.78);
-  const legC = astro ? 0xf1f5f9 : hx(cfg.legsCol), legD = shade(legC, 0.8), shoeC = cfg.shoes === 'gold' ? 0xfacc15 : hx(cfg.shoesCol), hair = hx(cfg.hairCol), hatC = hx(cfg.headCol);
-  const shortSleeve = ['tee', 'jersey', 'hawaii'].includes(top);
+  const DTOP = { gucci: 0x1e293b, lv: 0x6b4423, balenci: 0x111111, supreme: 0xf8fafc }; // Designer-Kleider (game.js DESIGNER): feste Farben
+  const topC = top === 'tux' ? 0x111827 : astro ? 0xf1f5f9 : DTOP[top] ?? hx(cfg.topCol), topD = shade(topC, 0.78);
+  const legC = astro ? 0xf1f5f9 : cfg.legs === 'cargo' ? 0x1f2937 : hx(cfg.legsCol), legD = shade(legC, 0.8), hair = hx(cfg.hairCol), hatC = cfg.head === 'gcap' ? 0xe7d8b5 : hx(cfg.headCol);
+  const shoeC = cfg.shoes === 'gold' ? 0xfacc15 : cfg.shoes === 'jordan' ? 0xdc2626 : cfg.shoes === 'triple' ? 0xe5e7eb : hx(cfg.shoesCol);
+  const shortSleeve = ['tee', 'jersey', 'hawaii', 'supreme'].includes(top);
   const joint = (parent, x, y, z, parts) => { const g = new THREE.Group(); g.position.set(x, y, z); parent.add(g); if (parts && parts.length) g.add(figMesh(parts)); return g; };
   const legs = [], knees = [], arms = [], elbows = [];
   for (const sz of [-1, 1]) { // Beine: Oberschenkel, Knie, Unterschenkel, Schuh
     const thigh = cfg.legs === 'skirt' ? [[G.cap(0.07, 0.3), skin, 0, -0.22, 0]]
       : cfg.legs === 'shorts' ? [[G.cap(0.1, 0.12), legC, 0, -0.12, 0], [G.cap(0.075, 0.2), skin, 0, -0.3, 0]]
       : [[G.cap(0.098, 0.3), legC, 0, -0.22, 0], [G.box(0.01, 0.34, 0.014), cfg.legs === 'track' ? white : 0x93c5fd, 0, -0.22, sz * 0.097]];
+    if (cfg.legs === 'cargo') thigh.push([G.box(0.07, 0.11, 0.03), 0x111827, 0, -0.26, sz * 0.1]); // Seitentaschen
     const hip = joint(body, 0, 0.95, sz * 0.11, thigh);
     const bare = cfg.legs === 'skirt' || cfg.legs === 'shorts';
     const shin = [[G.cap(bare ? 0.07 : 0.088, 0.3), bare ? skin : legC, 0, -0.2, 0]];
     if (!bare) shin.push([G.cyl(0.098, 0.098, 0.05), legD, 0, -0.37, 0], [G.box(0.01, 0.3, 0.014), cfg.legs === 'track' ? white : 0x93c5fd, 0, -0.2, sz * 0.087]);
     if (cfg.shoes === 'boots') shin.push([G.cyl(0.1, 0.11, 0.26, 14), 0x78350f, 0, -0.38, 0], [G.sph(0.11, 14, 10), 0x78350f, 0.06, -0.48, 0, 0, 0, 0, 1.7, 0.85, 1.12], [G.sph(0.11, 12, 6), 0x292524, 0.06, -0.535, 0, 0, 0, 0, 1.85, 0.28, 1.2]);
     else shin.push([G.sph(0.11, 16, 12), shoeC, 0.06, -0.47, 0, 0, 0, 0, 1.75, 0.9, 1.12], [G.sph(0.09, 12, 8), cfg.shoes === 'gold' ? 0xfde68a : 0xe5e7eb, 0.16, -0.49, 0, 0, 0, 0, 0.9, 0.7, 1.1],
-      [G.sph(0.11, 14, 6), 0x374151, 0.06, -0.535, 0, 0, 0, 0, 1.85, 0.28, 1.2], [G.box(0.11, 0.022, 0.012), 0xdc2626, 0.05, -0.46, sz * 0.122],
+      [G.sph(0.11, 14, 6), cfg.shoes === 'jordan' ? 0x111827 : 0x374151, 0.06, -0.535, 0, 0, 0, 0, 1.85, cfg.shoes === 'triple' ? 0.6 : 0.28, 1.2], [G.box(0.11, 0.022, 0.012), cfg.shoes === 'jordan' ? 0x111827 : 0xdc2626, 0.05, -0.46, sz * 0.122],
       ...[0.04, 0.08, 0.12].map(dx => [G.box(0.012, 0.012, 0.08), 0x9ca3af, dx, -0.39 + dx * -0.15, 0]));
     const knee = joint(hip, 0, -0.45, 0, shin);
     legs.push(hip); knees.push(knee);
@@ -4079,6 +4082,14 @@ function makePlayer(cfg = loadSkin()) {
     ...[0.38, 0.3].map(y => [G.sph(0.012, 6, 4), 0x111827, 0.172, y, 0]));
   if (top === 'hero') T.push([new THREE.OctahedronGeometry(0.07), 0xfacc15, 0.16, 0.4, 0, 0, 0, 0, 0.3, 1, 1], [G.box(0.22, 0.04, 0.37), 0xfacc15, 0, 0.12, 0]);
   if (astro) T.push([G.box(0.03, 0.12, 0.18), 0xcbd5e1, 0.175, 0.36, 0], ...[[-0.05, 0xdc2626], [0, 0x22c55e], [0.05, 0x3b82f6]].map(([z, c]) => [G.sph(0.015, 6, 4), c, 0.192, 0.38, z]), [G.box(0.14, 0.34, 0.3), 0xe5e7eb, -0.22, 0.33, 0]);
+  if (top === 'gucci') T.push(...[[0.44, 0x15803d], [0.415, 0xb91c1c], [0.39, 0x15803d]].map(([y, c]) => [G.cyl(0.168, 0.168, 0.025, 18), c, 0, y, 0, 0, 0, 0, 0.82, 1, 1.16]),
+    ...[-1, 1].map(s => [new THREE.TorusGeometry(0.03, 0.007, 6, 14), 0xfacc15, 0.168, 0.28, s * 0.022, 0, Math.PI / 2, 0]));
+  if (top === 'lv') { T.push([G.box(0.012, 0.42, 0.022), 0xd6b98c, 0.163, 0.3, 0]); for (let r = 0; r < 5; r++) for (const z of [-0.11, -0.05, 0.05, 0.11]) T.push([G.sph(0.014, 6, 4), 0xe7c98f, 0.158, 0.14 + r * 0.085, z + (r % 2) * 0.025]); }
+  if (top === 'balenci') T.push([G.box(0.01, 0.035, 0.24), white, 0.166, 0.42, 0]);
+  if (top === 'supreme') T.push([G.box(0.01, 0.075, 0.18), 0xdc2626, 0.166, 0.4, 0], [G.box(0.012, 0.022, 0.12), white, 0.168, 0.4, 0]);
+  if (X.has('chain')) T.push([new THREE.TorusGeometry(0.1, 0.012, 6, 18), 0xfacc15, 0.04, 0.55, 0, Math.PI / 2, 0, -0.45], [G.sph(0.028, 10, 8), 0xfacc15, 0.165, 0.46, 0]);
+  if (X.has('bag')) T.push([G.box(0.012, 0.62, 0.02), 0x3f2a14, 0.168, 0.3, 0, 0.75, 0, 0], [G.box(0.16, 0.15, 0.07), 0x6b4423, 0.02, 0.02, 0.27],
+    ...[[0.05, 0.25], [-0.02, 0.29], [0.06, 0.31]].map(([y, z]) => [G.sph(0.012, 6, 4), 0xe7c98f, 0.1, y, z]));
   if (cfg.legs === 'skirt') T.push([G.cyl(0.17, 0.3, 0.36, 18), legC, 0, -0.08, 0, 0, 0, 0, 1, 1, 1.1]);
   else if (!['tux', 'hero', 'astro'].includes(top)) T.push([G.box(0.22, 0.12, 0.36), legC, 0, 0.0, 0], [G.box(0.225, 0.035, 0.365), 0x3b2a1a, 0, 0.055, 0], [G.box(0.02, 0.04, 0.05), 0xfacc15, 0.115, 0.055, 0]);
   if (cfg.legs === 'jeans') T.push([G.box(0.02, 0.07, 0.08), legD, -0.112, -0.02, 0.08], [G.box(0.02, 0.07, 0.08), legD, -0.112, -0.02, -0.08]);
@@ -4091,12 +4102,13 @@ function makePlayer(cfg = loadSkin()) {
     const hand = astro ? 0xe5e7eb : skin;
     const sh = joint(torso, 0, 0.5, sz * 0.28, shortSleeve ? [[G.cap(0.075, 0.06), topC, 0, -0.07, 0], [G.cap(0.06, 0.18), skin, 0, -0.18, 0]] : [[G.cap(0.07, 0.22), topC, 0, -0.16, 0]]);
     const el = joint(sh, 0, -0.33, 0, [[G.cap(shortSleeve ? 0.055 : 0.064, 0.2), shortSleeve ? skin : topC, 0, -0.14, 0], ...(shortSleeve ? [] : [[G.cyl(0.07, 0.07, 0.045), topD, 0, -0.27, 0]]),
-      [G.sph(0.068, 12, 10), hand, 0, -0.34, 0, 0, 0, 0, 1, 1.1, 0.85], [G.sph(0.03, 8, 6), hand, 0.045, -0.31, sz * 0.04]]);
+      [G.sph(0.068, 12, 10), hand, 0, -0.34, 0, 0, 0, 0, 1, 1.1, 0.85], [G.sph(0.03, 8, 6), hand, 0.045, -0.31, sz * 0.04],
+      ...(X.has('watch') && sz < 0 ? [[G.cyl(0.066, 0.066, 0.035, 14), 0xfacc15, 0, -0.27, 0], [G.cyl(0.03, 0.03, 0.01, 12), 0xf8fafc, 0.06, -0.27, 0, 0, 0, Math.PI / 2]] : [])]);
     arms.push(sh); elbows.push(el);
   }
   // Kopf: rund (Cartoon), Frisur, Kopfbedeckung, Brille
   const R = 0.16, hy = 0.2, H = [[G.cyl(0.05, 0.06, 0.1), skin, 0, 0.02, 0], ...faceParts(skin, R, hy)];
-  const hatOn = ['cap', 'beanie', 'hat', 'viking', 'wizard'].includes(cfg.head) || astro, hs = cfg.hair;
+  const hatOn = ['cap', 'gcap', 'beanie', 'hat', 'viking', 'wizard'].includes(cfg.head) || astro, hs = cfg.hair;
   if (hs !== 'bald') {
     if (hatOn) H.push([new THREE.SphereGeometry(R * 0.98, 16, 8, 0, Math.PI * 2, Math.PI * 0.45, Math.PI * 0.25), hair, -0.01, hy - 0.01, 0]); // Haare unter dem Hut
     else H.push([G.half(R * 1.05, 20, 10), hair, -0.012, hy + 0.01, 0, 0, 0, 0.18]);
@@ -4106,7 +4118,8 @@ function makePlayer(cfg = loadSkin()) {
     if (hs === 'curly' && !hatOn) for (let k = 0; k < 9; k++) { const a = k / 9 * Math.PI * 2; H.push([G.sph(0.05, 8, 6), hair, Math.cos(a) * 0.12 - 0.02, hy + 0.1, Math.sin(a) * 0.12]); }
   }
   const hd = cfg.head;
-  if (hd === 'cap' && !astro) H.push([G.half(R * 1.06, 20, 10), hatC, -0.005, hy + 0.035, 0], [G.cyl(0.12, 0.12, 0.022, 18), hatC, 0.15, hy + 0.045, 0, 0, 0, -0.12, 1.1, 1, 0.95],
+  if (hd === 'gcap' && !astro) H.push(...[[0.075, 0x15803d], [0.063, 0xb91c1c], [0.051, 0x15803d]].map(([y, c]) => [G.cyl(R * 1.075, R * 1.075, 0.012, 20), c, -0.005, hy + y, 0]));
+  if ((hd === 'cap' || hd === 'gcap') && !astro) H.push([G.half(R * 1.06, 20, 10), hatC, -0.005, hy + 0.035, 0], [G.cyl(0.12, 0.12, 0.022, 18), hatC, 0.15, hy + 0.045, 0, 0, 0, -0.12, 1.1, 1, 0.95],
     [G.sph(0.022, 8, 6), white, 0, hy + 0.21, 0], [G.sph(0.035, 10, 8), 0xfacc15, 0.14, hy + 0.12, 0, 0, 0, 0, 0.35, 1, 1]);
   if (hd === 'beanie' && !astro) H.push([G.half(R * 1.08, 20, 10), hatC, -0.005, hy + 0.02, 0, 0, 0, 0, 1, 1.25, 1], [G.cyl(R * 1.09, R * 1.09, 0.06, 20), shade(hatC, 0.8), -0.005, hy + 0.04, 0], [G.sph(0.045, 10, 8), white, -0.005, hy + 0.24, 0]);
   if (hd === 'hat' && !astro) H.push([G.cyl(0.3, 0.3, 0.02, 24), hatC, 0, hy + 0.07, 0], [G.cyl(0.13, 0.15, 0.14, 18), hatC, 0, hy + 0.15, 0], [G.cyl(0.152, 0.152, 0.035, 18), 0xdc2626, 0, hy + 0.1, 0]);

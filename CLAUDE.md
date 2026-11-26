@@ -230,6 +230,7 @@ Meine Figur (game.js, Shop-Knopf 👕, `drawSkin`/`skinTap`, `SKIN_ITEMS`): Haut
 Hose, Schuhe, Extras kosten Münzen (zweimal tippen = kaufen). Spielstand `autoRetterSkin` = { tone, hair, hairCol, head, headCol,
 top, topCol, legs, legsCol, shoes, shoesCol, extras[], owned[] }; city.js baut daraus die 3D-Figur (`loadSkin`, `makePlayer`).
 Neue Teile: in `SKIN_ITEMS` (game.js), in `drawSkinFigure` (2D) und in `makePlayer` (3D) eintragen.
+Designer-Kleider (Tab 💎 Designer, `DESIGNER` in game.js: [Art, id, Name, Preis, Bildchen], Fantasie-Marken, feste Farben `DTOP`).
 
 Keine Fantasie-Fahrzeuge (game.js `RETIRED`): Drachen, Einhorn, Ufo usw. sind `secret` + `retired` (bleiben nur als Daten); eigene
 werden beim Laden zu echten Autos gleicher Seltenheit (`realVehicle`), geparkte/Autohaus-Autos in city.js, `buildCar` zeigt sonst
