@@ -106,6 +106,13 @@ const KIND_PROFILE = {
   lionelx: E(8, 1000, 10000, 1.05, 0.5, { turbo: 0.45, pops: 0.9, res: 300, rasp: 0.45, burble: 0.3 }), // LIONEL X = Lamborghini Temerario (V8 Biturbo)
   hatch: E(4, 800, 4600, 0.5, 0.7, { knock: 0.55, turbo: 0.4 }),                          // BMW X2 20d (Diesel)
   minivan: E(4, 800, 6000, 0.7, 0.5, { turbo: 0.2 }), kodiaq: E(4, 780, 6500, 0.75, 0.55, { turbo: 0.3 }),
+  ttrs: E(5, 900, 7000, 0.95, 0.5, { turbo: 0.5, pops: 0.6, res: 240, rasp: 0.25 }),           // Audi TT RS (Fünfzylinder)
+  m3t: E(6, 850, 7200, 1.0, 0.5, { turbo: 0.45, pops: 0.8, res: 250, rasp: 0.3 }),            // BMW M3 Touring
+  trx: E(8, 650, 6200, 0.7, 0.7, { sc: 0.6, burble: 0.6, res: 170 }),                          // RAM TRX (V8 Kompressor)
+  huracan: E(10, 1000, 8500, 1.1, 0.45, { rasp: 0.6, pops: 0.7, res: 320 }),                   // Lamborghini Huracán (V10)
+  supra: E(6, 800, 7000, 0.95, 0.5, { turbo: 0.55, pops: 0.7, res: 240 }),                     // Toyota Supra
+  vantage: E(8, 800, 7000, 0.95, 0.55, { turbo: 0.4, burble: 0.45, pops: 0.8, res: 230 }),     // Aston Martin Vantage
+  dbx: E(8, 750, 7000, 0.9, 0.6, { turbo: 0.4, burble: 0.4, res: 210 }),                       // Aston Martin DBX707
   q5: E(4, 760, 6500, 0.8, 0.55, { turbo: 0.35, res: 200 }), tiguanx: E(4, 800, 6500, 0.78, 0.5, { turbo: 0.3 }),
   tiguan24: E(4, 820, 6300, 0.7, 0.5, { turbo: 0.25 }), ecar: E(6, 650, 6500, 0.6, 0.7, { res: 170 }), // Cadillac V6
   kompakt: E(4, 850, 6800, 0.95, 0.5, { turbo: 0.5, pops: 0.6, res: 240 }),              // Golf GTI

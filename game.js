@@ -426,9 +426,13 @@ const KINDS = {
 
 // Jedes echte Auto ein eigener Typ (Wunsch Lionel: sonst teilten sich z. B. Cayenne/Tiguan oder Maybach/Continental einen Platz).
 // Diese Typen übernehmen alles vom Grundtyp (Seltenheit, Fähigkeit, 2D-Bild über look), nur der Name ist eigen.
-for (const [kind, base, name] of [['tiguanx', 'car', 'Kompakt-SUV'], ['tiguan24', 'ecar', 'Familien-SUV'], ['e63', 'kombi', 'Sport-Kombi'],
+for (const [kind, base, name, tier] of [['tiguanx', 'car', 'Kompakt-SUV'], ['tiguan24', 'ecar', 'Familien-SUV'], ['e63', 'kombi', 'Sport-Kombi'],
   ['gt3rs', 'sports', 'Renn-Porsche'], ['trackhawk', 'jeep', 'Power-SUV'], ['mansory', 'luxsuv', 'Tuning-SUV'], ['bentley', 'limo', 'Grand Tourer'],
-  ['kodiaq', 'minivan', 'Grosser Familien-SUV'], ['q5', 'offroad', 'Premium-SUV']]) KINDS[kind] = { ...KINDS[base], name, look: KINDS[base].look || base };
+  ['kodiaq', 'minivan', 'Grosser Familien-SUV'], ['q5', 'offroad', 'Premium-SUV'],
+  // aus Lionels Ordner (Ddiaz Design), mit eigener Seltenheit
+  ['ttrs', 'coupe', 'Kompakt-Sportwagen', 'uncommon'], ['m3t', 'kombi', 'Power-Kombi', 'uncommon'], ['trx', 'pickupxl', 'Monster-Pickup', 'rare'],
+  ['huracan', 'roadster', 'Supersportwagen offen', 'epic'], ['supra', 'coupe', 'Tuning-Sportwagen', 'rare'], ['vantage', 'roadster', 'Luxus-Roadster', 'rare'],
+  ['dbx', 'luxsuv', 'Super-SUV', 'epic']]) KINDS[kind] = { ...KINDS[base], name, look: KINDS[base].look || base, ...(tier ? { tier } : {}) };
 
 // Keine Fantasie-Fahrzeuge mehr (Wunsch: nur richtige Autos): sie bleiben als Daten (alte Spielstände, Online-Mitspieler),
 // sind aber nirgends mehr zu bekommen; wer eines hat, bekommt dafür ein echtes Auto gleicher Seltenheit (RETIRED).
@@ -3012,7 +3016,7 @@ function drawQuit() {
 // auf dem Startbildschirm ein Update-Knopf; kommt man auf dem Startbildschirm in die App zurück, wird gleich aktualisiert.
 // APP_FILES: alle Dateien des Spiels (beim Hinzufügen einer Datei hier ergänzen).
 const APP_FILES = ['./', 'index.html', 'game.js', 'version.js', 'press3d.js', 'race.js', 'drag.js', 'cars3d.js', 'world3d.js',
-  'online.js', 'sound.js', 'city.js', 'tracks.js', 'stunt.js', 'netcars.js', 'chat.js', 'fx.js', 'viewer.js', 'photo.js', 'outskirts.js', 'country.js', 'moon.js', 'look.js', 'suburbs.js', 'island.js', 'monaco.js', 'carlamps.js', 'review.js', 'service.js', 'party.js', 'models/lowpoly_generic_suv.glb', 'models/mmc_generic_small_suv.glb', 'models/cullinan.glb', 'models/g_class.glb', 'models/ferrari_488.glb', 'models/lambo_revuelto.glb', 'models/laferrari.glb', 'models/porsche_gt2rs.glb', 'models/porsche_911_4s.glb', 'models/bmw_m4.glb', 'models/corvette_c8.glb', 'models/maybach.glb', 'models/audi_rs6.glb', 'models/audi_r8.glb', 'models/jesko.glb', 'models/koenigsegg_one1.glb', 'models/pagani_imola.glb', 'models/cayenne.glb', 'models/defender.glb', 'models/suburban.glb', 'models/express_van.glb', 'models/mclaren_765lt.glb', 'models/bugatti_tourbillon.glb', 'models/golf_gti.glb', 'models/cadillac_xt6.glb', 'models/police_charger.glb', 'models/urus.glb', 'models/mansory_rr.glb', 'models/trackhawk.glb', 'models/e63_wagon.glb', 'models/porsche_gt3rs.glb', 'models/tiguan_x.glb', 'models/tiguan_2024.glb', 'models/sls_amg.glb', 'models/bmw_x2.glb', 'models/lotus_exige.glb', 'models/jeep_renegade.glb', 'models/mclaren_p1.glb', 'models/ambulance.glb', 'models/bentley_gt.glb', 'models/skoda_kodiaq.glb', 'models/audi_q5.glb', 'models/temerario.glb', 'sounds/car_idle.wav', 'sounds/coupe_idle.wav', 'sounds/gt3rs_idle.wav', 'sounds/hyperev_idle.wav', 'sounds/jeep_idle.wav', 'sounds/kombi_idle.wav', 'sounds/kompakt_idle.wav', 'sounds/luxsuv_idle.wav', 'sounds/muscle_idle.wav', 'sounds/offroad_idle.wav', 'sounds/racer_idle.wav', 'sounds/roadster_idle.wav', 'sounds/sports_idle.wav', 'sounds/supercar_idle.wav', 'manifest.webmanifest', 'icon-192.png', 'icon-512.png', 'apple-touch-icon.png', 'favicon.png'];
+  'online.js', 'sound.js', 'city.js', 'tracks.js', 'stunt.js', 'netcars.js', 'chat.js', 'fx.js', 'viewer.js', 'photo.js', 'outskirts.js', 'country.js', 'moon.js', 'look.js', 'suburbs.js', 'island.js', 'monaco.js', 'carlamps.js', 'review.js', 'service.js', 'party.js', 'models/lowpoly_generic_suv.glb', 'models/mmc_generic_small_suv.glb', 'models/cullinan.glb', 'models/g_class.glb', 'models/ferrari_488.glb', 'models/lambo_revuelto.glb', 'models/laferrari.glb', 'models/porsche_gt2rs.glb', 'models/porsche_911_4s.glb', 'models/bmw_m4.glb', 'models/corvette_c8.glb', 'models/maybach.glb', 'models/audi_rs6.glb', 'models/audi_r8.glb', 'models/jesko.glb', 'models/koenigsegg_one1.glb', 'models/pagani_imola.glb', 'models/cayenne.glb', 'models/defender.glb', 'models/suburban.glb', 'models/express_van.glb', 'models/mclaren_765lt.glb', 'models/bugatti_tourbillon.glb', 'models/golf_gti.glb', 'models/cadillac_xt6.glb', 'models/police_charger.glb', 'models/urus.glb', 'models/mansory_rr.glb', 'models/trackhawk.glb', 'models/e63_wagon.glb', 'models/porsche_gt3rs.glb', 'models/tiguan_x.glb', 'models/tiguan_2024.glb', 'models/sls_amg.glb', 'models/bmw_x2.glb', 'models/lotus_exige.glb', 'models/jeep_renegade.glb', 'models/mclaren_p1.glb', 'models/ambulance.glb', 'models/bentley_gt.glb', 'models/skoda_kodiaq.glb', 'models/audi_q5.glb', 'models/temerario.glb', 'models/audi_tt_rs.glb', 'models/bmw_m3_touring.glb', 'models/ram_trx.glb', 'models/huracan_spyder.glb', 'models/supra_lb.glb', 'models/vantage_roadster.glb', 'models/aston_dbx.glb', 'sounds/car_idle.wav', 'sounds/coupe_idle.wav', 'sounds/gt3rs_idle.wav', 'sounds/hyperev_idle.wav', 'sounds/jeep_idle.wav', 'sounds/kombi_idle.wav', 'sounds/kompakt_idle.wav', 'sounds/luxsuv_idle.wav', 'sounds/muscle_idle.wav', 'sounds/offroad_idle.wav', 'sounds/racer_idle.wav', 'sounds/roadster_idle.wav', 'sounds/sports_idle.wav', 'sounds/supercar_idle.wav', 'manifest.webmanifest', 'icon-192.png', 'icon-512.png', 'apple-touch-icon.png', 'favicon.png'];
 const UPDATE_BTN = { x: W - 262, y: 14, w: 248, h: 46 };
 const appUpdate = { info: null, busy: false, last: 0 };
 
@@ -3417,6 +3421,8 @@ const MODEL_NAMES = {
   formula: ['MekLären P-Eins'], ambulance: ['Merzedes Sprinta Krankenwagen'],
   tiguanx: ['Fau-We Tigwan X'], tiguan24: ['Fau-We Tigwan 24'], e63: ['Merzedes E-63 Kombi'], gt3rs: ['Porsch Gee-Te-Drei'],
   trackhawk: ['Jiip Grand Tschiroki'], mansory: ['Mansori Rench Rover'], bentley: ['Bentlei Kontinental GT'], kodiaq: ['Schkoda Kodiak'], q5: ['Audo Ku-Fünf'],
+  ttrs: ['Audo Te-Te Er-Es'], m3t: ['BeEmVau Em-Drei Turing'], trx: ['Rem Te-Er-Iks'], huracan: ['Lambini Hurakan Spaider'],
+  supra: ['Toyoto Supro Wiedbodi'], vantage: ['Aschton Martin Wäntitsch'], dbx: ['Aschton Martin Di-Bi-Iks'],
 };
 const nameSeed = v => { const s = String(v.id || v.seed || ''); let h = 7; for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) >>> 0; return h; };
 function vehicleName(v) { // Name dieses Fahrzeugs (echtes Auto: sein lustiger Name)
@@ -3432,7 +3438,7 @@ const kindName = kind => (MODEL_NAMES[kind] ? MODEL_NAMES[kind].join(' / ') : (K
 // Shop nur mit echten Autos (Wunsch Lionel): Typen mit echtem 3D-Modell – gleich halten mit MODELS in cars3d.js.
 // Gibt es in der gezogenen Seltenheit (noch) kein echtes Auto, kommt das echte Auto mit der nächsten Seltenheit.
 const MODEL_KINDS = ['offroad', 'minivan', 'luxsuv', 'jeep', 'supercar', 'hyperev', 'hyper', 'gtcar', 'sports', 'coupe', 'roadster', 'limo', 'kombi', 'racer', 'lemans', 'gtlegend', 'musclegt', 'car', 'safari', 'oldtimer', 'delivery', 'stockcar', 'luxlimo', 'kompakt', 'ecar', 'police', 'pickupxl', 'muscle', 'hatch', 'smart', 'mini', 'formula', 'ambulance',
-  'tiguanx', 'tiguan24', 'e63', 'gt3rs', 'trackhawk', 'mansory', 'bentley', 'kodiaq', 'q5'];
+  'tiguanx', 'tiguan24', 'e63', 'gt3rs', 'trackhawk', 'mansory', 'bentley', 'kodiaq', 'q5', 'ttrs', 'm3t', 'trx', 'huracan', 'supra', 'vantage', 'dbx'];
 const tierRank = t => (t === 'admin' ? 5 : t === 'eigenbau' ? 3 : TIER_ORDER.indexOf(t));
 function modelKind(tier) {
   const same = MODEL_KINDS.filter(k => KINDS[k] && KINDS[k].tier === tier);

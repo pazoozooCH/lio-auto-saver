@@ -1645,6 +1645,14 @@ export const MODELS = [
   { file: 'models/police_charger.glb', len: 5.1, kinds: ['police'], forward: '+z', blink: /^emergrx$/, credit: '„Dodge Charger SRT (Police)“ von temich, CC BY-NC 4.0' }, // eigene Polizei-Bemalung, Blaulicht blinkt
   // LIONEL X (Wunsch Lionel: echt machen): Lamborghini Temerario, immer in seiner eigenen Farbe (Rot, ALWAYS_PAINT)
   { file: 'models/temerario.glb', len: 4.71, kinds: ['lionelx'], forward: '+z', paint: /2024Paint_Material$/, credit: '„2025 Lamborghini Temerario“ von Ddiaz Design, CC BY-NC-SA 4.0' },
+  // aus Lionels Ordner, alle von Ddiaz Design (CC BY-NC-SA 4.0)
+  { file: 'models/audi_tt_rs.glb', len: 4.19, kinds: ['ttrs'], forward: '+z', paint: /2023Paint_Material1$/, credit: '„2023 Audi TT RS Iconic Edition“ von Ddiaz Design, CC BY-NC-SA 4.0' },
+  { file: 'models/bmw_m3_touring.glb', len: 4.80, kinds: ['m3t'], forward: '+z', paint: /2022Paint_Material$/, credit: '„2023 BMW M3 Touring“ von Ddiaz Design, CC BY-NC-SA 4.0' },
+  { file: 'models/ram_trx.glb', len: 5.92, kinds: ['trx'], forward: '+z', paint: /2021Paint_Material$/, credit: '„2021 RAM 1500 TRX“ von Ddiaz Design, CC BY-NC-SA 4.0' },
+  { file: 'models/huracan_spyder.glb', len: 4.52, kinds: ['huracan'], forward: '+z', paint: /^CAR_Paint$/, credit: '„2017 Lamborghini Huracán RWD Spyder“ von Ddiaz Design, CC BY-NC-SA 4.0' },
+  { file: 'models/supra_lb.glb', len: 4.45, kinds: ['supra'], forward: '+z', paint: /2020PaintTNR_Material1$/, credit: '„2020 LB-Works Toyota Supra A90“ von Ddiaz Design, CC BY-NC-SA 4.0' },
+  { file: 'models/vantage_roadster.glb', len: 4.47, kinds: ['vantage'], forward: '+z', paint: /2021Paint_Material1$/, credit: '„2021 Aston Martin Vantage Roadster“ von Ddiaz Design, CC BY-NC-SA 4.0' },
+  { file: 'models/aston_dbx.glb', len: 5.04, kinds: ['dbx'], forward: '+z', paint: /2023Paint_Material$/, credit: '„2023 Aston Martin DBX707“ von Ddiaz Design, CC BY-NC-SA 4.0' },
   { file: 'models/urus.glb', len: 5.11, kinds: ['pickupxl'], forward: '+z', paint: /2018Paint_Material$/, credit: '„2019 Lamborghini Urus“ von Ddiaz Design, CC BY-NC-SA 4.0' },
   { file: 'models/mansory_rr.glb', len: 4.9, kinds: ['mansory'], forward: '+z', paint: /^CarPaint_1$/, credit: '„2016 Mansory Range Rover Sport SVR“ von Ddiaz Design, CC BY-NC-SA 4.0' },
   { file: 'models/trackhawk.glb', len: 4.89, kinds: ['trackhawk'], forward: '+z', paint: /2018Paint_Material$/, credit: '„2018 Jeep Grand Cherokee Trackhawk“ von Ddiaz Design, CC BY-NC-SA 4.0' },
