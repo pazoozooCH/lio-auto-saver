@@ -103,6 +103,7 @@ const E = (cyl, idle, red, bright, sub, o = {}) => ({ type: 'engine', cyl, idle,
 const KIND_PROFILE = {
   offroad: E(6, 750, 7000, 0.85, 0.55, { turbo: 0.35, pops: 0.5, res: 220 }),            // BMW X4 (Reihensechser Turbo)
   coupe: E(6, 850, 7600, 1.0, 0.5, { turbo: 0.5, pops: 1, res: 260, rasp: 0.3 }),         // BMW M4
+  lionelx: E(8, 1000, 10000, 1.05, 0.5, { turbo: 0.45, pops: 0.9, res: 300, rasp: 0.45, burble: 0.3 }), // LIONEL X = Lamborghini Temerario (V8 Biturbo)
   hatch: E(4, 800, 4600, 0.5, 0.7, { knock: 0.55, turbo: 0.4 }),                          // BMW X2 20d (Diesel)
   minivan: E(4, 800, 6000, 0.7, 0.5, { turbo: 0.2 }), kodiaq: E(4, 780, 6500, 0.75, 0.55, { turbo: 0.3 }),
   q5: E(4, 760, 6500, 0.8, 0.55, { turbo: 0.35, res: 200 }), tiguanx: E(4, 800, 6500, 0.78, 0.5, { turbo: 0.3 }),

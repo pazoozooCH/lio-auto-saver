@@ -1643,6 +1643,8 @@ export const MODELS = [
   { file: 'models/bugatti_tourbillon.glb', len: 4.67, kinds: ['luxlimo'], forward: '+z', paint: /2026Paint_Material1$/, credit: '„2026 Bugatti Tourbillon“ von Ddiaz Design, CC BY-NC-SA 4.0' },
   { file: 'models/cadillac_xt6.glb', len: 5.05, kinds: ['ecar'], forward: '+z', paint: /^Paint_Color$/, credit: '„Cadillac XT6 Luxury 2023 (free)“ von 3dShowroom, CC BY 4.0' },
   { file: 'models/police_charger.glb', len: 5.1, kinds: ['police'], forward: '+z', blink: /^emergrx$/, credit: '„Dodge Charger SRT (Police)“ von temich, CC BY-NC 4.0' }, // eigene Polizei-Bemalung, Blaulicht blinkt
+  // LIONEL X (Wunsch Lionel: echt machen): Lamborghini Temerario, immer in seiner eigenen Farbe (Rot, ALWAYS_PAINT)
+  { file: 'models/temerario.glb', len: 4.71, kinds: ['lionelx'], forward: '+z', paint: /2024Paint_Material$/, credit: '„2025 Lamborghini Temerario“ von Ddiaz Design, CC BY-NC-SA 4.0' },
   { file: 'models/urus.glb', len: 5.11, kinds: ['pickupxl'], forward: '+z', paint: /2018Paint_Material$/, credit: '„2019 Lamborghini Urus“ von Ddiaz Design, CC BY-NC-SA 4.0' },
   { file: 'models/mansory_rr.glb', len: 4.9, kinds: ['mansory'], forward: '+z', paint: /^CarPaint_1$/, credit: '„2016 Mansory Range Rover Sport SVR“ von Ddiaz Design, CC BY-NC-SA 4.0' },
   { file: 'models/trackhawk.glb', len: 4.89, kinds: ['trackhawk'], forward: '+z', paint: /2018Paint_Material$/, credit: '„2018 Jeep Grand Cherokee Trackhawk“ von Ddiaz Design, CC BY-NC-SA 4.0' },
@@ -1665,6 +1667,11 @@ export const MODELS = [
 export const MOBILE = (typeof matchMedia === 'function' && matchMedia('(pointer: coarse)').matches) || /iPhone|iPad|iPod|Android/.test(navigator.userAgent);
 const modelOf = new Map(); // Typ → fertig vorbereitete Modelle (mehrere = Varianten, je Fahrzeug fest gewählt)
 export const hasModel = kind => modelOf.has(kind);
+// Busse und Lastwagen ohne echtes Modell fahren im Verkehr weiter (Haltestellen, Schulbus, Strassenreinigung …), bis es echte
+// Modelle dafür gibt; alle anderen alten Autos werden im Verkehr durch echte ersetzt (realTraffic)
+export const BUS_TRUCK = new Set(['van', 'postauto', 'schoolbus', 'garbage', 'firetruck', 'parcel', 'bakery', 'icecream', 'sweeper', 'dumper', 'cement',
+  'tanker', 'carrier', 'umzug', 'towtruck', 'doubledecker', 'tram', 'policebus', 'camper', 'delivery', 'tractor', 'excavator', 'crane', 'dozer', 'forklift', 'groomer', 'snowplow']);
+export const realTraffic = kind => modelOf.has(kind) || BUS_TRUCK.has(kind);
 const seedOf = v => { const s = String(v.id || v.seed || ''); let h = 7; for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) >>> 0; return h; };
 const modelFor = v => { const L = modelOf.get(v.kind); return L ? L[(v.variant ?? seedOf(v)) % L.length] : null; };
 export const modelVariants = () => [...modelOf.entries()].map(([kind, L]) => [kind, L.length]); // für das Vorwärmen (alle Varianten einmal bauen)
@@ -1955,6 +1962,7 @@ const templates = new Map(), paints = new Map();
 // Die Farbe steckt nur im Lack: eine Vorlage je Typ (sonst baut jede Farbe ein ganzes Auto neu – viel zu viel Speicher fürs Handy).
 // Ausnahmen: Typen, die die Farbe in Bilder malen (Streifen).
 const COLOR_KINDS = new Set(['cement', 'camper']);
+const ALWAYS_PAINT = new Set(['lionelx']); // echtes Modell, aber immer in der Wagenfarbe (LIONEL X ist rot, das Modell grün)
 // Geist-Look (Geist-Cayenne online): das Auto nur als feine, helle Linien (Kanten der Formen); Lichter bleiben
 const GHOST_HIDE = new THREE.MeshBasicMaterial({ visible: false });
 const GHOST_LINE = new THREE.LineBasicMaterial({ color: 0xbfe9ff, transparent: true, opacity: 0.6, depthWrite: false });
@@ -1975,7 +1983,7 @@ const paintKey = v => [v.special || '', v.color || '', (v.tune && v.tune.finish)
 export function buildCar(v, kinds, hDiv) {
   if (kinds && kinds[v.kind] && kinds[v.kind].retired) v = { ...v, kind: kinds[v.kind].retired }; // altes Fantasie-Fahrzeug: echtes Auto zeigen
   const tune = v.tune || {};
-  const orig = modelOf.has(v.kind) && !isPainted(v); // echtes Modell, nicht gespritzt: Originalfarbe des Modells
+  const orig = modelOf.has(v.kind) && !isPainted(v) && !ALWAYS_PAINT.has(v.kind); // echtes Modell, nicht gespritzt: Originalfarbe des Modells
   const MV = modelFor(v), mvi = MV ? modelOf.get(v.kind).indexOf(MV) : -1; // welches echte Modell (Variante)
   const key = [v.kind, v.special || '', COLOR_KINDS.has(v.kind) ? v.color || '' : '', hDiv || '', JSON.stringify(tune), orig ? 'orig' : '', mvi].join('|');
   let t = templates.get(key);

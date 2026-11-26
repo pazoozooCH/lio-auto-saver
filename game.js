@@ -404,7 +404,7 @@ const KINDS = {
                info: '🥇 Formel-Rennwagen: das schnellste Auto – Antippen = TURBO!' },
   luxlimo:   { name: 'Luxuslimousine', tier: 'legendary', w: [130, 140], h: [42, 46], speed: 1.3, color: '#111827', armor: 2, points: 8, coins: 6, look: 'limo', badge: '👑',
                info: '👑 Luxuslimousine: hält ZWEI Schläge aus – 8 Punkte und 6 Münzen!' },
-  // --- Eigenbau vom Schrottplatz (city.js/junkyard.js): nur aus Teilen zusammengebaut, nicht im Shop, nicht verkaufbar;
+  // --- Eigenbauten (früher vom Schrottplatz, der ist weg): wer noch eines hat, bekommt ein echtes Auto (realAs); bleiben nur als Daten ---
   //     jedes Exemplar hat eine eigene Flicken-Lackierung (special 'junk', Muster aus der Farbe) ---
   junkrod:   { name: 'Rost-Rakete', tier: 'eigenbau', secret: true, junk: true, w: [108, 118], h: [38, 42], speed: 1.3, look: 'muscle', badge: '🚀',
                info: '🚀 Rost-Rakete: aus Schrott gebaut – und trotzdem schnell!' },
@@ -438,10 +438,12 @@ const RETIRED = { bobbycar: 'smart', mower: 'quad', candy: 'bakery', circus: 'do
   dragon: 'supercar', shuttle: 'formula', timemachine: 'gtlegend', unicorn: 'hyperev', royal: 'luxlimo', phoenix: 'lemans', rover: 'hyperev', shark: 'supercar',
   pumpkin: 'luxlimo', sleigh: 'gtlegend' };
 for (const [k, to] of Object.entries(RETIRED)) if (KINDS[k]) Object.assign(KINDS[k], { secret: true, retired: to });
-function realVehicle(v) { // altes Fantasie-Fahrzeug → echtes Auto (gleiche Nummer, Lack und PS bleiben)
-  const to = KINDS[v.kind] && KINDS[v.kind].retired;
-  if (!to) return false;
-  v.kind = to; if (!v.special || v.special === 'junk') v.color = KINDS[to].color || v.color;
+function realVehicle(v) { // altes Fahrzeug → echtes Auto (gleiche Nummer und PS; retired = Fantasie, realAs = alles ohne echtes Modell)
+  let changed = false;
+  for (let i = 0; i < 4; i++) { const K = KINDS[v.kind], to = K && (K.retired || K.realAs); if (!to) break; v.kind = to; changed = true; }
+  if (!changed) return false;
+  if (v.special === 'junk') v.special = null; // Flicken-Lack der Eigenbauten
+  if (!v.special) v.color = KINDS[v.kind].color || v.color;
   return true;
 }
 
@@ -480,7 +482,6 @@ if (!fleet) {
   try { localStorage.removeItem('autoRetterUnlocked'); } catch (e) { /* egal */ }
 }
 fleet = fleet.filter(v => KINDS[v.kind]);
-if (fleet.filter(realVehicle).length) storeJSON('autoRetterFleet', fleet); // Fantasie-Fahrzeuge → echte Autos (einmal)
 // Geschenk-Zettel (autoRetterGift = Liste von Typen, nur in einem Spielstand gesetzt): diese Fahrzeuge einmal dazulegen, dann Zettel weg
 { const gift = loadJSON('autoRetterGift', null);
   if (Array.isArray(gift)) {
@@ -3011,7 +3012,7 @@ function drawQuit() {
 // auf dem Startbildschirm ein Update-Knopf; kommt man auf dem Startbildschirm in die App zurück, wird gleich aktualisiert.
 // APP_FILES: alle Dateien des Spiels (beim Hinzufügen einer Datei hier ergänzen).
 const APP_FILES = ['./', 'index.html', 'game.js', 'version.js', 'press3d.js', 'race.js', 'drag.js', 'cars3d.js', 'world3d.js',
-  'online.js', 'sound.js', 'city.js', 'tracks.js', 'stunt.js', 'netcars.js', 'chat.js', 'fx.js', 'viewer.js', 'photo.js', 'outskirts.js', 'country.js', 'moon.js', 'look.js', 'suburbs.js', 'island.js', 'monaco.js', 'junkyard.js', 'carlamps.js', 'review.js', 'service.js', 'party.js', 'models/lowpoly_generic_suv.glb', 'models/mmc_generic_small_suv.glb', 'models/cullinan.glb', 'models/g_class.glb', 'models/ferrari_488.glb', 'models/lambo_revuelto.glb', 'models/laferrari.glb', 'models/porsche_gt2rs.glb', 'models/porsche_911_4s.glb', 'models/bmw_m4.glb', 'models/corvette_c8.glb', 'models/maybach.glb', 'models/audi_rs6.glb', 'models/audi_r8.glb', 'models/jesko.glb', 'models/koenigsegg_one1.glb', 'models/pagani_imola.glb', 'models/cayenne.glb', 'models/defender.glb', 'models/suburban.glb', 'models/express_van.glb', 'models/mclaren_765lt.glb', 'models/bugatti_tourbillon.glb', 'models/golf_gti.glb', 'models/cadillac_xt6.glb', 'models/police_charger.glb', 'models/urus.glb', 'models/mansory_rr.glb', 'models/trackhawk.glb', 'models/e63_wagon.glb', 'models/porsche_gt3rs.glb', 'models/tiguan_x.glb', 'models/tiguan_2024.glb', 'models/sls_amg.glb', 'models/bmw_x2.glb', 'models/lotus_exige.glb', 'models/jeep_renegade.glb', 'models/mclaren_p1.glb', 'models/ambulance.glb', 'models/bentley_gt.glb', 'models/skoda_kodiaq.glb', 'models/audi_q5.glb', 'sounds/car_idle.wav', 'sounds/coupe_idle.wav', 'sounds/gt3rs_idle.wav', 'sounds/hyperev_idle.wav', 'sounds/jeep_idle.wav', 'sounds/kombi_idle.wav', 'sounds/kompakt_idle.wav', 'sounds/luxsuv_idle.wav', 'sounds/muscle_idle.wav', 'sounds/offroad_idle.wav', 'sounds/racer_idle.wav', 'sounds/roadster_idle.wav', 'sounds/sports_idle.wav', 'sounds/supercar_idle.wav', 'manifest.webmanifest', 'icon-192.png', 'icon-512.png', 'apple-touch-icon.png', 'favicon.png'];
+  'online.js', 'sound.js', 'city.js', 'tracks.js', 'stunt.js', 'netcars.js', 'chat.js', 'fx.js', 'viewer.js', 'photo.js', 'outskirts.js', 'country.js', 'moon.js', 'look.js', 'suburbs.js', 'island.js', 'monaco.js', 'carlamps.js', 'review.js', 'service.js', 'party.js', 'models/lowpoly_generic_suv.glb', 'models/mmc_generic_small_suv.glb', 'models/cullinan.glb', 'models/g_class.glb', 'models/ferrari_488.glb', 'models/lambo_revuelto.glb', 'models/laferrari.glb', 'models/porsche_gt2rs.glb', 'models/porsche_911_4s.glb', 'models/bmw_m4.glb', 'models/corvette_c8.glb', 'models/maybach.glb', 'models/audi_rs6.glb', 'models/audi_r8.glb', 'models/jesko.glb', 'models/koenigsegg_one1.glb', 'models/pagani_imola.glb', 'models/cayenne.glb', 'models/defender.glb', 'models/suburban.glb', 'models/express_van.glb', 'models/mclaren_765lt.glb', 'models/bugatti_tourbillon.glb', 'models/golf_gti.glb', 'models/cadillac_xt6.glb', 'models/police_charger.glb', 'models/urus.glb', 'models/mansory_rr.glb', 'models/trackhawk.glb', 'models/e63_wagon.glb', 'models/porsche_gt3rs.glb', 'models/tiguan_x.glb', 'models/tiguan_2024.glb', 'models/sls_amg.glb', 'models/bmw_x2.glb', 'models/lotus_exige.glb', 'models/jeep_renegade.glb', 'models/mclaren_p1.glb', 'models/ambulance.glb', 'models/bentley_gt.glb', 'models/skoda_kodiaq.glb', 'models/audi_q5.glb', 'models/temerario.glb', 'sounds/car_idle.wav', 'sounds/coupe_idle.wav', 'sounds/gt3rs_idle.wav', 'sounds/hyperev_idle.wav', 'sounds/jeep_idle.wav', 'sounds/kombi_idle.wav', 'sounds/kompakt_idle.wav', 'sounds/luxsuv_idle.wav', 'sounds/muscle_idle.wav', 'sounds/offroad_idle.wav', 'sounds/racer_idle.wav', 'sounds/roadster_idle.wav', 'sounds/sports_idle.wav', 'sounds/supercar_idle.wav', 'manifest.webmanifest', 'icon-192.png', 'icon-512.png', 'apple-touch-icon.png', 'favicon.png'];
 const UPDATE_BTN = { x: W - 262, y: 14, w: 248, h: 46 };
 const appUpdate = { info: null, busy: false, last: 0 };
 
@@ -3393,7 +3394,7 @@ function drawShop() {
     ctx.fillText('🚧 Die Garagentore sind zurzeit zu', W / 2, 205);
     ctx.font = '18px system-ui, sans-serif'; ctx.fillStyle = 'rgba(255,255,255,0.8)';
     ctx.fillText('Neue Autos gibt es beim Autohändler in der Stadt,', W / 2, 260);
-    ctx.fillText('beim Tagesgeschenk und auf dem Schrottplatz.', W / 2, 288);
+    ctx.fillText('und beim Tagesgeschenk.', W / 2, 288);
   }
   drawMenuMsg(GATES_OPEN ? 'Tippe ein Tor an – dahinter wartet ein neues Fahrzeug!  Du hast ' + fleet.length + ' Fahrzeuge.' : 'Du hast ' + fleet.length + ' Fahrzeuge.', 490);
   drawButton(SKIN_BTN, '👕 MEINE FIGUR', '#0d9488', 18);
@@ -3439,6 +3440,21 @@ function modelKind(tier) {
   const want = tierRank(tier), dist = k => Math.abs(tierRank(KINDS[k].tier) - want), best = Math.min(...MODEL_KINDS.map(dist));
   return pick(MODEL_KINDS.filter(k => dist(k) === best));
 }
+// Nur noch echte Autos (Wunsch Lionel): jedes Fahrzeug ohne echtes 3D-Modell (auch die Eigenbauten vom Schrottplatz) wird bei
+// seinem Besitzer zu einem echten Auto gleicher Seltenheit (realAs, fest je Typ) und kommt nirgends mehr vor (secret: nicht im
+// Rennen, Dragrace, Shop). LIONEL X bleibt (echtes Modell: Temerario). Busse und Lastwagen im Stadtverkehr fahren weiter,
+// bis es echte Modelle dafür gibt (buildCar wandelt nur `retired` um, nicht `realAs`).
+const realFor = (k, tier) => {
+  const want = tierRank(tier), dist = m => Math.abs(tierRank(KINDS[m].tier) - want), best = Math.min(...MODEL_KINDS.map(dist));
+  const L = MODEL_KINDS.filter(m => dist(m) === best); let h = 7; for (const c of k) h = (h * 31 + c.charCodeAt(0)) >>> 0;
+  return L[h % L.length];
+};
+for (const [k, K] of Object.entries(KINDS)) {
+  if (MODEL_KINDS.includes(k) || k === 'lionelx') continue;
+  K.secret = true;
+  if (!K.retired) K.realAs = realFor(k, K.tier === 'eigenbau' ? 'rare' : K.tier);
+}
+if (fleet.filter(realVehicle).length) storeJSON('autoRetterFleet', fleet); // alte Fahrzeuge → echte Autos (einmal, beim Laden)
 function rollGate(g) {
   const possible = TIER_ORDER.filter(t => g.odds[t] > 0);
   let tier = possible[possible.length - 1];
@@ -3634,8 +3650,8 @@ function skinTap(px, py) {
 const COLLECTION_BTN = { x: 172, y: 18, w: 190, h: 44 };
 let collectionPage = 0;
 
-function collectionKinds() { // nur echte Autos (Wunsch Lionel), dazu eigene Eigenbauten vom Schrottplatz
-  return Object.keys(KINDS).filter(kd => MODEL_KINDS.includes(kd) || (KINDS[kd].junk && fleet.some(v => v.kind === kd))).sort((a, b) =>
+function collectionKinds() { // nur echte Autos (Wunsch Lionel)
+  return Object.keys(KINDS).filter(kd => MODEL_KINDS.includes(kd)).sort((a, b) =>
     TIER_VALUE[KINDS[b].tier] - TIER_VALUE[KINDS[a].tier] || KINDS[a].name.localeCompare(KINDS[b].name));
 }
 
@@ -4395,17 +4411,6 @@ function raceMenuTap(px, py) {
 // Autohändler in der Stadt (city.js): drei Gebrauchtwagen (Preis = doppelter Wert, PS etwas verschieden) und das eigene Auto verkaufen
 const cityDealer = {
   coins: () => wallet,
-  // Schrottplatz: Eigenbau zusammensetzen – zuerst ein Typ, den man noch nicht hat; jedes Exemplar mit eigener Flicken-Lackierung
-  junkBuild() {
-    const all = Object.keys(KINDS).filter(k => KINDS[k].junk), owned = new Set(fleet.map(v => v.kind)), fresh = all.filter(k => !owned.has(k));
-    const kind = pick(fresh.length ? fresh : all), v = makeVehicle(kind, 'junk');
-    v.color = '#' + Math.floor(Math.random() * 0xffffff).toString(16).padStart(6, '0'); // eigene Farbe = eigenes Flickenmuster
-    v.ps = Math.max(30, basePS(kind) + Math.round(rand(-6, 14)));
-    v.junkNo = fleet.filter(f => KINDS[f.kind] && KINDS[f.kind].junk).length + 1;
-    fleet.push(v);
-    storeJSON('autoRetterFleet', fleet);
-    return { v, fresh: fresh.includes(kind), name: vehicleName(v) };
-  },
   offers() {
     return [0, 1, 2].map(() => { const v = makeVehicle(pick(MODEL_KINDS)); v.ps = Math.max(10, v.ps + Math.round(rand(-8, 6))); return { v, price: vehicleValue(v) * 2 }; }); // Autohändler: nur echte Autos
   },

@@ -2,9 +2,8 @@
 // Wird von game.js erst geladen, wenn man in die Stadt fährt.
 import * as THREE from 'three';
 import { Sky } from 'three/addons/objects/Sky.js';
-import { buildCar, animateCar, warmUp, makeQuality, mergeStatic, setLod, MODEL_LAMPS, hasModel, modelVariants, MOBILE, ghostLook } from './cars3d.js';
+import { buildCar, animateCar, warmUp, makeQuality, mergeStatic, setLod, MODEL_LAMPS, hasModel, modelVariants, MOBILE, ghostLook, realTraffic } from './cars3d.js';
 import { makeLamps, setLamps, removeLamps, dentAt, dropDents as dropCarDents } from './carlamps.js';
-import { buildJunkyard, JUNK, BENCH, BUILT, PARTS, inJunk, loadJunk, saveJunk, missingParts } from './junkyard.js';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { makeNoise, rng, smoothstep, surface, terrain, cloudDome } from './world3d.js';
 import { createCarSound, crash, gearbox, horn, createSiren } from './sound.js';
@@ -43,8 +42,7 @@ const baseOf = key => { const [i, j] = key.split(',').map(Number); return j === 
 const POOL = ('car mini kombi kompakt taxi police van delivery pickup hatch coupe smart ecar minivan jeep postauto ' +
   'schoolbus ambulance garbage beetle cabrio sports muscle offroad parcel bakery icecream oldtimer limo firetruck ' +
   'tiguanx tiguan24 e63 trackhawk kodiaq q5').split(' '); // eigene Typen der echten Autos
-// Normale Autos ohne echtes 3D-Modell: im Verkehr durch echte Autos ersetzt (Spezialfahrzeuge wie Feuerwehr, Müllauto, Postauto bleiben)
-const SWAP = new Set(['taxi', 'van', 'pickup', 'beetle', 'cabrio']);
+// Alte Autos ohne echtes 3D-Modell: im Verkehr durch echte ersetzt (realTraffic in cars3d.js; Busse und Lastwagen bleiben, bis es echte gibt)
 const COLORS = ['#c0392b', '#2563eb', '#f4f4f4', '#22232b', '#9aa0aa', '#16a34a', '#f59e0b', '#7c3aed', '#0e7490', '#b45309'];
 
 const node = i => (i - N / 2) * BLOCK;
@@ -1741,7 +1739,7 @@ function makeCar(kinds, i, j, d, s, given = null) {
   const cheap = k => !hasModel(k) || (!['rare', 'epic', 'legendary'].includes((kinds[k] || {}).tier) && !['sports', 'muscle', 'gt3rs'].includes(k)); // Porsche, SLS: teuer
   let kind = POOL[Math.floor(Math.random() * POOL.length)];
   if (!cheap(kind) && Math.random() > 0.06) kind = 'car';
-  if (SWAP.has(kind) && !hasModel(kind)) { const real = POOL.filter(k => hasModel(k) && cheap(k)); if (real.length) kind = real[Math.floor(Math.random() * real.length)]; } // normale Autos: nur echte Modelle
+  if (!realTraffic(kind)) { const real = POOL.filter(k => hasModel(k) && cheap(k)); if (real.length) kind = real[Math.floor(Math.random() * real.length)]; } // nur echte Autos (Busse/Lastwagen bis es echte gibt)
   if (kind === 'car' && Math.random() < 0.06) { const lux = Object.keys(kinds).filter(k => hasModel(k) && !cheap(k) && !kinds[k].secret); if (lux.length) kind = lux[Math.floor(Math.random() * lux.length)]; } // selten ein teures
   const v = given || { kind, color: kinds[kind].color || COLORS[Math.floor(Math.random() * COLORS.length)], special: null, seed: Math.floor(Math.random() * 1e6) };
   const mesh = buildCar(v, kinds);
@@ -2180,74 +2178,6 @@ function stepStations() {
     else showMsg('🔊 Zuerst beim Lautsprecher bestellen', 1.6);
   }
   city.atWin = atWin;
-}
-
-// ---------- Schrottplatz (junkyard.js) ----------
-// Teile liegen herum (hinfahren oder hingehen = einsammeln, nach einer Weile liegt dort ein neues), beim gelben Feld vor
-// der Hütte: Teile kaufen und mit allen sechs ein Eigenbau-Auto zusammenbauen (cityDealer.junkBuild in game.js). Der
-// fertige Wagen steht danach im Hof als dein geparktes Auto (einsteigen und losfahren).
-function setupJunk(kinds) {
-  if (!S.junk) S.junk = buildJunkyard({ scene: S.scene, sign: S.sign, solid: S.solid,
-    carMesh: (kind, color) => { const m = buildCar({ kind, color, special: 'junk' }, kinds); /* rostig und geflickt */ setLod(m, true); m.traverse(o => { o.castShadow = false; }); return m; } });
-  city.junkInv = loadJunk();
-}
-function stepJunk(dt) {
-  const J = S.junk;
-  if (!J) return;
-  const w = city.walk, x = w ? w.x : city.me.pos.x, z = w ? w.z : city.me.pos.z;
-  if (!inJunk(x, z, 150)) return;
-  const inv = city.junkInv;
-  for (const sp of J.spots) {
-    if (!sp.part) {
-      if ((sp.t -= dt) > 0) continue;
-      sp.part = PARTS[Math.floor(Math.random() * PARTS.length)];
-      sp.mesh = J.iconSprite(sp.part[1]); sp.mesh.userData.noWarp = true; S.scene.add(sp.mesh);
-    }
-    sp.mesh.position.set(sp.x, 1.4 + Math.sin(city.t * 2.2 + sp.x) * 0.25, sp.z);
-    if (Math.hypot(x - sp.x, z - sp.z) < (w ? 1.8 : 3.4) && !(city.me.alt > 3)) { // eingesammelt
-      const [id, emoji, name] = sp.part;
-      inv.parts[id] = (inv.parts[id] || 0) + 1; saveJunk(inv);
-      const have = PARTS.length - missingParts(inv).length;
-      showMsg('🔩 Gefunden: ' + emoji + ' ' + name + '  (' + have + '/' + PARTS.length + ' verschiedene Teile)', 2);
-      window.beep && window.beep(988, 0.1, 'triangle', 0.06);
-      S.scene.remove(sp.mesh); sp.mesh = null; sp.part = null; sp.t = 60 + Math.random() * 60;
-    }
-  }
-  const atBench = Math.hypot(x - BENCH.x, z - BENCH.z) < BENCH.r && (w || (Math.abs(city.me.speed) < 1 && city.me.alt < 2));
-  if (atBench && !city.atBench) {
-    city.atBench = true;
-    if (!city.dealer) showMsg('🌐 Online ist der Schrotthändler geschlossen (Teile sammeln geht)', 2);
-    else openPanel(junkPanel());
-  }
-  if (city.atBench && !atBench && Math.hypot(x - BENCH.x, z - BENCH.z) > BENCH.r + 3) { city.atBench = false; if (city.panel && city.panel.junk) closePanel(); }
-}
-function junkPanel() {
-  const inv = city.junkInv;
-  return { junk: true,
-    get title() { return '🛠️ Schrotthändler – ' + (PARTS.length - missingParts(inv).length) + '/' + PARTS.length + ' Teile'; },
-    rows: () => {
-      const miss = missingParts(inv);
-      return [...PARTS.map(([id, emoji, name, price]) => ({ id, label: emoji + ' ' + name, price, note: 'du hast ' + (inv.parts[id] || 0) })),
-        { id: 'build', label: '🔧 Auto zusammenbauen', price: 0, note: miss.length ? 'es fehlt: ' + miss.map(p => p[1]).join(' ') : 'alle Teile da!' }];
-    },
-    buy: id => {
-      if (id === 'build') { junkBuild(); return; }
-      const p = PARTS.find(q => q[0] === id);
-      if (city.pay(p[3]) < p[3]) return;
-      inv.parts[id] = (inv.parts[id] || 0) + 1; saveJunk(inv);
-      showMsg('🛒 Gekauft: ' + p[1] + ' ' + p[2], 1.6);
-    } };
-}
-function junkBuild() {
-  const inv = city.junkInv, miss = missingParts(inv);
-  if (miss.length) { showMsg('🔧 Es fehlt noch: ' + miss.map(p => p[1] + ' ' + p[2]).join(', '), 2.4); return; }
-  for (const [id] of PARTS) inv.parts[id]--;
-  saveJunk(inv);
-  const res = city.dealer.junkBuild(), v = res.v;
-  parkHere(buildCar(v, city.kinds), v, BUILT.x, BUILT.z, BUILT.h); // steht im Hof
-  closePanel();
-  showMsg('🎉 Fertig! Dein Eigenbau ' + res.name + ' Nr. ' + v.junkNo + ' steht im Hof – einzigartig' + (res.fresh ? ' und NEU in deiner Sammlung!' : '!') + ' Steig ein 🚗', 4);
-  window.beep && window.beep(784, 0.12, 'triangle', 0.07); window.beep && window.beep(1175, 0.3, 'triangle', 0.07, 0.14);
 }
 
 // ---------- Kino ----------
@@ -3539,7 +3469,7 @@ function groundAt(x, z) {
   if (inPassRegion(x, z)) return Math.max(0, S.country.ground(x, z)); // auch knapp am Stadtrand: dort liegt schon das Pass-Gelände
   if (Math.abs(x) <= LIMIT && Math.abs(z) <= LIMIT) return 0;
   if (onHighway(x, z)) return hwGround(x, z); // auf der Brücke oben
-  if (onRoads(x, z) || inArea(x, z) || inCountry(x, z) || inSuburb(x, z) || inJunk(x, z) || inService(x, z)) return 0;
+  if (onRoads(x, z) || inArea(x, z) || inCountry(x, z) || inSuburb(x, z) || inService(x, z)) return 0;
   const gx = (x + 1100) / 20, gz = (z + 1100) / 20, i = Math.floor(gx), j = Math.floor(gz), fx = gx - i, fz = gz - j;
   const a = landAt(i, j), b = landAt(i, j + 1), c = landAt(i + 1, j + 1), d = landAt(i + 1, j);
   return Math.max(0, fx + fz <= 1 ? a + (d - a) * fx + (b - a) * fz : c + (b - c) * (1 - fx) + (d - c) * (1 - fz));
@@ -4000,7 +3930,7 @@ function stepParked(dt) {
     const near = Math.hypot(P.x - me.pos.x, P.z - me.pos.z) < PARK_SEE || Math.hypot(P.x - cam.x, P.z - cam.z) < PARK_SEE;
     if (!P.mesh && near && !built) {
       parkFree(P);
-      if (city.kinds[P.v.kind] && city.kinds[P.v.kind].retired) { P.v.kind = city.kinds[P.v.kind].retired; saveParked(); } // Fantasie-Fahrzeug → echtes Auto
+      if (realKind(P.v.kind) !== P.v.kind) { P.v.kind = realKind(P.v.kind); if (P.v.special === 'junk') P.v.special = null; saveParked(); } // altes Fahrzeug → echtes Auto
       const v = city.kinds[P.v.kind] ? P.v : { ...P.v, kind: 'car' };
       setParkMesh(P, buildCar(v, city.kinds)); parkCols(P); built = true;
     }
@@ -4545,7 +4475,7 @@ function loadShop() {
   try { sh = JSON.parse(localStorage.getItem(SHOP_KEY)); } catch (err) { /* kaputt oder ohne Speicher */ }
   sh = { on: false, stock: [], orders: [], ...(sh || {}) };
   sh.stock = Array.from({ length: SHOP_SLOTS }, (_, k) => sh.stock[k] || null); // feste Plätze (leer = null)
-  for (const o of sh.stock) { const K = o && o.v && city.kinds[o.v.kind]; if (K && K.retired) o.v.kind = K.retired; } // keine Fantasie-Fahrzeuge mehr
+  for (const o of sh.stock) if (o && o.v) o.v.kind = realKind(o.v.kind); // nur echte Autos
   return sh;
 }
 const stockCount = () => city.shop.stock.filter(Boolean).length;
@@ -4827,13 +4757,13 @@ function driveAway(v) {
 // Parkplatz vor der Werkstatt: ein paar Autos stehen schon da (fest, mit Rand). Einparken: ins gelbe Feld, gerade
 // stehen, anhalten – ohne ein Auto anzufahren. Fahrschule: vier Punkte abfahren, dabei Tempo einhalten, bei Rot
 // halten und keinen Unfall bauen; bestanden = Führerschein (gespeichert) und Münzen.
-const LOT_KINDS = ['car', 'kompakt', 'kombi', 'hatch', 'coupe', 'minivan', 'pickup', 'smart'];
+const LOT_KINDS = ['car', 'kompakt', 'kombi', 'hatch', 'coupe', 'minivan', 'smart']; // nur echte Autos
 const LOT_TAKEN = [0, 1, 3, 5, 6];
 function parkLotCars() {
   if (S.lotCars) return;
   S.lotCars = [];
   for (const k of LOT_TAKEN) {
-    const b = S.places.lot.bays[k], kind = LOT_KINDS[Math.floor(Math.random() * LOT_KINDS.length)];
+    const lk = LOT_KINDS.filter(realTraffic), b = S.places.lot.bays[k], kind = lk[Math.floor(Math.random() * lk.length)] || 'car';
     const m = buildCar({ kind, color: COLORS[Math.floor(Math.random() * COLORS.length)], special: null }, city.kinds);
     m.position.set(b.x, 0.17, b.z); m.rotation.y = -b.h;
     S.scene.add(m);
@@ -5637,13 +5567,14 @@ function stepCop(P, dt, T) {
   }
 }
 
+// Eigenes altes Fahrzeug → echtes Auto (game.js: retired = Fantasie, realAs = ohne echtes Modell)
+function realKind(k) { for (let i = 0; i < 4; i++) { const K = city.kinds[k], to = K && (K.retired || K.realAs); if (!to) break; k = to; } return k; }
 function surfaceAt(x, z) {
   if (city && city.boat && !city.walk) return 'water';
   for (const q of (S.places && S.places.services) || []) { const b = q.pad; if (x > b.x0 && x < b.x1 && z > b.z0 && z < b.z1) return 'asphalt'; } // Tankstellen mit Werkstatt
   if (inMoon(x, z)) return 'moon';
   if (Math.abs(x) > HALF + ROAD / 2 || Math.abs(z) > HALF + ROAD / 2) {
     if (onHighway(x, z) || onRoads(x, z) || inArea(x, z) || suburbRoad(x, z) || monRoad(x, z) || onDeck(x, z)) return 'asphalt';
-    if (inJunk(x, z)) return 'gravel'; // Schrottplatz
     return countrySurface(x, z) || (onPass(x, z) ? 'asphalt' : 'grass');
   }
   const bi = Math.floor(x / BLOCK + N / 2), bj = Math.floor(z / BLOCK + N / 2);
@@ -6044,7 +5975,6 @@ function paintWorld(g, P, K) {
   const hw = []; for (let s = 0; s <= HW_LEN; s += 30) { const p = hwPoint(s); hw.push([p.x, p.z]); }
   line(hw, '#e2e5ea', Math.max(3, 30 * K)); line(hw, '#facc15', 1); // Autobahn mit Mittellinie
   for (const b of ROADS) rect(b, '#d4d8de'); // Zubringer (Flughafenstrasse, Raumbahnhof)
-  rect(JUNK, '#8d8172'); // Schrottplatz
   for (const sl of SLIPS) line(sl.map(p => [p.x, p.z]), '#d4d8de', Math.max(2, 9 * K)); // geschwungene Aus- und Einfahrten
   for (const e of EXITS) { const p = hwPoint(e.s), [x, y] = P(p.x - p.tz * 24, p.z + p.tx * 24); g.fillStyle = '#1d4ed8'; g.beginPath(); g.arc(x, y, Math.max(3, 12 * K), 0, 7); g.fill(); } // Ausfahrten
   rect({ x0: REST.x - 150, x1: REST.x + 150, z0: REST.z + 20, z1: REST.z + 130 }, '#f59e0b'); // Raststätte
@@ -6247,7 +6177,7 @@ function mapCar(g, x, y, h, col, k = 1) {
 function mapLabels() {
   const keys = city.keys.size, lock = (name, need) => (keys >= need ? name : '🔒 ' + name + ' (' + need + ' 🔑)');
   const L = [['🏙️ Stadt', 0, -HALF - 40], ['⛷️ Skigebiet', SKI.x, SKI.z], ['🐄 Alp', (FARM.x0 + FARM.x1) / 2, FARM.z0 - 30], ['🚀 Raumbahnhof', SPACE.x, SPACE.z + 50],
-    ['🛣️ Raststätte', REST.x, REST.z + 170], ['🏖️ Strand', -674, -700], [lock('⛰️ Pass', PASS_AREA.need), SUMMIT.x, SUMMIT.z + 60], ['🛣️ Autobahn', -HW.half - HW.R + 80, 1500], ['🌉 Brücke', -HW.half - HW.R + 90, -160], ['🔧 Schrottplatz', (JUNK.x0 + JUNK.x1) / 2, JUNK.z1 + 40]];
+    ['🛣️ Raststätte', REST.x, REST.z + 170], ['🏖️ Strand', -674, -700], [lock('⛰️ Pass', PASS_AREA.need), SUMMIT.x, SUMMIT.z + 60], ['🛣️ Autobahn', -HW.half - HW.R + 80, 1500], ['🌉 Brücke', -HW.half - HW.R + 90, -160]];
   L.push([MON_NAME, MONACO.x, MONACO.z - 330]);
   for (const S2 of SUBURBS) L.push([S2.name, (S2.rect.x0 + S2.rect.x1) / 2, S2.rect.z0 - 25]);
   for (const A of Object.values(AREAS)) L.push([lock(A.name, A.need), (A.rect.x0 + A.rect.x1) / 2, (A.rect.z0 + A.rect.z1) / 2]);
@@ -6430,7 +6360,6 @@ export function startCity({ player, kinds, topSpeed, onExit, pay = () => 0, earn
   city.hw = makeHighwayTraffic(S.scene, kinds);
   for (const m of city.hw.meshes) noShadow(m);
   setupDealer();
-  setupJunk(kinds);
   // Fahrzeuge, die erst später auftauchen, schon jetzt einmal bauen (danach nur noch kopieren – sonst ruckelt es dann)
   for (const v of [...city.base, { kind: 'police', color: kinds.police.color }, { kind: 'sports', color: '#18181b' }, { kind: 'muscle', color: '#18181b' },
     { kind: 'carrier', color: '#f59e0b' }]) if (kinds[v.kind]) buildCar({ special: null, ...v }, kinds);
@@ -6504,7 +6433,6 @@ function step(now) {
   stepPolice(dt);
   stepWanted(dt);
   stepRoute(dt);
-  stepJunk(dt);
   stepChunks();
   stepPlaces(dt);
   stepBases(dt);

@@ -163,7 +163,7 @@ Browser-Spiel ohne Build: `index.html` + `game.js` (Spiellogik, Menüs und 2D-Ze
   Marken sind im Moment erlaubt (Martin: privates Spiel). Neue Datei auch in `APP_FILES`; pages.yml kopiert den ganzen Ordner.
   Shop-Tore zurzeit zu (`GATES_OPEN` in game.js, Wunsch Lionel), Lack-Garage auch (`PAINTS_OPEN`); Spezial-Lacke und selbst lackierte Farben einmal von allen Autos entfernt (`autoRetterNoPaint`, auch geparkte/Autohaus). Lustige Namen der echten Autos (`MODEL_NAMES` in game.js, Reihenfolge je Typ wie in MODELS; `vehicleName(v)`, in city.js `vname`;
   neues Modell = auch hier einen Namen eintragen). Shop (Tore), Autohändler und Tagesgeschenk geben nur echte Autos: `MODEL_KINDS` in game.js (gleich halten mit `MODELS`);
-  fehlt eine Seltenheit, kommt das echte Auto mit der nächsten (`modelKind`). Die Sammlung zeigt nur echte Autos (`collectionKinds`: `MODEL_KINDS` + eigene Eigenbauten); alte eigene Fahrzeuge bleiben in der Garage, Stadtverkehr bleibt wie er ist.
+  fehlt eine Seltenheit, kommt das echte Auto mit der nächsten (`modelKind`). Die Sammlung zeigt nur echte Autos (`collectionKinds`: `MODEL_KINDS`); alte eigene Fahrzeuge werden zu echten (`realAs`).
   Verkleinern ohne `simplifySloppy` (macht Dellen: Ecken nur nach Lage verbunden), lieber 90–150k Dreiecke und Bilder 512 px. Zu schwere Modelle verkleinern mit glTF-Transform (npm, nur in einem temporären Ordner): Innenraum/Motor weg, `simplify`
   (meshoptimizer), Bilder als JPG; Ziel ~30'000 Dreiecke, wenige MB. Beim Laden fasst `prepareModel` alle Nicht-Rad-Teile je Material zusammen.
 - `viewer.js`: 3D-Ansicht eines Fahrzeugs zum Drehen (eigener Renderer, wird beim Schliessen freigegeben).
@@ -206,12 +206,10 @@ Browser-Spiel ohne Build: `index.html` + `game.js` (Spiellogik, Menüs und 2D-Ze
   `skyEnvironment` = Spiegelungen vom Himmel. Knopf ✨ in der Stadt (Spielstand `autoRetterGfx`); zu langsam = schaltet ab;
   nicht auf dem Handy (LITE) im Rennen/Stuntpark. Ohne Netz fehlt nur die Nachbearbeitung. Im Rennen braucht der
   Rückspiegel bei schöner Grafik ein eigenes Bild ohne Tonwert (`rtLin`), sonst wechseln die Shader jedes Bild.
-- `junkyard.js`: Schrottplatz an der Flughafenstrasse (`JUNK`, Zufahrt in `ROADS`): Zaun, rostige Schrottautos (einfache Fassung),
-  Kran, Hütte. Teile (`PARTS`: Karosserie, Motor, Räder, Lenkrad, Sitze, Lichter) liegen an `SPOTS` (einsammeln, kommen nach
-  1–2 Min. wieder), am gelben Feld `BENCH` kaufen und zusammenbauen (`stepJunk`/`junkPanel`/`junkBuild` in city.js →
-  `cityDealer.junkBuild` in game.js). Spielstand `autoRetterJunk`. Eigenbau-Fahrzeuge in `KINDS` mit `junk: true`, `secret`
-  (nicht im Shop, nicht verkaufbar), Seltenheit `eigenbau`; zuerst ein Typ, den man noch nicht hat; jedes mit eigener Farbe →
-  eigenes Flickenmuster (`special: 'junk'`, `junkTexture` in cars3d.js; 3D: Grundform + `junkExtras`). Fertig steht es bei `BUILT`.
+- Nur noch echte Autos (Wunsch Lionel): alle Typen ohne echtes Modell sind `secret` und haben `realAs` (game.js, echtes Auto gleicher
+  Seltenheit); `realVehicle` wandelt eigene Fahrzeuge beim Laden um (auch geparkte/Autohaus: `realKind` in city.js). Im Verkehr nur
+  `realTraffic` (cars3d.js): echte Modelle plus `BUS_TRUCK` (Busse, Lastwagen – bleiben, bis es echte Modelle dafür gibt).
+  Schrottplatz entfernt (Eigenbauten → echte Autos). LIONEL X: echtes Modell Lamborghini Temerario, immer rot (`ALWAYS_PAINT`).
 - `review.js` (öffnen setzt `state = 'review'`: Presse/Ton stehen still; Tippfläche gross für das Handy): Review-Seite für Lionel (3× auf „Ersteller: LIONEL“, `reviewTap` in game.js; nur freigeschaltete Geräte,
   beim ersten Mal Code-Abfrage → `reviewers/<uid>`): alle Autos in 3D, Blinker/Warnblinker/Nacht/Bremse, Delle/Reparieren,
   Motor mit Drehzahl-Regler, Kamera vorne/hinten/Seite/Fahrersitz; Findings nach `review/findings`. Technik je Auto (`carStats`:
