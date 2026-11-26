@@ -236,6 +236,9 @@ werden beim Laden zu echten Autos gleicher Seltenheit (`realVehicle`), geparkte/
 immer das Ersatzauto. Episch/Legendär: echte Sportwagen (`supercar`, `hyperev`, `gtlegend`, `lemans`, `formula`, `luxlimo`, `gtcar`,
 `luxsuv`, `musclegt`, `pickupxl`; Formen `REAL.supercar/hyperev/gt` in cars3d.js).
 
+Tagesangebot im Shop (game.js `todaysOffer`/`drawOffer`/`offerTap`, solange `GATES_OPEN` false): jeden Tag 5 echte Autos (fester Zufall
+je Datum), Preis = `kindValue`; die 12 wertvollsten nie, Platz 13–18 ultra selten (`OFFER_RARE_W`); Spielstand `autoRetterOffer`.
+
 Wert der Autos (game.js `REAL_PRICE`/`kindValue`): fester Wert je echtem Auto nach dem echten Preis in Dollar, linear 20 (günstigstes)
 bis 15'000 Münzen (teuerstes); Verkaufen = Wert, Autohändler = doppelter Wert. Neues Auto = dort einen Preis eintragen.
 

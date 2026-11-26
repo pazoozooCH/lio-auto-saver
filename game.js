@@ -3408,17 +3408,8 @@ function drawShop() {
     ctx.fillText(String(g.price), card.x + card.w / 2 - 12, card.y + card.h - 24);
   }
 
-  if (!GATES_OPEN) {
-    ctx.fillStyle = 'rgba(255, 255, 255, 0.06)';
-    rr(W / 2 - 300, 150, 600, 200, 16); ctx.fill();
-    ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillStyle = '#fff';
-    ctx.font = 'bold 26px system-ui, sans-serif';
-    ctx.fillText('🚧 Die Garagentore sind zurzeit zu', W / 2, 205);
-    ctx.font = '18px system-ui, sans-serif'; ctx.fillStyle = 'rgba(255,255,255,0.8)';
-    ctx.fillText('Neue Autos gibt es beim Autohändler in der Stadt,', W / 2, 260);
-    ctx.fillText('und beim Tagesgeschenk.', W / 2, 288);
-  }
-  drawMenuMsg(GATES_OPEN ? 'Tippe ein Tor an – dahinter wartet ein neues Fahrzeug!  Du hast ' + fleet.length + ' Fahrzeuge.' : 'Du hast ' + fleet.length + ' Fahrzeuge.', 490);
+  if (!GATES_OPEN) drawOffer(); // Tore zu: stattdessen das Tagesangebot
+  drawMenuMsg(GATES_OPEN ? 'Tippe ein Tor an – dahinter wartet ein neues Fahrzeug!  Du hast ' + fleet.length + ' Fahrzeuge.' : 'Tippe ein Auto an, um es zu kaufen.  Du hast ' + fleet.length + ' Fahrzeuge.', 470);
   drawButton(SKIN_BTN, '👕 MEINE FIGUR', '#0d9488', 18);
   drawParticles();
 }
@@ -3496,11 +3487,91 @@ function rollGate(g) {
   return makeVehicle(kind, special);
 }
 
+// ---------- Tagesangebot im Shop (Wunsch Lionel) ----------
+// Jeden Tag 5 zufällige echte Autos (für alle gleich, den ganzen Tag), zu kaufen zum Wert aus der Sammlung (kindValue).
+// Die 12 wertvollsten kommen nie; die 6 knapp darunter (Platz 13–18) nur ganz selten (OFFER_RARE_W).
+// Spielstand autoRetterOffer = { day, bought: [Typen] } (jedes Angebot einmal pro Tag).
+const OFFER_COUNT = 5, OFFER_TOP = 12, OFFER_RARE = 6, OFFER_RARE_W = 0.03;
+let offerCache = { day: '', list: [] };
+let offerSave = loadJSON('autoRetterOffer', { day: '', bought: [] });
+function offerRanked() { return [...MODEL_KINDS].sort((a, b) => kindValue(b) - kindValue(a) || a.localeCompare(b)); }
+function todaysOffer() {
+  const day = dayKey(Date.now());
+  if (offerCache.day === day) return offerCache.list;
+  let h = 2166136261; for (const c of 'offer' + day) h = Math.imul(h ^ c.charCodeAt(0), 16777619) >>> 0;
+  const rnd = () => { h = (h + 0x6D2B79F5) >>> 0; let t = h; t = Math.imul(t ^ (t >>> 15), t | 1); t ^= t + Math.imul(t ^ (t >>> 7), t | 61); return ((t ^ (t >>> 14)) >>> 0) / 4294967296; };
+  const ranked = offerRanked(), pool = ranked.slice(OFFER_TOP).map((k, i) => ({ k, w: i < OFFER_RARE ? OFFER_RARE_W : 1, rare: i < OFFER_RARE }));
+  const list = [];
+  while (list.length < OFFER_COUNT && pool.length) {
+    let r = rnd() * pool.reduce((s, o) => s + o.w, 0), i = 0;
+    while (i < pool.length - 1 && (r -= pool[i].w) > 0) i++;
+    const o = pool.splice(i, 1)[0]; list.push({ kind: o.k, rare: o.rare });
+  }
+  list.sort((a, b) => kindValue(a.kind) - kindValue(b.kind));
+  offerCache = { day, list };
+  return list;
+}
+const offerBought = kind => offerSave.day === dayKey(Date.now()) && offerSave.bought.includes(kind);
+const OFFER_W = 172, OFFER_H = 250, OFFER_GAP = 12;
+function offerCards() {
+  const list = todaysOffer(), x0 = (W - (list.length * OFFER_W + (list.length - 1) * OFFER_GAP)) / 2;
+  return list.map((o, i) => ({ x: x0 + i * (OFFER_W + OFFER_GAP), y: 186, w: OFFER_W, h: OFFER_H, o }));
+}
+function drawOffer() {
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.fillStyle = '#ffe066'; ctx.font = 'bold 24px system-ui, sans-serif';
+  ctx.fillText('🛒 Tagesangebot', W / 2, 140);
+  const now = new Date(), mid = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1), left = Math.max(0, mid - now);
+  ctx.fillStyle = 'rgba(255,255,255,0.7)'; ctx.font = '14px system-ui, sans-serif';
+  ctx.fillText('Jeden Tag 5 neue Autos · neue in ' + Math.floor(left / 3600000) + ' h ' + Math.floor(left / 60000) % 60 + ' min', W / 2, 166);
+  for (const card of offerCards()) {
+    const { kind, rare } = card.o, price = kindValue(kind), bought = offerBought(kind), have = fleet.some(v => v.kind === kind), can = !bought && wallet >= price;
+    ctx.fillStyle = rare ? 'rgba(250, 204, 21, 0.12)' : 'rgba(255, 255, 255, 0.06)';
+    rr(card.x, card.y, card.w, card.h, 12); ctx.fill();
+    ctx.strokeStyle = bought ? '#2ecc71' : rare ? '#facc15' : can ? '#ffe066' : '#4a4f5c'; ctx.lineWidth = rare || can ? 3 : 2; ctx.stroke();
+    if (rare) {
+      ctx.fillStyle = '#facc15'; ctx.font = 'bold 13px system-ui, sans-serif'; ctx.fillText('💎 ULTRA SELTEN', card.x + card.w / 2, card.y + 16);
+      for (let k = 0; k < 3; k++) { const g = Math.sin(time * 3 + k * 2 + card.x); if (g > 0) drawSparkle(card.x + 30 + k * 55, card.y + 40 + (k % 2) * 40, 6 * g); }
+    }
+    drawVehiclePreview({ id: 'angebot-' + kind, kind, special: null, color: KINDS[kind].color || '#9ca3af' }, card.x + card.w / 2, card.y + 118, 150, 0.8);
+    ctx.fillStyle = '#fff'; ctx.font = 'bold 15px system-ui, sans-serif';
+    fitText(vehicleName({ kind, id: 'angebot-' + kind }), card.x + card.w / 2, card.y + 150, card.w - 10);
+    ctx.fillStyle = 'rgba(255,255,255,0.65)'; ctx.font = '12px system-ui, sans-serif';
+    ctx.fillText(have ? '✓ hast du schon' : 'fehlt in deiner Sammlung', card.x + card.w / 2, card.y + 172);
+    if (bought) { ctx.fillStyle = '#2ecc71'; ctx.font = 'bold 20px system-ui, sans-serif'; ctx.fillText('✓ gekauft', card.x + card.w / 2, card.y + card.h - 32); }
+    else {
+      drawCoin(card.x + card.w / 2 - 30, card.y + card.h - 32, 11, 0);
+      ctx.fillStyle = can ? '#ffe066' : '#9aa0aa'; ctx.font = 'bold 24px system-ui, sans-serif'; ctx.textAlign = 'left';
+      ctx.fillText(price.toLocaleString('de-CH'), card.x + card.w / 2 - 14, card.y + card.h - 31); ctx.textAlign = 'center';
+    }
+  }
+}
+function offerTap(px, py) {
+  for (const card of offerCards()) {
+    if (!inRect(px, py, card)) continue;
+    const kind = card.o.kind, price = kindValue(kind), name = vehicleName({ kind, id: 'x' });
+    if (offerBought(kind)) { showMenuMsg(name + ' hast du heute schon gekauft. Morgen gibt es neue Angebote!'); return true; }
+    if (wallet < price) { showMenuMsg('Dir fehlen noch ' + (price - wallet).toLocaleString('de-CH') + ' Münzen für ' + name + '.'); beep(200, 0.15, 'square', 0.05); return true; }
+    wallet -= price;
+    const v = makeVehicle(kind);
+    fleet.push(v);
+    if (selectedIds.size < MAX_SELECTED) selectedIds.add(v.id);
+    const day = dayKey(Date.now()); if (offerSave.day !== day) offerSave = { day, bought: [] };
+    offerSave.bought.push(kind);
+    storeJSON('autoRetterOffer', offerSave); storeJSON('autoRetterCoins', wallet); storeJSON('autoRetterFleet', fleet); saveSelection();
+    openMenu('reveal');
+    reveal = { v, gate: { name: 'Tagesangebot', color: card.o.rare ? '#facc15' : '#7c3aed' }, t: 0, burst: false };
+    return true;
+  }
+  return false;
+}
+
 function shopTap(px, py) {
   if (inRect(px, py, BACK_BTN)) { openMenu('title'); return; }
   if (inRect(px, py, COLLECTION_BTN)) { collectionPage = 0; openMenu('collection'); return; }
   if (PAINTS_OPEN && inRect(px, py, PAINT_SHOP_BTN)) { paintPage = 0; paintPull = null; openMenu('paints'); return; }
   if (inRect(px, py, SKIN_BTN)) { skinPending = null; openMenu('skin'); return; }
+  if (!GATES_OPEN && offerTap(px, py)) return;
   for (const card of gateCards()) {
     if (!inRect(px, py, card)) continue;
     const g = card.gate;
