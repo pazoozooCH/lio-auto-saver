@@ -3223,10 +3223,10 @@ function drawSelect() {
     ctx.fillStyle = '#fff';
     ctx.font = 'bold 16px system-ui, sans-serif';
     fitText(armed ? 'Verkaufen?' : vehicleName(v), card.x + card.w / 2, card.y + 94, card.w - 8);
-    ctx.fillStyle = armed ? '#ff9c8f' : TIERS[k.tier].color;
+    ctx.fillStyle = armed ? '#ff9c8f' : '#cbd5e1';
     ctx.font = 'bold 13px system-ui, sans-serif';
     ctx.fillText(armed ? 'Nochmal tippen = +' + vehicleValue(v) + ' 🪙'
-      : TIERS[k.tier].label + (v.special ? '  ' + specialLabel(v) : ''), card.x + card.w / 2, card.y + 111);
+      : (v.special ? specialLabel(v) : ''), card.x + card.w / 2, card.y + 111); // ohne Seltenheit (Wunsch Lionel)
     ctx.fillStyle = '#7dd3fc';
     ctx.font = 'bold 14px system-ui, sans-serif';
     ctx.textAlign = 'right';
@@ -3725,9 +3725,9 @@ function drawCollection() {
     // Seltenheit und welche Spezial-Lacke man davon schon hat
     const paints = ['gold', 'rainbow', 'diamond', 'obsidian'].filter(p => mine.some(v => v.special === p))
       .map(p => ({ gold: '★', rainbow: '🌈', diamond: '💎', obsidian: '🖤' })[p]).join(' ');
-    ctx.fillStyle = got ? TIERS[k.tier].color : '#6b7280';
+    ctx.fillStyle = got ? '#2ecc71' : '#6b7280';
     ctx.font = 'bold 13px system-ui, sans-serif';
-    ctx.fillText(got ? TIERS[k.tier].label + (paints ? '  ' + paints : '') : TIERS[k.tier].label + ' · fehlt noch', card.x + card.w / 2, card.y + 111);
+    ctx.fillText(got ? paints : 'fehlt noch', card.x + card.w / 2, card.y + 111); // ohne Seltenheit (Wunsch Lionel)
   }
 
   if (collectionPage > 0) drawButton(PREV_BTN, '◀ Zurück', '#444b5c', 20);
@@ -4029,7 +4029,7 @@ function drawTuning() {
 function show3D(v) {
   const k = KINDS[v.kind];
   import('./viewer.js')
-    .then(m => m.openViewer({ v, kinds: KINDS, title: vehicleName(v) + (v.special ? '  ' + specialLabel(v) : ''), sub: TIERS[k.tier].label + ' · ⚡ ' + v.ps + ' PS' }))
+    .then(m => m.openViewer({ v, kinds: KINDS, title: vehicleName(v) + (v.special ? '  ' + specialLabel(v) : ''), sub: '⚡ ' + v.ps + ' PS' }))
     .catch(() => showMenuMsg('Die 3D-Ansicht braucht Internet.'));
 }
 const TUNE_3D_BTN = { x: 150, y: 418, w: 140, h: 34 }, RACE_3D_BTN = { x: 786, y: 390, w: 150, h: 40 };
@@ -4176,8 +4176,8 @@ function drawReveal() {
   if (t >= REVEAL_AT) {
     ctx.fillStyle = tier.color;
     ctx.font = 'bold 20px system-ui, sans-serif';
-    ctx.fillText(tier.label.toUpperCase() + (v.special ? '  ·  ' + specialLabel(v).toUpperCase() + '-LACK' : '')
-      + '  ·  ' + v.ps + ' PS  ·  WERT ' + vehicleValue(v) + ' 🪙', W / 2, 374);
+    ctx.fillText((v.special ? specialLabel(v).toUpperCase() + '-LACK  ·  ' : '') // ohne Seltenheit (Wunsch Lionel)
+      + v.ps + ' PS  ·  WERT ' + vehicleValue(v) + ' 🪙', W / 2, 374);
     ctx.fillStyle = '#fff';
     ctx.font = 'bold 38px system-ui, sans-serif';
     ctx.fillText(vehicleName(v), W / 2, 410);
@@ -4726,9 +4726,9 @@ function dragCarInfo(v, cx, y) {
   ctx.fillStyle = '#fff';
   ctx.font = 'bold 18px system-ui, sans-serif';
   ctx.fillText(vehicleName(v), cx, y);
-  ctx.fillStyle = TIERS[k.tier].color;
+  ctx.fillStyle = '#cbd5e1';
   ctx.font = 'bold 14px system-ui, sans-serif';
-  ctx.fillText(TIERS[k.tier].label + (v.special ? '  ' + specialLabel(v) : ''), cx, y + 22);
+  if (v.special) ctx.fillText(specialLabel(v), cx, y + 22); // ohne Seltenheit (Wunsch Lionel)
   ctx.fillStyle = '#7dd3fc';
   ctx.font = 'bold 16px system-ui, sans-serif';
   ctx.fillText('⚡ ' + v.ps + ' PS  ·  ' + Math.round(raceTopSpeed(v.ps) * 1.35 * 3.6) + ' km/h', cx, y + 46);
