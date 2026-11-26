@@ -3605,10 +3605,10 @@ const SKIN_TABS = [
   { id: 'designer', name: '💎 Designer' },
 ];
 // Designer-Kleider (Wunsch Lionel): eigene Seite, Teile verschiedener Arten (Fantasie-Marken wie bei den Autonamen), feste Farben
-const DESIGNER = [['top', 'supreme', 'Supriem-Shirt', 150, '🟥'], ['legs', 'cargo', 'Prado-Cargohose', 180, '👖'], ['head', 'gcap', 'Gutschi-Kappe', 180, '🧢'],
-  ['shoes', 'jordan', 'Jordän-Sneaker', 220, '👟'], ['top', 'balenci', 'Balentschiaga-Hoodie', 250, '🖤'], ['shoes', 'triple', 'Balentschiaga-Triple', 260, '🥿'],
-  ['top', 'gucci', 'Gutschi-Pulli', 300, '🧶'], ['extras', 'chain', 'Goldkette', 300, '📿'], ['extras', 'bag', 'Luis Wuitong-Tasche', 350, '👜'],
-  ['top', 'lv', 'Luis Wuitong-Jacke', 400, '🧥'], ['extras', 'watch', 'Rolecks-Uhr', 400, '⌚']];
+const DESIGNER = [['top', 'supreme', 'Supriem-Shirt', 800, '🟥'], ['legs', 'cargo', 'Prado-Cargohose', 1200, '👖'], ['head', 'gcap', 'Gutschi-Kappe', 1500, '🧢'],
+  ['shoes', 'jordan', 'Jordän-Sneaker', 2500, '👟'], ['top', 'balenci', 'Balentschiaga-Hoodie', 3500, '🖤'], ['shoes', 'triple', 'Balentschiaga-Triple', 4500, '🥿'],
+  ['top', 'gucci', 'Gutschi-Pulli', 5000, '🧶'], ['extras', 'chain', 'Goldkette', 6000, '📿'], ['extras', 'bag', 'Luis Wuitong-Tasche', 7500, '👜'],
+  ['top', 'lv', 'Luis Wuitong-Jacke', 8500, '🧥'], ['extras', 'watch', 'Rolecks-Uhr', 10000, '⌚']]; // teuer wie echte Designer-Sachen (bis 10'000)
 const SKIN_ITEMS = {
   hair: [['short', 'Kurz', 0, '💇'], ['long', 'Lang', 0, '👱'], ['bun', 'Dutt', 0, '🧑'], ['bald', 'Glatze', 0, '🥚'], ['spiky', 'Igel', 10, '🦔'], ['curly', 'Locken', 10, '🌀']],
   head: [['cap', 'Kappe', 0, '🧢'], ['none', 'Nichts', 0, '🙂'], ['beanie', 'Mütze', 15, '🧶'], ['hat', 'Sonnenhut', 20, '👒'], ['headphones', 'Kopfhörer', 40, '🎧'],
@@ -3732,7 +3732,7 @@ function drawSkin() {
     ctx.fillStyle = '#fff'; ctx.font = '26px system-ui, sans-serif'; ctx.fillText(icon, c.x + 26, c.y + c.h / 2); // undurchsichtig (sonst blasse Bildchen)
     ctx.fillStyle = '#fff'; ctx.font = 'bold 15px system-ui, sans-serif'; ctx.textAlign = 'left'; fitText(name, c.x + 48, c.y + 26, c.w - 52);
     if (own) { ctx.fillStyle = on ? '#86efac' : 'rgba(255,255,255,0.6)'; ctx.font = '13px system-ui, sans-serif'; ctx.fillText(on ? '✓ an' : price ? '✓ gekauft' : 'gratis', c.x + 48, c.y + 52); }
-    else { drawCoin(c.x + 58, c.y + 52, 9, 0); ctx.fillStyle = wallet >= price ? '#ffe066' : '#9aa0aa'; ctx.font = 'bold 16px system-ui, sans-serif'; ctx.fillText(String(price), c.x + 72, c.y + 53); }
+    else { drawCoin(c.x + 58, c.y + 52, 9, 0); ctx.fillStyle = wallet >= price ? '#ffe066' : '#9aa0aa'; ctx.font = 'bold 16px system-ui, sans-serif'; ctx.fillText(price.toLocaleString('de-CH'), c.x + 72, c.y + 53); }
   }
   const sw = skinSwatches(), cur = skinTab === 'tone' ? skin.tone : skin[(SKIN_TABS.find(t => t.id === skinTab) || {}).col];
   if (sw.length) { ctx.fillStyle = 'rgba(255,255,255,0.7)'; ctx.font = 'bold 15px system-ui, sans-serif'; ctx.textAlign = 'left'; ctx.fillText(skinTab === 'tone' ? 'Hautfarbe (gratis):' : 'Farbe (gratis):', 324, sw[0].y - 16); }
