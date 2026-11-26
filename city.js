@@ -4453,7 +4453,7 @@ const BIG = ['van', 'minivan', 'kombi', 'camper', 'schoolbus', 'doubledecker', '
 const SPORTY = ['sports', 'muscle', 'coupe', 'roadster', 'racer', 'rally', 'hyper', 'nightracer', 'cabrio', 'stockcar', 'gokart', 'dragster', 'lowrider'];
 const WISHES = {
   fast: { text: 'Ich suche ein richtig schnelles Auto! 🏎️', ok: (v, k) => v.ps >= 60 },
-  cheap: { text: 'Ich habe nicht viel Geld. Was ist günstig? 💸', ok: (v, k, price) => price <= 20 },
+  cheap: { text: 'Ich habe nicht viel Geld. Was ist günstig? 💸', ok: (v, k, price) => price <= 300 }, // Verkaufspreis (doppelter Wert, game.js kindValue): Autos bis etwa 50'000 Dollar
   big: { text: 'Wir sind eine grosse Familie – wir brauchen Platz! 👨‍👩‍👧‍👦', ok: v => BIG.includes(v.kind) },
   sporty: { text: 'Ich will ein sportliches Auto! 😎', ok: v => SPORTY.includes(v.kind) },
   color: { text: '', ok: (v, k, p, c) => colorName(v.color) === c.color },

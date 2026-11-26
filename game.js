@@ -2884,7 +2884,25 @@ const TIERS = {
 // Verkaufswert: Seltenheit mal Lack (ein episches Regenbogen-Fahrzeug ist viel mehr wert als ein normales goldenes)
 const TIER_VALUE = { common: 5, uncommon: 12, rare: 25, epic: 50, legendary: 100, admin: 500, eigenbau: 60 };
 const PAINT_FACTOR = { gold: 2, rainbow: 3, diamond: 5, obsidian: 8 };
-function vehicleValue(v) { return TIER_VALUE[KINDS[v.kind].tier] * (PAINT_FACTOR[v.special] || 1); }
+// Fester Wert je echtem Auto nach dem Preis im echten Leben (Wunsch Lionel): ungefährer Preis in Dollar (neu bzw. heute gebraucht),
+// linear umgerechnet – das günstigste 20 Münzen, das teuerste 15'000. Verkaufen = Wert, Autohändler = doppelter Wert.
+const REAL_PRICE = {
+  delivery: 9000, oldtimer: 15000, mini: 24000, minivan: 28000, kompakt: 30000, tiguan24: 32000, police: 45000, tiguanx: 45000,
+  kodiaq: 45000, hatch: 48000, q5: 52000, offroad: 55000, ecar: 55000, safari: 60000, coupe: 70000, roadster: 75000, ttrs: 75000,
+  supra: 80000, trackhawk: 90000, trx: 90000, smart: 95000, m3t: 100000, e63: 110000, kombi: 120000, jeep: 140000, sports: 135000,
+  car: 150000, ambulance: 150000, vantage: 160000, limo: 185000, bentley: 220000, pickupxl: 230000, huracan: 230000, gt3rs: 240000,
+  dbx: 240000, racer: 250000, muscle: 250000, mansory: 250000, gtcar: 300000, lionelx: 330000, luxsuv: 350000, supercar: 350000,
+  stockcar: 360000, hyperev: 600000, formula: 1150000, hyper: 1420000, gtlegend: 2850000, lemans: 3000000, luxlimo: 4100000,
+  musclegt: 5400000,
+};
+const PRICE_MIN = Math.min(...Object.values(REAL_PRICE)), PRICE_MAX = Math.max(...Object.values(REAL_PRICE));
+function kindValue(k) {
+  const p = REAL_PRICE[k];
+  if (!p) return TIER_VALUE[(KINDS[k] || {}).tier] || 5; // altes Fahrzeug ohne echten Preis
+  const c = 20 + (p - PRICE_MIN) / (PRICE_MAX - PRICE_MIN) * (15000 - 20);
+  return c < 100 ? Math.round(c) : c < 1000 ? Math.round(c / 5) * 5 : Math.round(c / 10) * 10; // runde Zahlen
+}
+function vehicleValue(v) { return kindValue(v.kind) * (PAINT_FACTOR[v.special] || 1); }
 
 // Garagentore im Shop: Chancen in Prozent je Seltenheit, dazu Gold- und Regenbogen-Lack
 const GATES = [
@@ -3658,7 +3676,7 @@ let collectionPage = 0;
 
 function collectionKinds() { // nur echte Autos (Wunsch Lionel)
   return Object.keys(KINDS).filter(kd => MODEL_KINDS.includes(kd)).sort((a, b) =>
-    TIER_VALUE[KINDS[b].tier] - TIER_VALUE[KINDS[a].tier] || KINDS[a].name.localeCompare(KINDS[b].name));
+    kindValue(b) - kindValue(a) || KINDS[a].name.localeCompare(KINDS[b].name));
 }
 
 function drawCollection() {
@@ -3693,7 +3711,7 @@ function drawCollection() {
     ctx.fillStyle = '#ffd700';
     ctx.font = 'bold 15px system-ui, sans-serif';
     ctx.textAlign = 'left';
-    ctx.fillText(String(TIER_VALUE[k.tier]), card.x + 28, card.y + 17);
+    ctx.fillText(String(kindValue(card.item)), card.x + 28, card.y + 17);
     ctx.textAlign = 'right';
     ctx.fillStyle = got ? '#7dffb0' : '#9aa0aa';
     ctx.font = (got ? 'bold 16px' : '15px') + ' system-ui, sans-serif';
