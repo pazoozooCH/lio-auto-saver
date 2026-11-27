@@ -163,7 +163,8 @@ function showHome(msg = '') {
 
 // ---------- Stunt-Rangliste: bester Rekord je Gerät (scores/<uid>), die 10 besten ----------
 async function submitBest() {
-  const best = Math.min(9999999, Math.round(+load('autoRetterStuntBest', '0') || 0)), name = load(LS.name).trim().slice(0, 16);
+  // so hoch wie möglich (Wunsch Lionel): grösste sichere Ganzzahl, gleich wie in database.rules.json
+  const best = Math.min(Number.MAX_SAFE_INTEGER, Math.round(+load('autoRetterStuntBest', '0') || 0)), name = load(LS.name).trim().slice(0, 16);
   if (!best || !name || !fb) return;
   const ref = fb.ref(fb.db, 'scores/' + fb.uid);
   const old = (await fb.get(ref)).val();
@@ -179,7 +180,7 @@ async function showScores() {
     snap.forEach(c => { rows.push({ ...c.val(), me: c.key === fb.uid }); });
     rows.sort((a, b) => b.best - a.best);
     box.innerHTML = rows.length ? '<table>' + rows.map((r, i) => `<tr${r.me ? ' style="color:#facc15"' : ''}><td>${['🥇', '🥈', '🥉'][i] || (i + 1) + '.'}</td>
-      <td>${esc(r.name)}${r.me ? ' (du)' : ''}</td><td style="text-align:right">⭐ ${r.best}</td></tr>`).join('') + '</table>'
+      <td>${esc(r.name)}${r.me ? ' (du)' : ''}</td><td style="text-align:right">⭐ ${Number(r.best).toLocaleString('de-CH')}</td></tr>`).join('') + '</table>'
       : '<p class="hint">Noch keine Rekorde – fahr in den Stuntpark! 🤸</p>';
   } catch (e) { box.innerHTML = '<p class="hint">' + (/permission/i.test(e.message) ? 'Die Rangliste ist noch nicht freigeschaltet (Regeln hochladen).' : 'Offline – keine Rangliste.') + '</p>'; }
 }

@@ -60,7 +60,7 @@
         ".write": "auth != null && auth.uid === $uid",
         ".validate": "newData.hasChildren(['name', 'best', 't']) && newData.child('t').val() === now && (!data.exists() || now - data.child('t').val() >= 3000)",
         "name": { ".validate": "newData.isString() && newData.val().length >= 1 && newData.val().length <= 16" },
-        "best": { ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 10000000" },
+        "best": { ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 9007199254740991" },
         "t": { ".validate": "newData.isNumber()" },
         "$other": { ".validate": false }
       }
