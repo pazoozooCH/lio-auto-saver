@@ -2,7 +2,7 @@
 // rund um die ganze Insel – Stadt, Pass, Hafen, Vororte, Flughafen, Skigebiet –, mit vier Spuren je Richtung,
 // Mittelleitplanke und Leitplanken aussen. Im Westen führt sie auf einer Schrägseilbrücke über die Hafenbucht (BRIDGE,
 // hwY = Höhe der Fahrbahn), Ausfahrten (EXITS) innen zu den Zubringern (ROADS: Flughafenstrasse mit Abzweig zur Stadt,
-// zum Flughafen und Skigebiet, Strasse zum Raumbahnhof). Tempolimit 140 (HW_LIMIT) –
+// zum Flughafen und Skigebiet, Strasse zum Raumbahnhof). Tempolimit 130 (HW_LIMIT), Baustelle 80 (RW_LIMIT) –
 // an das sich Raser und Drängler aber nicht halten (die fahren gegen 200).
 // Auf der Autobahn fährt jeder anders: gemütliche Lastwagen rechts, normale Autos (überholen und gehen wieder rechts),
 // Drängler (kleben am Vordermann, blinken mit dem Licht, hupen) und Raser (sehr schnell, wechseln dauernd die Spur).
@@ -15,7 +15,8 @@ import { landDist } from './island.js';
 // Mittellinie = Rechteck (x ±half, z cz … cz + L) mit Abstand R rundherum: oben (Norden, hinter dem Pass) nach Osten,
 // rechts nach Süden, unten nach Westen (Raststätte, Tunnel), links nach Norden (Brücke); die Ecken sind Viertelkreise
 export const HW = { cz: -1060, half: 1000, R: 260, L: 3270 };
-export const HW_LIMIT = 140;
+export const HW_LIMIT = 130; // Wunsch Lionel (vorher 140)
+export const RW_LIMIT = 80; // in der Baustelle
 const Q = Math.PI * HW.R / 2; // Viertelkreis
 export const HW_LEN = 4 * HW.half + 2 * HW.L + 4 * Q; // ≈ 12,2 km
 const S_SOUTH = 2 * HW.half + 2 * Q + HW.L; // Anfang der Südgeraden
@@ -181,6 +182,8 @@ const TUNNEL = { s0: S_SOUTH + 60, len: 420, h: 7 }; // auf der Südgeraden, nac
 const RW = { dir: 1, s0: 1260, s1: 1560, lat: 8.5, taper: 60 }; // Baustelle: ab lat 8.5 nach rechts gesperrt (davor schräg)
 const SHOULDER = 16.4; // Pannenstreifen (dort hält die Polizei einen Raser an)
 const inRW = (s, lat) => lat > 0 && s > RW.s0 - RW.taper && s < RW.s1;
+// Tempo 80 in der Baustelle (beide Richtungen, ab der Tafel davor bis kurz danach)
+export const inRoadworks = (x, z) => { const p = hwProject(x, z), s = ((p.s % HW_LEN) + HW_LEN) % HW_LEN; return Math.abs(p.lat) < WIDE && s > RW.s0 - RW.taper - 120 && s < RW.s1 + 20; };
 const coneLat = s => s >= RW.s0 ? RW.lat : EDGE - 1 - (EDGE - 1 - RW.lat) * (s - RW.s0 + RW.taper) / RW.taper; // Linie der Leitkegel
 const rwBlocked = (s, lat, r) => inRW(s, lat) && lat > coneLat(s) - r * 0.6;
 // Muss ein Auto (Richtung +1) wegen der Baustelle schon auf die linken Spuren? (220 m vor den Kegeln bis zum Ende)
@@ -468,14 +471,23 @@ export function buildHighway({ group, asphaltMat, lineMat, sign, grassMat }) {
   for (const [x, z, rot, txt] of guide) for (const side of [0, 1]) {
     const sg = sign(txt, '#1d4ed8', '#ffffff', 10, 1.5); sg.position.set(x + (rot ? side * 0.05 : 9.5), 4, z + (rot ? 0 : side * 0.05)); sg.rotation.y = rot + side * Math.PI; group.add(sg);
   }
-  // Tempo 140 nach jeder Ausfahrt (für wer hineinfährt)
-  const c = document.createElement('canvas'); c.width = c.height = 128;
-  const g = c.getContext('2d');
-  g.fillStyle = '#fff'; g.beginPath(); g.arc(64, 64, 60, 0, Math.PI * 2); g.fill();
-  g.strokeStyle = '#d61f1f'; g.lineWidth = 14; g.beginPath(); g.arc(64, 64, 52, 0, Math.PI * 2); g.stroke();
-  g.fillStyle = '#111'; g.font = 'bold 44px system-ui, sans-serif'; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText(String(HW_LIMIT), 64, 67);
-  const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace;
-  const limMat = new THREE.MeshStandardMaterial({ map: t, side: THREE.DoubleSide });
+  // Tempo 130 nach jeder Ausfahrt (für wer hineinfährt), Tempo 80 vor der Baustelle
+  const limitMat = n => {
+    const c = document.createElement('canvas'); c.width = c.height = 128;
+    const g = c.getContext('2d');
+    g.fillStyle = '#fff'; g.beginPath(); g.arc(64, 64, 60, 0, Math.PI * 2); g.fill();
+    g.strokeStyle = '#d61f1f'; g.lineWidth = 14; g.beginPath(); g.arc(64, 64, 52, 0, Math.PI * 2); g.stroke();
+    g.fillStyle = '#111'; g.font = 'bold 44px system-ui, sans-serif'; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText(String(n), 64, 67);
+    const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace;
+    return new THREE.MeshStandardMaterial({ map: t, side: THREE.DoubleSide });
+  };
+  const limMat = limitMat(HW_LIMIT), rwMat = limitMat(RW_LIMIT);
+  // Baustelle: 80 davor, 130 danach – in beiden Richtungen (rechts der Fahrbahn: +s bei lat > 0, −s bei lat < 0)
+  for (const [s, side, m] of [[RW.s0 - RW.taper - 120, 1, rwMat], [RW.s1 + 25, 1, limMat], [RW.s1 + 20, -1, rwMat], [RW.s0 - RW.taper - 125, -1, limMat]]) {
+    const p = at(s, side * (EDGE + 1.2)), pl = new THREE.Mesh(new THREE.CircleGeometry(0.6, 24), m);
+    pl.position.set(p.x, 2.4, p.z); pl.rotation.y = -Math.atan2(p.tz, p.tx) - Math.PI / 2 + (side < 0 ? Math.PI : 0); group.add(pl);
+    const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.05, 2.4, 6), rail); pole.position.set(p.x + p.tx * 0.05 * side, 1.2, p.z + p.tz * 0.05 * side); group.add(pole);
+  }
   for (const e of EXITS) {
     const p = at(e.s + SLIP_L + 30, EDGE + 1.2), end = new THREE.Mesh(new THREE.CircleGeometry(0.6, 24), limMat);
     end.position.set(p.x, 2.4, p.z); end.rotation.y = -Math.atan2(p.tz, p.tx) - Math.PI / 2; group.add(end);

@@ -18,7 +18,7 @@ import { buildService, serviceDist, inService, SERVICES, CITY_SERVICES } from '.
 import { buildSuburbs, suburbDist, inSuburb, suburbRoad, drawSuburbs, SUBURBS, SUB_PLACES } from './suburbs.js';
 import { loadLook, makeLook, skyEnvironment, lookWanted, setLookWanted } from './look.js';
 import { makeChat } from './chat.js';
-import { buildHighway, outskirtsDist, hwDrivable, onHighway, hwGround, onRoads, ROADS, EXITS, SLIPS, onSlip, SLIP_LIMIT, inRest, makeHighwayTraffic, stepHighway, hwProject, hwPoint, HW, HW_LEN, HW_LIMIT, REST, REST_ZONES, makePath, pathAt, turnTo,
+import { buildHighway, outskirtsDist, hwDrivable, onHighway, hwGround, onRoads, ROADS, EXITS, SLIPS, onSlip, SLIP_LIMIT, inRoadworks, RW_LIMIT, inRest, makeHighwayTraffic, stepHighway, hwProject, hwPoint, HW, HW_LEN, HW_LIMIT, REST, REST_ZONES, makePath, pathAt, turnTo,
   AREAS, buildAreas, stepAreas, groundShape, areaDrivable, inArea, lockedGate, offroadWhy,
   PASS_AREA, buildPass, passGround, passDrivable, onPass, passTerrain, passNearest, inPassRegion, passPoints, SUMMIT, slideInside, waveFlag } from './outskirts.js';
 import { makeEffects, camView, cockpit, COCKPIT, CAM_NAMES, FLY_HTML, FLY_KEYS, flyCss, flyHelp, flyToggle, flyStep } from './fx.js';
@@ -5153,8 +5153,9 @@ function stepRules(dt) {
   const lim = limitAt(me.pos.x, me.pos.z), inGridCity = Math.max(Math.abs(me.pos.x), Math.abs(me.pos.z)) <= HALF + ROAD / 2;
   const hw = onHighway(me.pos.x, me.pos.z) && !inGridCity; // Autobahn samt der grossen Brücke (die liegt neben der Stadt)
   const slip = !hw && !inGridCity && onSlip(me.pos.x, me.pos.z); // Ein- und Ausfahrten: 80
-  const zone = hw ? 'hw' : slip ? 'slip' : '';
-  if (zone !== city.onHw) { city.onHw = zone; if (zone) { city.limit = hw ? HW_LIMIT : SLIP_LIMIT; showLimit(city.limit); } } // Autobahn: 140
+  const rw = hw && inRoadworks(me.pos.x, me.pos.z); // Baustelle: 80
+  const zone = rw ? 'rw' : hw ? 'hw' : slip ? 'slip' : '';
+  if (zone !== city.onHw) { city.onHw = zone; if (zone) { city.limit = rw ? RW_LIMIT : hw ? HW_LIMIT : SLIP_LIMIT; showLimit(city.limit); } } // Autobahn: 130
   if (lim && lim !== city.limit && !zone) { city.limit = lim; showLimit(lim); }
   const outside = Math.max(Math.abs(me.pos.x), Math.abs(me.pos.z)) > LIMIT; // Hafen, Flughafen: keine Tafel, kein Limit
   if (outside && !zone) city.limit = 0;
