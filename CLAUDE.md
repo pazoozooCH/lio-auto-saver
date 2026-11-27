@@ -110,7 +110,7 @@ Browser-Spiel ohne Build: `index.html` + `game.js` (Spiellogik, Menüs und 2D-Ze
   Weit weg erst gebaut, wenn man näher kommt (`stepParked`); Zusammenstösse über zwei Kreise in `S.round`; Base-Knopf 🧹 holt alle zurück.
   Karte: zu Fuss die Spielfigur (`mapPerson`), dein Auto und geparkte Autos als kleine Autos (`mapCar`).
 - `outskirts.js`: Gebiete ausserhalb des Stadtgitters (für `city.js`): Autobahn als grosser Ring um die ganze Insel (`HW`, Rechteck mit runden Ecken,
-  12,2 km, vier Spuren je Richtung) mit Tempolimit 140; im Westen Schrägseilbrücke über die Hafenbucht (`BRIDGE`, Fahrbahnhöhe `hwY(s)`,
+  12,2 km, vier Spuren je Richtung) mit Tempolimit 140 (auch auf der Brücke), Ein-/Ausfahrten 80 (`onSlip`, `SLIP_LIMIT`, Tafeln in city.js); im Westen Schrägseilbrücke über die Hafenbucht (`BRIDGE`, Fahrbahnhöhe `hwY(s)`,
   `hwGround`; Fähre fährt darunter durch, `FERRY_GAP` ohne Pfeiler). Ausfahrten innen (`EXITS`, `exitGap`) zu den Zubringern `ROADS`
   (Flughafenstrasse z = 462 mit Zufahrt `RAMP` vom Südrand der Stadt, Flughafen und Skistrasse; Strasse zum Raumbahnhof;
   Nordstrasse durchs Tal zum Strand, Südstrasse am Flughafen vorbei, Strasse zum Skidorf, Bergpass-Zubringer (Ausfahrt Nord bei x = 450,

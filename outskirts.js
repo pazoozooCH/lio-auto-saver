@@ -116,6 +116,9 @@ for (const e of EXITS) {
   }
 }
 const slipGap = s => slipGaps.some(([a, b]) => s > a && s < b); // dort fehlt die innere Leitplanke
+// Tempolimit auf allen Ein- und Ausfahrten (Wunsch Lionel), Tafel und Anzeige in city.js
+export const SLIP_LIMIT = 80;
+export const onSlip = (x, z) => slipDist(x, z, 30) < SLIP_W + 1; // SLIP_W = halbe Breite
 function slipDist(x, z, far = 120) { // Abstand zur Mittellinie der nächsten Aus-/Einfahrt
   let best = far;
   for (const pts of SLIPS) {

@@ -18,7 +18,7 @@ import { buildService, serviceDist, inService, SERVICES, CITY_SERVICES } from '.
 import { buildSuburbs, suburbDist, inSuburb, suburbRoad, drawSuburbs, SUBURBS, SUB_PLACES } from './suburbs.js';
 import { loadLook, makeLook, skyEnvironment, lookWanted, setLookWanted } from './look.js';
 import { makeChat } from './chat.js';
-import { buildHighway, outskirtsDist, hwDrivable, onHighway, hwGround, onRoads, ROADS, EXITS, SLIPS, inRest, makeHighwayTraffic, stepHighway, hwProject, hwPoint, HW, HW_LEN, HW_LIMIT, REST, REST_ZONES, makePath, pathAt, turnTo,
+import { buildHighway, outskirtsDist, hwDrivable, onHighway, hwGround, onRoads, ROADS, EXITS, SLIPS, onSlip, SLIP_LIMIT, inRest, makeHighwayTraffic, stepHighway, hwProject, hwPoint, HW, HW_LEN, HW_LIMIT, REST, REST_ZONES, makePath, pathAt, turnTo,
   AREAS, buildAreas, stepAreas, groundShape, areaDrivable, inArea, lockedGate, offroadWhy,
   PASS_AREA, buildPass, passGround, passDrivable, onPass, passTerrain, passNearest, inPassRegion, passPoints, SUMMIT, slideInside, waveFlag } from './outskirts.js';
 import { makeEffects, camView, cockpit, COCKPIT, CAM_NAMES, FLY_HTML, FLY_KEYS, flyCss, flyHelp, flyToggle, flyStep } from './fx.js';
@@ -1594,6 +1594,14 @@ function buildWorld() {
     s.rotation.y = Math.atan2(-fx, -fz); // Schild schaut den ankommenden Autos entgegen
     decor.add(s);
     segs.push({ i, j, fx, fz, lim });
+  }
+  // Tafeln auf allen Ein- und Ausfahrten der Autobahn (SLIP_LIMIT): kurz nach dem Anfang, rechts der Fahrbahn
+  for (const pts of SLIPS) for (const k of [5, 30]) {
+    const a = pts[k], b = pts[k + 1], d = Math.hypot(b.x - a.x, b.z - a.z) || 1, fx = (b.x - a.x) / d, fz = (b.z - a.z) / d, off = 5.8;
+    const x = a.x - fz * off, z = a.z + fx * off; // rechts (in Fahrtrichtung)
+    const p = new THREE.Mesh(signPole, dark); p.position.set(x, 1.2, z); decor.add(p);
+    const sg = new THREE.Mesh(plateGeo, plates[SLIP_LIMIT]); sg.position.set(x - fx * 0.06, 2.4, z - fz * 0.06);
+    sg.rotation.y = Math.atan2(-fx, -fz); decor.add(sg);
   }
   while (speedCams.length < 10) {
     const g = segs[Math.floor(rs() * segs.length)];
@@ -5142,12 +5150,15 @@ function limitAt(x, z) {
 function showLimit(n) { S.ui.limit.textContent = n; S.ui.limit.style.fontSize = n > 99 ? '15px' : ''; } // dreistellig etwas kleiner
 function stepRules(dt) {
   const me = city.me, kmh = Math.round(Math.abs(me.speed) * 3.6);
-  const lim = limitAt(me.pos.x, me.pos.z), hw = onHighway(me.pos.x, me.pos.z) && Math.abs(me.pos.z) > HALF + ROAD / 2;
-  if (hw !== city.onHw) { city.onHw = hw; if (hw) { city.limit = HW_LIMIT; showLimit(HW_LIMIT); } } // Autobahn: 140
-  if (lim && lim !== city.limit && !hw) { city.limit = lim; showLimit(lim); }
+  const lim = limitAt(me.pos.x, me.pos.z), inGridCity = Math.max(Math.abs(me.pos.x), Math.abs(me.pos.z)) <= HALF + ROAD / 2;
+  const hw = onHighway(me.pos.x, me.pos.z) && !inGridCity; // Autobahn samt der grossen Brücke (die liegt neben der Stadt)
+  const slip = !hw && !inGridCity && onSlip(me.pos.x, me.pos.z); // Ein- und Ausfahrten: 80
+  const zone = hw ? 'hw' : slip ? 'slip' : '';
+  if (zone !== city.onHw) { city.onHw = zone; if (zone) { city.limit = hw ? HW_LIMIT : SLIP_LIMIT; showLimit(city.limit); } } // Autobahn: 140
+  if (lim && lim !== city.limit && !zone) { city.limit = lim; showLimit(lim); }
   const outside = Math.max(Math.abs(me.pos.x), Math.abs(me.pos.z)) > LIMIT; // Hafen, Flughafen: keine Tafel, kein Limit
-  if (outside && !hw) city.limit = 0;
-  S.ui.limit.hidden = (!city.limit && !hw) || (outside && !hw) || me.alt > 2 || !!city.walk;
+  if (outside && !zone) city.limit = 0;
+  S.ui.limit.hidden = (!city.limit && !zone) || (outside && !zone) || me.alt > 2 || !!city.walk;
   S.ui.speed.classList.toggle('over', !!city.limit && kmh > city.limit + 5 && me.alt < 2);
   const F = S.flash; // Blitz verglüht
   if (F.visible && (F.material.opacity -= dt * 4) <= 0) F.visible = false;
