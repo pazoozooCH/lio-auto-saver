@@ -29,7 +29,7 @@ jobs:
       - name: Seite zusammenstellen
         run: |
           mkdir -p _site
-          cp index.html game.js race.js drag.js press3d.js cars3d.js world3d.js online.js sound.js city.js tracks.js stunt.js netcars.js chat.js fx.js viewer.js photo.js outskirts.js country.js moon.js look.js suburbs.js island.js monaco.js carlamps.js review.js service.js party.js manifest.webmanifest icon-192.png icon-512.png apple-touch-icon.png favicon.png _site/
+          cp index.html game.js race.js drag.js press3d.js cars3d.js world3d.js online.js sound.js city.js tracks.js stunt.js netcars.js chat.js fx.js viewer.js photo.js outskirts.js country.js moon.js look.js suburbs.js island.js monaco.js carlamps.js review.js service.js party.js rail.js manifest.webmanifest icon-192.png icon-512.png apple-touch-icon.png favicon.png _site/
           cp -r models _site/
           cp -r sounds _site/
           python3 serve.py --write-version _site/version.js

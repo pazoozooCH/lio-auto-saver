@@ -223,6 +223,11 @@ Browser-Spiel ohne Build: `index.html` + `game.js` (Spiellogik, Menüs und 2D-Ze
   Ballone, Konfetti, nachts Feuerwerk um die Kamera (`makeParty`: Stadt, Stuntpark, Rennen, Dragster), in der Stadt Wimpelketten
   über allen Strassen, Ballon-Sträusse, Torte und Banner (`partyGeo`, `birthdayCake`, `birthdayBanner`); Startbild in game.js
   (`drawPartyTitle`, `drawPartyConfetti`, `partySong` = „Happy Birthday“ beim ersten Antippen). Darf später ganz weg.
+- `rail.js`: Eisenbahn (Wunsch Lionel), Rundstrecke südlich vom Flughafen (`RAIL`: abgerundetes Rechteck, Punkte alle 1 m,
+  `railAt`/`railProject`/`railDist`), zwei Bahnhöfe (`STATIONS`, Bahnsteig `onPlatform`), Bahnübergänge automatisch wo eine Strasse
+  kreuzt (Skistrasse: Schranken, Andreaskreuz, Blinklicht, Glocke). Zug (Lok + 3 Wagen) fährt im Kreis, hält 10 s (`stepRail`);
+  city.js: `stepTrain` (Hupe, Unfall über `trainHit`), zu Fuss am Bahnsteig X = einsteigen (`boardTrain`, `city.train`), am Bahnhof
+  X = aussteigen (`leaveTrain`); Gelände eben über `railDist` in height(), Boden `railGround`, Karte 🚉/🚆.
 - `world3d.js`: Baukasten für die Landschaften (Rauschen, Oberflächen mit Relief, Gelände, Wolken, Staub, Lichtstrahlen).
 Texte im Spiel sind Deutsch (Schweizer Schreibweise, kein ß).
 

@@ -13,6 +13,7 @@ import { makeNetCars } from './netcars.js';
 import { setIsland, islandDist, landDist, SEA_Y, ISLAND_C, MONACO } from './island.js';
 import { buildMonaco, monGround, monRoad, inMonaco, nearMonPier, MON_BOAT, MON_PIER, MON_ROADS, MON_NAME, FERRY, FERRY_Y, FERRY_LEN, FERRY_PATH, ferryAt, ferryLocal, ferryWorld, makeFerry,
   makeMonacoTraffic, stepMonacoTraffic } from './monaco.js';
+import { buildRail, stepRail, trainHit, railDist, railGround, railSurface, onPlatform, STATIONS, railPoints } from './rail.js';
 import { PARTY, makeParty, partyGeo, birthdayBanner, birthdayCake } from './party.js';
 import { buildService, serviceDist, inService, SERVICES, CITY_SERVICES } from './service.js';
 import { buildSuburbs, suburbDist, inSuburb, suburbRoad, drawSuburbs, SUBURBS, SUB_PLACES } from './suburbs.js';
@@ -611,7 +612,7 @@ function buildWorld() {
     const rr = Math.max(Math.abs(x), Math.abs(z));
     if (rr <= HALF + 60) return -0.06;
     if (inPassRegion(x, z)) return passTerrain(x, z, natural(x, z), 15); // am Berg: das feinere Gelände liegt darüber
-    let gs = groundShape(x, z); const cd = Math.min(countryDist(x, z), suburbDist(x, z), serviceDist(x, z)); if (cd < gs.d) gs = { d: cd, y: 0 }; // auch Bauernhof, Strand, Vororte und Tankstellen eben
+    let gs = groundShape(x, z); const cd = Math.min(countryDist(x, z), suburbDist(x, z), serviceDist(x, z), railDist(x, z) - 9); if (cd < gs.d) gs = { d: cd, y: 0 }; // auch Bauernhof, Strand, Vororte und Tankstellen eben
     const f = smoothstep(24, 100, gs.d); // unter Autobahn, Hafen und Flughafen eben (Hafenbecken tiefer); breiter
     // ebener Rand, sonst ragt das grobe Gelände (20-m-Raster) über die äusserste Spur
     return smoothstep(HALF + 90, HALF + 500, rr) * NZ.fbm(x / 260, z / 260, 4) * 190 * f * skiFade(x, z) + gs.y * (1 - f) + skiH(x, z) - 0.06; // + Schneeberg
@@ -1403,7 +1404,7 @@ function buildWorld() {
   for (let k = 0; k < 360;) {
     const a = r() * Math.PI * 2, rr = HALF + 30 + r() * 150;
     const tx = Math.cos(a) * rr * 1.1, tz = Math.sin(a) * rr * 1.1;
-    if (Math.max(Math.abs(tx), Math.abs(tz)) < HALF + ROAD / 2 + 12 || suburbDist(tx, tz) < 14 || serviceDist(tx, tz) < 14 || groundShape(tx, tz).d < 14 || countryDist(tx, tz) < 14 || (inPassRegion(tx, tz) && passNearest(tx, tz).d < 16)) continue; // nicht auf Strassen und Plätzen
+    if (Math.max(Math.abs(tx), Math.abs(tz)) < HALF + ROAD / 2 + 12 || suburbDist(tx, tz) < 14 || serviceDist(tx, tz) < 14 || railDist(tx, tz) < 18 || groundShape(tx, tz).d < 14 || countryDist(tx, tz) < 14 || (inPassRegion(tx, tz) && passNearest(tx, tz).d < 16)) continue; // nicht auf Strassen und Plätzen
     const ty = height(tx, tz); pines.push([tx, ty, tz, 0.9 + r() * 0.9]);
     for (let q = 0; q < 6; q++) tufts.push([tx + (vr() - 0.5) * 7, ty, tz + (vr() - 0.5) * 7, 1 + vr() * 0.6]);
     k++;
@@ -1411,7 +1412,7 @@ function buildWorld() {
   // Wiesen rund um die Stadt: viele Grasbüschel (nicht auf Strassen, Plätzen, Vororten und dem Pass)
   for (let k = 0, n = 0; k < 20000 && n < 6500; k++) {
     const a = vr() * Math.PI * 2, rr = HALF + 22 + vr() * 260, tx = Math.cos(a) * rr * 1.15, tz = Math.sin(a) * rr * 1.15;
-    if (Math.max(Math.abs(tx), Math.abs(tz)) < HALF + ROAD / 2 + 8 || groundShape(tx, tz).d < 12 || suburbDist(tx, tz) < 6 || serviceDist(tx, tz) < 8 || countryDist(tx, tz) < 10
+    if (Math.max(Math.abs(tx), Math.abs(tz)) < HALF + ROAD / 2 + 8 || groundShape(tx, tz).d < 12 || suburbDist(tx, tz) < 6 || serviceDist(tx, tz) < 8 || railDist(tx, tz) < 12 || countryDist(tx, tz) < 10
       || inPassRegion(tx, tz) || islandDist(tx, tz) < 30) continue; // am Pass liegt ein eigenes Gelände
     tufts.push([tx, height(tx, tz), tz, 0.9 + vr() * 0.8]); n++;
   }
@@ -3477,6 +3478,7 @@ function groundAt(x, z) {
   if (inPassRegion(x, z)) return Math.max(0, S.country.ground(x, z)); // auch knapp am Stadtrand: dort liegt schon das Pass-Gelände
   if (Math.abs(x) <= LIMIT && Math.abs(z) <= LIMIT) return 0;
   if (onHighway(x, z)) return hwGround(x, z); // auf der Brücke oben
+  if (railDist(x, z) < 14) return railGround(x, z); // Eisenbahn (eben, Bahnsteige etwas höher)
   if (onRoads(x, z) || inArea(x, z) || inCountry(x, z) || inSuburb(x, z) || inService(x, z)) return 0;
   const gx = (x + 1100) / 20, gz = (z + 1100) / 20, i = Math.floor(gx), j = Math.floor(gz), fx = gx - i, fz = gz - j;
   const a = landAt(i, j), b = landAt(i, j + 1), c = landAt(i + 1, j + 1), d = landAt(i + 1, j);
@@ -4235,6 +4237,8 @@ function exitCar() { // aussteigen (links, auf der Fahrerseite) und zu Fuss weit
 }
 function getIn() {
   const w = city.walk, t = w.target;
+  if (city.train) { leaveTrain(); return; }
+  if (t && t.train) { boardTrain(); return; }
   if (city.movie) { city.movie = null; w.mesh.visible = true; showMsg('🎬 Aufgestanden', 1.2); return; }
   if (t && t.movie) { city.movie = { t: 0 }; w.mesh.visible = false; showMsg('🍿 Film läuft – X zum Aufstehen', 2.4); return; }
   if (t && t.lift) { startLift(w, t.lift); return; }
@@ -4329,6 +4333,7 @@ function stepWalk(dt) {
   { const bs = city.boatAt || BOAT_HOME; // Boot an seinem Steg (Strand oder Diamantinsel)
     if (!city.boat && (nearPier(w.x, w.z) || nearMonPier(w.x, w.z)) && Math.hypot(w.x - bs.x, w.z - bs.z) < 13) { best = { boat: true }; bd = 0; } }
   for (const Lf of S.country.lifts) if (Math.hypot(w.x - Lf.A.x, w.z - Lf.A.z) < 12) { best = { lift: Lf }; bd = 0; } // Talstation eines Lifts
+  if (S.rail && S.rail.T.wait > 1.5 && S.rail.T.station >= 0 && onPlatform(w.x, w.z) === STATIONS[S.rail.T.station]) { best = { train: true }; bd = 0; } // Zug hält am Bahnsteig
   const KS = S.places.kino && S.places.kino.seats;
   if (KS && w.x > KS.x0 && w.x < KS.x1 && w.z > KS.z0 && w.z < KS.z1) { best = { movie: true }; bd = 0; } // im Kino bei den Sitzen
   const RK = city.moonOn ? MOON_ROCKET : SPACE;
@@ -4337,10 +4342,54 @@ function stepWalk(dt) {
   if (FL && !city.plane && Math.hypot(w.x - FL.x, w.z - FL.z) < 16) { best = { plane: true }; bd = 0; } // Flugzeug
   const HB = S.places.house && S.places.house.bed;
   if (HB && city.house.owned && Math.hypot(w.x - HB.x, w.z - HB.z) < 3) { best = { bed: true }; bd = 0; } // Bett im eigenen Haus
-  if (best && (!w.target || w.target.v !== best.v || !!w.target.boat !== !!best.boat || !!w.target.lift !== !!best.lift || !!w.target.bed !== !!best.bed || !!w.target.plane !== !!best.plane || !!w.target.movie !== !!best.movie || !!w.target.rocket !== !!best.rocket))
-    showMsg(best.lift ? best.lift.name + ' – X: einsteigen' : best.rocket ? (city.moonOn ? '🚀 Zurück zur Erde – X' : '🚀 Zum Mond fliegen – X') : best.movie ? '🍿 Film schauen – X' : best.plane ? '✈️ Flugzeug – X: einsteigen und fliegen' : best.bed ? '🛏️ Bett – X: schlafen' : best.lift ? '🚡 Sessellift – X: einsteigen und hinauffahren' : best.boat ? '🚤 Boot – einsteigen' : best.steal ? '😈 ' + ((city.kinds[best.v.kind] || {}).name || 'Auto') + ' – X: klauen (gibt Alarm!)' : best.v ? '🔑 ' + vname(best.v) + ' – 🚗 einsteigen' : '🚗 Einsteigen?', 1.2);
+  if (best && (!w.target || w.target.v !== best.v || !!w.target.boat !== !!best.boat || !!w.target.lift !== !!best.lift || !!w.target.bed !== !!best.bed || !!w.target.plane !== !!best.plane || !!w.target.movie !== !!best.movie || !!w.target.rocket !== !!best.rocket || !!w.target.train !== !!best.train))
+    showMsg(best.train ? '🚆 Zug – X: einsteigen und mitfahren' : best.lift ? best.lift.name + ' – X: einsteigen' : best.rocket ? (city.moonOn ? '🚀 Zurück zur Erde – X' : '🚀 Zum Mond fliegen – X') : best.movie ? '🍿 Film schauen – X' : best.plane ? '✈️ Flugzeug – X: einsteigen und fliegen' : best.bed ? '🛏️ Bett – X: schlafen' : best.lift ? '🚡 Sessellift – X: einsteigen und hinauffahren' : best.boat ? '🚤 Boot – einsteigen' : best.steal ? '😈 ' + ((city.kinds[best.v.kind] || {}).name || 'Auto') + ' – X: klauen (gibt Alarm!)' : best.v ? '🔑 ' + vname(best.v) + ' – 🚗 einsteigen' : '🚗 Einsteigen?', 1.2);
   w.target = best;
   S.ui.walkbtn.classList.toggle('ready', !!best);
+}
+
+// ---------- Eisenbahn (rail.js) ----------
+// Der Zug fährt immer im Kreis und hält an beiden Bahnhöfen (10 s). Zu Fuss auf dem Bahnsteig, wenn er hält: X = einsteigen;
+// mitfahren bis zu einem Bahnhof, dort X = aussteigen. Wer mit dem Auto in den Zug fährt, hat einen Unfall.
+function stepTrain(dt) {
+  const R = S.rail; if (!R) return;
+  const ev = stepRail(R, dt, city.night || 0);
+  const me = city.me, w = city.walk, px = w ? w.x : me.pos.x, pz = w ? w.z : me.pos.z, loco = R.cars[0];
+  const near = Math.hypot(px - loco.x, pz - loco.z);
+  if (ev.depart && near < 350) horn(0.2 + 0.5 * (1 - near / 350), 0.9, 0.7); // Abfahrt: Hupe
+  for (const C of R.crossings) if (C.closed && Math.hypot(px - C.x, pz - C.z) < 140) { // Glocke am Bahnübergang
+    C.bell = (C.bell || 0) - dt; if (C.bell <= 0) { C.bell = 0.55; window.beep && window.beep(1250, 0.12, 'triangle', 0.035); }
+  }
+  if (city.train && w) { // mitfahren: im Wagen sitzen
+    const c = R.cars[city.train.car]; w.x = c.x; w.z = c.z; w.h = c.h; w.gy = 0; w.speed = 0; w.mesh.visible = false; w.mesh.position.set(c.x, 0, c.z);
+    if (ev.arrive) showMsg(ev.arrive.name + ' – X: aussteigen', 2.6);
+    return;
+  }
+  if (w) { const h = trainHit(R, w.x, w.z, 0.4); if (h) { w.x += h.nx * h.d; w.z += h.nz * h.d; } }
+  else if (!city.plane && !city.boat && me.alt < 3) {
+    const h = trainHit(R, me.pos.x, me.pos.z, me.radius * 0.8);
+    if (h) {
+      me.pos.x += h.nx * (h.d + 0.05); me.pos.z += h.nz * (h.d + 0.05);
+      if (!(city.trainHitT > 0) && (Math.abs(me.speed) > 3 || R.T.v > 3)) {
+        city.trainHitT = 1.5; me.speed *= -0.3;
+        hurt(0.8, me.pos.x - h.nx * me.radius, me.pos.z - h.nz * me.radius);
+        showMsg('💥 Autsch, der Zug! Bei geschlossener Schranke warten.', 2.2);
+      }
+    }
+  }
+  city.trainHitT = Math.max(0, (city.trainHitT || 0) - dt);
+}
+function boardTrain() {
+  const w = city.walk; city.train = { car: 1 };
+  w.mesh.visible = false;
+  showMsg('🚆 Eingestiegen! Der Zug fährt im Kreis – am Bahnhof X = aussteigen', 3);
+}
+function leaveTrain() {
+  const R = S.rail, w = city.walk;
+  if (!(R.T.wait > 0.5) || R.T.station < 0) { showMsg('🚆 Warte, bis der Zug am Bahnhof hält', 1.6); return; }
+  const st = STATIONS[R.T.station];
+  w.x = st.px; w.z = st.pz; w.h = Math.atan2(st.tz, st.tx) + Math.PI / 2 * st.side; w.mesh.visible = true; city.train = null;
+  showMsg(st.name + ' – ausgestiegen', 1.8);
 }
 
 // ---------- Fangis (nur online) ----------
@@ -5600,6 +5649,7 @@ function surfaceAt(x, z) {
   if (inMoon(x, z)) return 'moon';
   if (Math.abs(x) > HALF + ROAD / 2 || Math.abs(z) > HALF + ROAD / 2) {
     if (onHighway(x, z) || onRoads(x, z) || inArea(x, z) || suburbRoad(x, z) || monRoad(x, z) || onDeck(x, z)) return 'asphalt';
+    const rs = railSurface(x, z); if (rs) return rs; // Schotter und Bahnsteig
     return countrySurface(x, z) || (onPass(x, z) ? 'asphalt' : 'grass');
   }
   const bi = Math.floor(x / BLOCK + N / 2), bj = Math.floor(z / BLOCK + N / 2);
@@ -5995,6 +6045,7 @@ function paintWorld(g, P, K) {
   rect({ x0: -270, x1: 310, z0: 605, z1: 655 }, '#e5e7eb'); // Piste
   { const [x, y] = P(SKI.x, SKI.z); g.fillStyle = '#eef4fa'; g.beginPath(); g.arc(x, y, SKI.r * K, 0, 7); g.fill(); } // Skigebiet
   rect(FARM, '#8fb04a'); // Alp
+  { const rp = railPoints(10); line(rp, '#4b5563', 6 * K); line(rp, '#e5e7eb', 1.2); } // Eisenbahn
   line(passPoints().filter((p, i) => i % 3 === 0).map(p => [p.x, p.z]), keys >= PASS_AREA.need ? '#d4d8de' : '#6b7280', 10 * K);
   line([[HALF + 7, 192], [SPACE.x, SPACE.z]], '#cbd5e1', 14 * K); { const [x, y] = P(SPACE.x, SPACE.z); g.fillStyle = '#cbd5e1'; g.beginPath(); g.arc(x, y, SPACE.r * K, 0, 7); g.fill(); }
   const hw = []; for (let s = 0; s <= HW_LEN; s += 30) { const p = hwPoint(s); hw.push([p.x, p.z]); }
@@ -6246,6 +6297,7 @@ function drawMinimap() {
   for (const [k, ic] of PLACE_ICONS) { const p = S.places[k]; if (p) icon(ic, p.x ?? p.cx, p.z ?? p.cz, big ? 11 : 13); }
   for (const q of SUB_PLACES) icon(q.icon, q.x, q.z, big ? 10 : 13);
   for (const q of S.places.services) icon('⛽', q.x, q.z, big ? 11 : 13); // Tankstellen mit Werkstatt
+  if (S.rail) { for (const st of STATIONS) icon('🚉', st.px, st.pz, big ? 11 : 13); const c = S.rail.cars[0]; icon('🚆', c.x, c.z, big ? 12 : 15); } // Bahnhöfe und Zug
   if (city.works) { const W2 = city.works, [a, b] = toS(node(W2.a[0]), node(W2.a[1])), [c2, d2] = toS(node(W2.b[0]), node(W2.b[1])); g.strokeStyle = '#f97316'; g.lineWidth = 4; g.beginPath(); g.moveTo(a, b); g.lineTo(c2, d2); g.stroke(); }
   for (const c of city.cars) if (!c.off) dot(c.x, c.z, '#ffffff', big ? 1.3 : 1.8);
   for (const c of city.hw || []) if (c.dir) dot(c.x, c.z, '#fde047', big ? 1 : 1.6);
@@ -6308,6 +6360,7 @@ export function startCity({ player, kinds, topSpeed, onExit, pay = () => 0, earn
     S.fx = { ...fx0, puff(x, y, z, vx, vz) { warpXZ(x, z, wp); fx0.puff(wp.x, y, wp.z, vx, vz); }, mark(k, x, y, z, on) { warpXZ(x, z, wp); fx0.mark(k, wp.x, y, wp.z, on); } };
     window.addEventListener('resize', () => S && !S.ui.root.hidden && layout());
   }
+  if (!S.rail) S.rail = buildRail({ scene: S.scene, sign: S.sign, isRoad: (x, z) => onRoads(x, z) || inCountry(x, z) }); // Eisenbahn (rail.js)
   if (PARTY && !S.party) S.party = makeParty(S.scene); // Geburtstag: Ballone, Konfetti, nachts Feuerwerk
   const mesh = buildCar(player, kinds);
   if (player.ghost) ghostLook(mesh); // Geist-Cayenne: für die anderen unsichtbar, selber nur feine Linien
@@ -6446,7 +6499,8 @@ function step(now) {
   stepLaunch(dt);
   if (city.pulled > 0) city.pulled -= dt;
   stepFerry(dt);
-  if (city.ferryRide) { /* auf der Fähre: nicht selber fahren */ } else if (city.walk) stepWalk(dt); else if (city.plane) stepPlane(dt); else stepMe(dt);
+  if (city.ferryRide) { /* auf der Fähre: nicht selber fahren */ } else if (city.walk) { if (!city.train) stepWalk(dt); } else if (city.plane) stepPlane(dt); else stepMe(dt);
+  stepTrain(dt);
   stepMonaco(dt);
   stepJail();
   stepRules(dt);
@@ -6648,6 +6702,9 @@ function render(dt) {
     const pb = 46 + Math.abs(me.speed) * 0.1, y = me.mesh.position.y;
     camWant.set(me.pos.x - fx * pb, Math.max(y + 11, groundAt(me.pos.x - fx * pb, me.pos.z - fz * pb) + 4), me.pos.z - fz * pb);
     camAhead.set(me.pos.x + fx * 25, y + 4, me.pos.z + fz * 25);
+  } else if (city.train && S.rail) { // im Zug: schräg von hinten auf die Lok
+    const c = S.rail.cars[0], tx = Math.cos(c.h), tz = Math.sin(c.h);
+    camWant.set(c.x - tx * 34 + tz * 9, 12, c.z - tz * 34 - tx * 9); camAhead.set(c.x + tx * 10, 2, c.z + tz * 10);
   } else if (w) { // zu Fuss: Kamera hinter dem Kopf
     const wx = Math.cos(w.h), wz = Math.sin(w.h);
     const gy = (w.gy || 0) + (w.jy || 0) * 0.6;
